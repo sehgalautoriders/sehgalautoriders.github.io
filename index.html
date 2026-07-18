@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set10-2026.07.16-a';
+window.HERO_BUILD = 'set11-2026.07.17-a';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1467,8 +1467,8 @@ function checkBackendVersion(){
       return;
     }
     el.textContent='Backend '+(res.version||'?')+' · Server today: '+(res.todayKey||'?')+' · '+(res.tz||'?');
-    el.style.color = res.version==='v12.4-2026.07.15' ? 'var(--ok)' : 'var(--signal-d)';
-    if(res.version!=='v12.4-2026.07.15') alert('⚠ Your deployed Apps Script backend is OUTDATED.\n\nThe latest version (Billing Comparison engine + Gate Out + estimates_all) is NOT live yet.\n\nGo to Apps Script → Deploy → Manage Deployments → Edit → New Version → Deploy, using the latest Heroappentry.gs file.\n\nServer reports: '+(res.version||'no version field — very old backend')+'\nServer date: '+res.todayKey);
+    el.style.color = res.version==='v12.5-2026.07.17' ? 'var(--ok)' : 'var(--signal-d)';
+    if(res.version!=='v12.5-2026.07.17') alert('⚠ Your deployed Apps Script backend is OUTDATED.\n\nThe latest version (Billing Comparison engine + Gate Out + estimates_all) is NOT live yet.\n\nGo to Apps Script → Deploy → Manage Deployments → Edit → New Version → Deploy, using the latest Heroappentry.gs file.\n\nServer reports: '+(res.version||'no version field — very old backend')+'\nServer date: '+res.todayKey);
   });
 }
 /* Global progress bar — gives constant visual feedback during any network call instead
@@ -6003,27 +6003,30 @@ function showEstimatePreview(est, reg, name, mob){
     const upd=document.getElementById('ops-updated'); if(upd) upd.textContent='Last updated: Today '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     if(!box) return;
     box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Loading…</div></div>';
-    jgetReliable('report_today', {}, function(res, isStale){
-      if(!res || res.ok===false){ if(!isStale) box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Could not load</div></div>'; return; }
-      if(isGuardUser()){
-        const allGates=raviRowsAllowedForUser(res.gateEntries||[],'location');
-        const myGates=allGates.filter(g=>String(g.empno||'')===String(USER.empno||'') || String(g.guard||'').toUpperCase()===String(USER.personName||'').toUpperCase());
+    /* C1 (17-Jul): guard home now uses ONE light call — home_summary — instead of
+       report_today (full rows + photo URLs) plus gate_history (entire sheet, 12-32s,
+       and a missing ok-check that printed a false 0 on timeout: the "0 vs 2" bug).
+       home_summary returns only per-location counts: a few hundred bytes.
+       On failure it shows "Could not load", never a fake 0. */
+    if(isGuardUser()){
+      jgetReliable('home_summary', {}, function(sres, sStale){
+        if(!sres || sres.ok===false){ if(!sStale) box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Could not load</div></div>'; return; }
+        const mine=(sres.locations||[]).filter(L=>wsAllowed(L.location));
+        const todayN=mine.reduce((s,L)=>s+Number(L.today||0),0);
+        const allN=mine.reduce((s,L)=>s+Number(L.allDays||0),0);
         const cardsG=[
-          {ic:'🚗',n:allGates.length,t:'Gate Entries Today',sub:'All guards combined',color:'#2563eb'},
-          // The list this opens shows ALL guards, so the tile must count ALL guards.
-          // Counting only mine made the tile say 1 while the list showed 2.
-          {ic:'📅',n:'…',t:'All Entries — All days',sub:'Every guard · tap to see by month & date',color:'#16a34a',click:"raviOpenGateHistory()"},
+          {ic:'🚗',n:todayN,t:'Gate Entries Today',sub:'All guards combined',color:'#2563eb'},
+          {ic:'📅',n:allN,t:'All Entries — All days',sub:'Every guard · tap to see by month & date',color:'#16a34a',click:"raviOpenGateHistory()"},
           {ic:'↻',n:getQueue().length,t:'Pending Sync',sub:'Offline saves waiting',color:'#7c3aed'}
         ];
-        box.innerHTML=cardsG.map(k=>`<div class="kpi-card ops" style="--kpi-color:${k.color}${k.click?';cursor:pointer':''}" ${k.click?`onclick="${k.click}"`:''}><div class="kpi-ic">${k.ic}</div><div class="kpi-n" title="${raviEsc(k.n)}" ${k.t==='All Entries — All days'?'id="kpi-myentries"':''}>${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
-        // Same call, same filter, same number the list shows. They cannot disagree now.
-        jget('gate_history', {days:180}, function(hres){
-          const el=document.getElementById('kpi-myentries'); if(!el) return;
-          const all=raviRowsAllowedForUser((hres&&hres.entries)||[],'location');
-          el.textContent=all.length;
-        });
-        return;
-      }
+        box.innerHTML=cardsG.map(k=>`<div class="kpi-card ops" style="--kpi-color:${k.color}${k.click?';cursor:pointer':''}" ${k.click?`onclick="${k.click}"`:''}><div class="kpi-ic">${k.ic}</div><div class="kpi-n" title="${raviEsc(k.n)}">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+      });
+      return;
+    }
+    jgetReliable('report_today', {}, function(res, isStale){
+      if(!res || res.ok===false){ if(!isStale) box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Could not load</div></div>'; return; }
+      /* C1 (17-Jul): guard branch moved above to the light home_summary call — this
+         callback now serves SA/WM/GM/CEO only. */
       let gates=raviRowsAllowedForUser(res.gateEntries||[],'location');
       let pending=raviRowsAllowedForUser(res.pending||[],'location');
       let est=raviRowsAllowedForUser(res.estimates||[],'ws');
