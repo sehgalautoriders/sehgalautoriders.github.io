@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set11-2026.07.17-a';
+window.HERO_BUILD = 'set12-2026.07.17-b';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1430,7 +1430,7 @@ const val=id=>document.getElementById(id).value.trim();
    app boots fast even after the tab is closed and reopened — same idea as AppSheet's
    server caching. Live/time-sensitive data ('today','report_today','estimates_today')
    is never cached. Refresh Master Data button in Master view busts the cache manually. */
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes — AppSheet-style persistence
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // C2a (17-Jul): 12 hours, was 30 min — masters now live on the phone
 const CACHEABLE_ACTIONS = ['master_list','master_table','app_config'];
 /* CACHE NAMESPACE (Ravi 15-Jul): the rvp9192-era app and the sehgal app, opened in
    the same browser, were SHARING cache keys — summaries bled across accounts even
@@ -1438,21 +1438,73 @@ const CACHEABLE_ACTIONS = ['master_list','master_table','app_config'];
    backend deployment URL, so two backends can never read each other's cache. */
 const BACKEND_NS=(function(){ let h=0; const s=String(typeof SHEET_URL!=='undefined'?SHEET_URL:''); for(let i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; } return Math.abs(h).toString(36); })();
 function cacheKey(action, params){ return 'sehgal_cache:'+BACKEND_NS+':'+action+':'+JSON.stringify(params); }
+/* ═══ C2a — PHONE DATABASE (Claude, 17-Jul-2026) ══════════════════════════════
+   MEASURED root cause: localStorage allows ~5 MB total, but one master alone is
+   bigger — master_table JSON sizes from the live V3 book:
+       MD_PriceMaster_Labour  8.8 MB   MD_Parts_v3      4.6 MB
+       MD_CustomerMaster      4.7 MB   MD_ModelPart     2.7 MB
+   So setCache for the big masters silently FAILED every time (the try/catch ate
+   the quota error) and the estimate screen re-downloaded 8.8 MB again and again.
+   Fix: all cached data now lives in IndexedDB (the phone's real database, no
+   practical size limit for us), fronted by an in-memory Map so every existing
+   getCache/getLastGood caller stays synchronous and untouched. On boot the Map
+   preloads from IndexedDB; old localStorage entries are migrated once. */
+const HKV = new Map();
+let __hkvReady = false;
+const __hkvDbP = (function(){
+  if(typeof indexedDB==='undefined') return Promise.resolve(null);
+  return new Promise(function(res){
+    try{
+      const r = indexedDB.open('hero-cache-'+BACKEND_NS, 1);
+      r.onupgradeneeded = function(){ r.result.createObjectStore('kv'); };
+      r.onsuccess = function(){ res(r.result); };
+      r.onerror = function(){ res(null); };
+    }catch(e){ res(null); }
+  });
+})();
+const __hkvPreload = __hkvDbP.then(function(db){
+  if(!db) return;
+  return new Promise(function(res){
+    try{
+      const req = db.transaction('kv').objectStore('kv').openCursor();
+      req.onsuccess = function(e){
+        const c = e.target.result;
+        if(c){ HKV.set(String(c.key), c.value); c.continue(); } else res();
+      };
+      req.onerror = function(){ res(); };
+    }catch(e){ res(); }
+  });
+}).then(function(){
+  // one-time migration of the old localStorage cache so nothing re-downloads
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && (k.indexOf('sehgal_cache:')===0 || k.indexOf('sehgal_lastgood:')===0) && !HKV.has(k)){
+        try{ const v=JSON.parse(localStorage.getItem(k)); HKV.set(k,v); hkvPut(k,v); }catch(e){}
+      }
+    }
+  }catch(e){}
+  __hkvReady = true;
+});
+function hkvPut(k,v){ __hkvDbP.then(function(db){ if(!db) return; try{ db.transaction('kv','readwrite').objectStore('kv').put(v,k); }catch(e){} }); }
+function hkvDel(k){ __hkvDbP.then(function(db){ if(!db) return; try{ db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }); }
 function getCache(action, params){
   if(CACHEABLE_ACTIONS.indexOf(action)===-1) return null;
-  try{
-    const raw = localStorage.getItem(cacheKey(action,params));
-    if(!raw) return null;
-    const obj = JSON.parse(raw);
-    if(Date.now() - obj.t > CACHE_TTL_MS) return null;
-    return obj.v;
-  }catch(e){ return null; }
+  const obj = HKV.get(cacheKey(action,params));
+  if(!obj) return null;
+  if(Date.now() - obj.t > CACHE_TTL_MS) return null;
+  return obj.v;
 }
 function setCache(action, params, value){
   if(CACHEABLE_ACTIONS.indexOf(action)===-1) return;
-  try{ localStorage.setItem(cacheKey(action,params), JSON.stringify({t:Date.now(), v:value})); }catch(e){}
+  const k = cacheKey(action,params);
+  const obj = {t:Date.now(), v:value};
+  HKV.set(k,obj); hkvPut(k,obj);
 }
 function clearMasterCache(){
+  const dead=[];
+  HKV.forEach(function(v,k){ if(k.indexOf('sehgal_cache:')===0) dead.push(k); });
+  dead.forEach(function(k){ HKV.delete(k); hkvDel(k); });
   try{ const keys=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf('sehgal_cache:')===0) keys.push(k); } keys.forEach(k=>localStorage.removeItem(k)); }catch(e){}
 }
 
@@ -1622,11 +1674,16 @@ async function jpost(body){
    three times with a longer timeout before giving up — the person is never staring
    at a blank error screen if we have ANY recent data to show. */
 const LASTGOOD_PREFIX='sehgal_lastgood:'+(typeof BACKEND_NS!=='undefined'?BACKEND_NS+':':'');
+/* C2a: last-good snapshots also live in the phone database now (same Map + IndexedDB),
+   so report_today / estimates_all stale-then-fresh survives phone restarts and has no
+   size ceiling. Key format unchanged so old localStorage values migrate cleanly. */
 function getLastGood(action, params){
-  try{ const raw=localStorage.getItem(LASTGOOD_PREFIX+action+':'+JSON.stringify(params)); return raw?JSON.parse(raw):null; }catch(e){ return null; }
+  const v = HKV.get(LASTGOOD_PREFIX+action+':'+JSON.stringify(params));
+  return v===undefined?null:v;
 }
 function setLastGood(action, params, value){
-  try{ localStorage.setItem(LASTGOOD_PREFIX+action+':'+JSON.stringify(params), JSON.stringify(value)); }catch(e){}
+  const k = LASTGOOD_PREFIX+action+':'+JSON.stringify(params);
+  HKV.set(k,value); hkvPut(k,value);
 }
 function jgetRaw(action, params, cb, timeoutMs){
   gpStart();
