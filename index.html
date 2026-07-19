@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set13-2026.07.19-a';
+window.HERO_BUILD = 'set14-2026.07.19-a';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1499,7 +1499,12 @@ function getCache(action, params){
   if(CACHEABLE_ACTIONS.indexOf(action)===-1) return null;
   const obj = HKV.get(cacheKey(action,params));
   if(!obj) return null;
-  if(Date.now() - obj.t > CACHE_TTL_MS) return null;
+  /* STEP 1 (19-Jul): masters no longer expire on their own. They live on the phone
+     until a manual full-refresh (↻ Refresh in Tables, or Sync Now in the top bar),
+     or until any master edit made through the app clears the cache. This is the
+     AppSheet behaviour: keep the phone copy, do not re-download for nothing.
+     (The old 12-hour CACHE_TTL_MS check was removed here. Automatic change-checking
+     comes in step 3.) */
   return obj.v;
 }
 function setCache(action, params, value){
@@ -6775,7 +6780,22 @@ window.addEventListener('popstate', function(){
 });
 
 loadUser();
-if(USER){ showView('home'); goHome(); } else { showView('login'); }
+/* STEP 1 (19-Jul): wait for the phone database (IndexedDB) to finish loading the
+   saved masters into memory BEFORE we start any screen. Earlier the app started
+   asking the server for masters at the same instant the phone copy was still loading,
+   so it always lost the race and re-downloaded everything for nothing. Now the boot
+   waits for the phone copy first, so masters are read from the phone, not the server.
+   The 2.5s timeout is only a safety net: if the phone database is ever slow to open,
+   the app still boots (worst case it just fetches masters like before — never stuck). */
+function __heroBoot(){
+  if(window.__heroBooted) return; window.__heroBooted = true;
+  if(USER){ showView('home'); goHome(); } else { showView('login'); }
+}
+(function(){
+  var waited = (typeof __hkvPreload!=='undefined' && __hkvPreload && __hkvPreload.then)
+    ? __hkvPreload : Promise.resolve();
+  Promise.race([ waited, new Promise(function(r){ setTimeout(r, 2500); }) ]).then(__heroBoot);
+})();
 </script>
 
 <!-- ========= DOCUMENT UPLOAD / TAGGING MODAL ========= -->
