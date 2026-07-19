@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set12-2026.07.17-b';
+window.HERO_BUILD = 'set13-2026.07.19-a';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1022,12 +1022,19 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
             <div class="addbox">
               <div class="addrow"><select id="es-add-lab"></select><button class="plus" onclick="esAddLabourFn()">+</button></div>
               <div class="addrow parts" style="margin-top:8px;flex-wrap:wrap">
-                <select id="es-add-pcat" onchange="esRenderPartDropdown()" style="flex:1;min-width:120px">
+                <select id="es-add-pcat" onchange="esRenderPartSubDropdown()" style="flex:1;min-width:110px">
                   <option value="">Category…</option>
                 </select>
-                <select id="es-add-pname" style="flex:1;min-width:140px"><option value="">Select category first…</option></select>
-                <input id="es-add-pamt" inputmode="numeric" placeholder="₹" style="width:80px" readonly>
+                <select id="es-add-psub" onchange="esRenderPartDropdown()" style="flex:1;min-width:120px">
+                  <option value="">Sub-category…</option>
+                </select>
+                <select id="es-add-pname" style="flex:1;min-width:150px"><option value="">Select category first…</option></select>
+                <input id="es-add-pamt" inputmode="numeric" placeholder="₹" style="width:80px">
                 <button class="plus" onclick="esAddPartFn()">+</button>
+                <label style="flex-basis:100%;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:4px">
+                  <input type="checkbox" id="es-add-showall" onchange="esTogglePartShowAll(this)" style="width:auto">
+                  Show all parts (accidental / any model)
+                </label>
               </div>
               <div class="chips" id="es-chips"></div>
             </div>
@@ -2849,6 +2856,7 @@ const ES_FIELDS=[{key:'Model',label:'Model',def:{table:'MODEL',column:'MODEL'}}]
 let ES_CONFIG={}, ES_TABLES=[], ES_MODEL_LIST=[], ES_MISSING=[];
 /* Master-data driven tables — loaded in esBoot, fall back to hardcoded if empty */
 let ES_PRICE_LAB=[], ES_PM_LAB=[], ES_LOCAL_PARTS=[], ES_PM_KITS=[], ES_MODEL_KIT_PARTS=[], ES_PART_LABOUR_MAP=[];
+let ES_MODEL_PART=[], ES_PART_INDEX={cats:{}, all:[]}, ES_PART_SHOWALL=false;
 /* Part → labour auto-link, driven by the REAL MD_PartLabourMap already in
    HeroMasterSheet (schema: Part Name | Labour 1 | Amount 1 | Job Code 1 | Labour 2 |
    Amount 2 | Job Code 2 | Labour 3 | Amount 3 | Job Code 3 | Complaint Code — actual
@@ -3287,7 +3295,7 @@ const SCHED={f4_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:1
 function esBoot(){
   heroLoadPriceMaster(); // MD_EstimatePrices override — deliberately outside the pending gate: it can never block or break estimate boot
   heroLoadOilMap();      // MD_ModelOilMap — correct per-model oil MRP (₹373-Harley fix)
-  let pending=8, configRes=null, listRes=null;
+  let pending=9, configRes=null, listRes=null;
   const proceed=()=>{
     ES_CONFIG = (configRes && configRes.config) || {};
     ES_FIELDS.forEach(f=>{ if(!ES_CONFIG[f.key] || !ES_CONFIG[f.key].table) ES_CONFIG[f.key]=f.def; });
@@ -3304,6 +3312,7 @@ function esBoot(){
   jget('master_table', {name:'PreventiveMaintenanceKits'}, function(res){ ES_PM_KITS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
   jget('master_table', {name:'ModelKitParts'}, function(res){ ES_MODEL_KIT_PARTS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
   jget('master_table', {name:'PartLabourMap'}, function(res){ ES_PART_LABOUR_MAP=(res&&res.rows)||[]; if(--pending===0) proceed(); });
+  jget('master_table', {name:'ModelPart'}, function(res){ ES_MODEL_PART=(res&&res.rows)||[]; esBuildPartIndex(); if(--pending===0) proceed(); });
 }
 function esCheckAndLoad(){
   ES_MISSING=[]; ES_MODEL_LIST=[];
@@ -3494,33 +3503,116 @@ function esDrawDemChips(){
 /* Category → common parts picker — replaces free-text part entry (fixes #4):
    floor staff pick a broad category, then a specific common part from a short list,
    instead of typing a part name and number which "nobody will do". */
-const PART_CATEGORIES={
-  'Engine':[{l:'Spark Plug',p:130},{l:'Air Filter Element',p:147},{l:'Oil Filter Element',p:95},{l:'Gasket Set',p:180},{l:'Carburettor Repair Kit',p:350},{l:'Piston Ring Set',p:420}],
-  'Transmission':[{l:'Clutch Plate Set',p:380},{l:'Clutch Cable',p:100},{l:'Drive Chain',p:350},{l:'Sprocket Set',p:280},{l:'Gear Shifter Lever',p:120}],
-  'Electrical':[{l:'Battery',p:90},{l:'Horn',p:80},{l:'Headlight Bulb',p:150},{l:'Indicator/Winker',p:100},{l:'Fuse Set',p:50},{l:'Wiring Harness',p:450},{l:'Key Set',p:410}],
-  'Brakes':[{l:'Front Brake Shoe',p:190},{l:'Rear Brake Shoe',p:190},{l:'Brake Cable',p:140},{l:'Brake Pads (Disc)',p:240},{l:'Brake Lever',p:90}],
-  'Body':[{l:'Front Visor',p:130},{l:'Front Fender',p:100},{l:'Handle Cover',p:250},{l:'Pillion Step',p:65},{l:'Muffler Cover',p:120},{l:'Side Panel',p:280}],
-  'Suspension':[{l:'Front Fork Oil',p:160},{l:'Shock Absorber (Rear)',p:650},{l:'Steering Stem Bearing',p:220},{l:'Fork Dismantle/Assemble',p:300}],
-};
-function esRenderPartCategoryDropdown(){
-  const sel=document.getElementById('es-add-pcat'); if(!sel) return;
-  sel.innerHTML='<option value="">Category…</option>'+Object.keys(PART_CATEGORIES).map(c=>`<option value="${c}">${c}</option>`).join('');
+/* ===== PARTS UNIVERSE (MD_ModelPart, 16,066 parts) — replaces the old hardcoded
+   PART_CATEGORIES. One row per part with Category, Sub Category, MRP, Rate PreGST,
+   GST %, Models Used On (pipe-separated). SA picks Category -> Sub Category -> Part.
+   Default list is filtered to the vehicle's model; "Show all" opens the whole
+   universe for accidental jobs. Price auto-fills where known, typed where blank. ===== */
+
+function esPU(r, keys){ for(var ki=0;ki<keys.length;ki++){ var v=r[keys[ki]]; if(v!==undefined&&v!==null&&String(v).trim()!=='') return String(v).trim(); } return ''; }
+function esPUnum(v){ var n=Number(String(v==null?'':v).replace(/[₹,\s]/g,'')); return isNaN(n)?0:n; }
+
+function esBuildPartIndex(){
+  var cats={}, all=[];
+  (ES_MODEL_PART||[]).forEach(function(r){
+    var pn=esPU(r,['Part No','Part Number']);
+    var desc=esPU(r,['Description','Part Description']);
+    if(!pn && !desc) return;
+    var cat=esPU(r,['Category'])||'Other';
+    var sub=esPU(r,['Sub Category','SubCategory'])||'General';
+    var mrp=esPUnum(esPU(r,['MRP']));
+    var rate=esPUnum(esPU(r,['Rate PreGST','Rate Pre GST']));
+    var models=esPU(r,['Models Used On']).toUpperCase();
+    var price = mrp>0 ? mrp : (rate>0 ? rate : 0);
+    var item={pn:pn, l:desc||pn, price:price, cat:cat, sub:sub, models:models};
+    if(!cats[cat]) cats[cat]={};
+    if(!cats[cat][sub]) cats[cat][sub]=[];
+    cats[cat][sub].push(item);
+    all.push(item);
+  });
+  ES_PART_INDEX={cats:cats, all:all};
 }
+
+function esCurrentModelUP(){
+  var el=document.getElementById('es-model');
+  return String((el&&el.value)||'').trim().toUpperCase();
+}
+function esPartMatchesModel(item){
+  if(ES_PART_SHOWALL) return true;
+  if(!item.models) return true;           // untagged part — always reachable
+  var m=esCurrentModelUP();
+  if(!m) return true;
+  return item.models.indexOf(m) > -1;
+}
+
+function esRenderPartCategoryDropdown(){
+  var sel=document.getElementById('es-add-pcat'); if(!sel) return;
+  var cats=Object.keys(ES_PART_INDEX.cats).sort();
+  sel.innerHTML='<option value="">Category…</option>'+cats.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
+  var sub=document.getElementById('es-add-psub'); if(sub) sub.innerHTML='<option value="">Sub-category…</option>';
+  var nm=document.getElementById('es-add-pname'); if(nm) nm.innerHTML='<option value="">Select category first…</option>';
+  var amt=document.getElementById('es-add-pamt'); if(amt){ amt.value=''; amt.readOnly=false; }
+}
+
+function esRenderPartSubDropdown(){
+  var cat=val('es-add-pcat');
+  var sub=document.getElementById('es-add-psub');
+  var nm=document.getElementById('es-add-pname');
+  var amt=document.getElementById('es-add-pamt'); if(amt) amt.value='';
+  if(!sub) return;
+  if(!cat){ sub.innerHTML='<option value="">Sub-category…</option>'; if(nm) nm.innerHTML='<option value="">Select category first…</option>'; return; }
+  var subs=Object.keys(ES_PART_INDEX.cats[cat]||{}).sort();
+  sub.innerHTML='<option value="">Sub-category…</option>'+subs.map(function(x){return '<option value="'+x+'">'+x+'</option>';}).join('');
+  if(nm) nm.innerHTML='<option value="">Select sub-category…</option>';
+}
+
 function esRenderPartDropdown(){
-  const cat=val('es-add-pcat');
-  const sel=document.getElementById('es-add-pname');
-  const amt=document.getElementById('es-add-pamt');
-  if(!cat){ sel.innerHTML='<option value="">Select category first…</option>'; amt.value=''; return; }
-  const items=PART_CATEGORIES[cat]||[];
-  sel.innerHTML='<option value="">Select part…</option>'+items.map((p,i)=>`<option value="${i}" data-price="${p.p}">${p.l} — ${inr(p.p)}</option>`).join('');
-  sel.onchange=function(){ const i=+sel.value; amt.value = (items[i]?items[i].p:''); };
-  amt.value='';
+  var cat=val('es-add-pcat'), sub=val('es-add-psub');
+  var nm=document.getElementById('es-add-pname');
+  var amt=document.getElementById('es-add-pamt');
+  if(!nm) return;
+  if(!cat || !sub){ nm.innerHTML='<option value="">Select sub-category first…</option>'; if(amt) amt.value=''; return; }
+  var items=((ES_PART_INDEX.cats[cat]||{})[sub]||[]).filter(esPartMatchesModel);
+  var seen={}; items=items.filter(function(x){ var k=x.pn+'|'+x.l; if(seen[k]) return false; seen[k]=1; return true; });
+  items.sort(function(a,b){ return a.l>b.l?1:-1; });
+  nm._items=items;
+  if(!items.length){
+    nm.innerHTML='<option value="">No parts for this model — tick Show all</option>';
+  } else {
+    nm.innerHTML='<option value="">Select part…</option>'+items.map(function(p,i){
+      var pr=p.price>0?(' — '+inr(p.price)):' — ₹ type';
+      return '<option value="'+i+'" data-price="'+p.price+'">'+p.l+(p.pn?(' ['+p.pn+']'):'')+pr+'</option>';
+    }).join('');
+  }
+  nm.onchange=function(){
+    var it=(nm._items||[])[+nm.value];
+    if(!it){ if(amt){ amt.value=''; amt.readOnly=false; } return; }
+    if(amt){ amt.value = it.price>0 ? it.price : ''; amt.readOnly=false; }
+  };
+  if(amt) amt.value='';
+}
+
+function esTogglePartShowAll(cb){
+  ES_PART_SHOWALL = !!(cb && cb.checked);
+  esRenderPartDropdown();
 }
 function esAddPartFn(){
-  const cat=val('es-add-pcat'); const idx=+val('es-add-pname');
-  const items=PART_CATEGORIES[cat]||[];
-  const row=items[idx]; if(!row){ alert('Pick a category and part first.'); return; }
-  ES_ADDPART.push({l:row.l,p:row.p});
+  const nm=document.getElementById('es-add-pname');
+  const idx=+(nm&&nm.value);
+  const items=(nm&&nm._items)||[];
+  const row=items[idx]; if(!row){ alert('Pick category, sub-category and part first.'); return; }
+  const typed=esPUnum(val('es-add-pamt'));
+  const price=typed>0?typed:row.price;
+  if(price<=0){ alert('Type the price for this part.'); return; }
+  ES_ADDPART.push({l:row.l, p:price, pn:row.pn, _typed:(typed>0 && typed!==row.price)});
+  // Learn-back (fire-and-forget): teach the master this part's price for this model,
+  // and tag the model onto the part. Fills the blank 64% over real use. Never blocks.
+  try{
+    if(row.pn){
+      jpost({type:'learn_part', pn:row.pn, model:esCurrentModelUP(),
+             price:(typed>0?typed:0), by:(USER&&(USER.personName||USER.empno))||''});
+    }
+  }catch(e){}
   // DMS-style: adding a part auto-adds its mapped fitment labour(s) — up to 3 lines
   // (e.g. Front Fork Oil → 3 labours), each with its Hero DMS job code, never duplicated
   const map=esFindLinkedLabours(row.l);
@@ -3533,8 +3625,10 @@ function esAddPartFn(){
     if(msg && added.length){ msg.style.color='var(--ok)'; msg.textContent='🔗 Linked labour added: '+added.join(', ')+' — remove below if not needed.'; setTimeout(()=>{ if(msg.textContent.indexOf('Linked labour')>-1) msg.textContent=''; },7000); }
   }
   document.getElementById('es-add-pcat').value='';
+  var _sub=document.getElementById('es-add-psub'); if(_sub) _sub.innerHTML='<option value="">Sub-category…</option>';
   document.getElementById('es-add-pname').innerHTML='<option value="">Select category first…</option>';
   document.getElementById('es-add-pamt').value='';
+  var _sa=document.getElementById('es-add-showall'); if(_sa){ _sa.checked=false; ES_PART_SHOWALL=false; }
   esDrawChips();
 }
 esRenderPartCategoryDropdown();
