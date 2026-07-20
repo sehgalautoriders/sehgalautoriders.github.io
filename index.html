@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set23-2026.07.20-s05';
+window.HERO_BUILD = 'set24-2026.07.20-s06';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2298,13 +2298,13 @@ function loadHomeStats(){
     huComputeHomeCounts(function(c){
       const hu=c.hu, appr=c.appr;
       box.innerHTML=[
-        {ic:'🚗',n:gates.length,t:'Today Gate Entries',sub:'Live from Gate Entry',color:'#2563eb'},
+        {ic:'🚗',n:gates.length,t:'Today Gate Entries',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',go:'raviOpenGateHistory()'},
         {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending',color:'#16a34a'},
-        {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Saved today',color:'#f59e0b'},
+        {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',go:'esOpenMyEstHistory()'},
         {ic:'₹',n:billing,t:'Billing Today',sub:'Estimate value till now',color:'#7c3aed'},
         {ic:'⛔',n:hu,t:'Holdup Cases',sub:'Active DMS holdup',color:'#dc2626'},
         {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer',color:'#0891b2'}
-      ].map(k=>`<div class="kpi-card ops" style="--kpi-color:${k.color}"><div class="kpi-ic">${k.ic}</div><div class="kpi-n">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+      ].map(k=>`<div class="kpi-card ops" ${k.go?`onclick="${k.go}" style="--kpi-color:${k.color};cursor:pointer"`:`style="--kpi-color:${k.color}"`}><div class="kpi-ic">${k.ic}</div><div class="kpi-n">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
     });
   });
 }
@@ -2477,7 +2477,7 @@ function geEntryDetailHtml(g){
     <div class="modal-row"><span class="k">Mobile</span><span class="v">${raviEsc(g.mob||'—')}</span></div>
     <div class="modal-row"><span class="k">Alt. Contact</span><span class="v">${raviEsc(g.alt||'—')}</span></div>
     <div class="modal-row"><span class="k">Purpose</span><span class="v">${raviEsc(g.purpose||'—')}</span></div>
-    <div class="modal-row"><span class="k">KM at Gate</span><span class="v">${raviEsc(g.km||'—')}</span></div>
+    ${(typeof isSAUser==='function' && isSAUser())?'':`<div class="modal-row"><span class="k">KM at Gate</span><span class="v">${raviEsc(g.km||'—')}</span></div>`}
     <div class="modal-row"><span class="k">Guard</span><span class="v">${raviEsc(g.guard||g.empname||'—')}</span></div>
     ${pics?`<div class="hero-photostrip" style="margin-top:8px">${pics}</div>`:'<div class="hint" style="margin-top:6px">No photos on this entry.</div>'}</div>`;
 }
