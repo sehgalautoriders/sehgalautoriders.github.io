@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set14-2026.07.19-a';
+window.HERO_BUILD = 'set15-2026.07.19-a';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1049,11 +1049,11 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
               <div style="display:flex;flex-direction:column;gap:2px">
                 <label style="font-size:11px;color:var(--steel);font-weight:700">Labour discount</label>
-                <input id="es-disc-lab" inputmode="numeric" placeholder="₹" oninput="esUpdateLive()" style="width:100px">
+                <input id="es-disc-lab" inputmode="numeric" placeholder="₹" oninput="esUpdateLiveDebounced()" style="width:100px">
               </div>
               <div style="display:flex;flex-direction:column;gap:2px">
                 <label style="font-size:11px;color:var(--steel);font-weight:700">Parts discount</label>
-                <input id="es-disc-parts" inputmode="numeric" placeholder="₹" oninput="esUpdateLive()" style="width:100px">
+                <input id="es-disc-parts" inputmode="numeric" placeholder="₹" oninput="esUpdateLiveDebounced()" style="width:100px">
               </div>
             </div>
             <input id="es-disc" type="hidden" value="">
@@ -3461,7 +3461,18 @@ document.getElementById('es-type').addEventListener('change',()=>{
 });
 document.getElementById('es-freestage').addEventListener('change',()=>{ esRenderVariable(); esUpdateLive(); });
 document.getElementById('es-model').addEventListener('change', ()=>{ esResetRemoved(); esRebuildLabDropdown(); esUpdateLive(); });
-['es-name','es-mob','es-reg','es-km','es-dos','es-disc'].forEach(id=>document.getElementById(id).addEventListener('input',esUpdateLive));
+/* SPEED FIX (19-Jul): typing was recomputing the WHOLE live estimate on every single
+   keystroke, which froze the input on phones — you could not even see the digit you
+   typed. Now we wait 300ms after the last keystroke and recompute once. Typing feels
+   instant; the running price updates a moment after you stop. Dropdowns, checkboxes and
+   the Generate button still update immediately, because those are single taps, not
+   rapid typing. */
+let __esLiveTimer=null;
+function esUpdateLiveDebounced(){
+  if(__esLiveTimer) clearTimeout(__esLiveTimer);
+  __esLiveTimer=setTimeout(function(){ __esLiveTimer=null; esUpdateLive(); }, 300);
+}
+['es-name','es-mob','es-reg','es-km','es-dos','es-disc'].forEach(id=>document.getElementById(id).addEventListener('input',esUpdateLiveDebounced));
 
 let ES_ADDLAB=[], ES_ADDPART=[];
 function esAddLabourFn(){
