@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set17-2026.07.20-a';
+window.HERO_BUILD = 'set18-2026.07.20-a';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -50,7 +50,15 @@ window.HERO_BUILD = 'set17-2026.07.20-a';
 
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('./sw.js').then(function (reg) {
-      if (reg.waiting && navigator.serviceWorker.controller) showUpdateBar(reg);
+      /* AUTO-APPLY ON OPEN (20-Jul): if a new build was already downloaded in a
+         previous session and is sitting ready, apply it NOW, at app open — a safe
+         moment, with no data entry in progress. This makes every deploy actually
+         reach the phone on the next open, like an app updating itself, without anyone
+         tapping a button. Earlier this waited for a manual "Update" tap, so phones
+         kept running the OLD cached code and new fixes appeared to do nothing.
+         Updates that finish downloading WHILE the app is open still show the bar
+         below, so a gate entry or estimate in progress is never interrupted. */
+      if (reg.waiting && navigator.serviceWorker.controller) { reg.waiting.postMessage('HERO_SKIP_WAITING'); }
       reg.addEventListener('updatefound', function () {
         var nw = reg.installing;
         if (!nw) return;
