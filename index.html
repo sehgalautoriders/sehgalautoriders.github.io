@@ -17,7 +17,8 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set18-2026.07.20-a';
+window.HERO_BUILD = 'set19-2026.07.20-s01';
+window.HERO_FRONTEND_PATCH = 'S01-ESTIMATE-STABILITY-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1030,8 +1031,8 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
             <div class="addbox">
               <div class="addrow"><select id="es-add-lab"></select><button class="plus" onclick="esAddLabourFn()">+</button></div>
               <div class="addrow parts" style="margin-top:8px;flex-wrap:wrap">
-                <select id="es-add-pcat" onchange="esRenderPartSubDropdown()" style="flex:1;min-width:110px">
-                  <option value="">Category…</option>
+                <select id="es-add-pcat" onclick="esEnsurePartsReady()" onfocus="esEnsurePartsReady()" onchange="esRenderPartSubDropdown()" style="flex:1;min-width:110px">
+                  <option value="">Tap to load parts…</option>
                 </select>
                 <select id="es-add-psub" onchange="esRenderPartDropdown()" style="flex:1;min-width:120px">
                   <option value="">Sub-category…</option>
@@ -1446,7 +1447,7 @@ const val=id=>document.getElementById(id).value.trim();
    server caching. Live/time-sensitive data ('today','report_today','estimates_today')
    is never cached. Refresh Master Data button in Master view busts the cache manually. */
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // C2a (17-Jul): 12 hours, was 30 min — masters now live on the phone
-const CACHEABLE_ACTIONS = ['master_list','master_table','app_config'];
+const CACHEABLE_ACTIONS = ['master_list','master_table','app_config','labour_for_model'];
 /* CACHE NAMESPACE (Ravi 15-Jul): the rvp9192-era app and the sehgal app, opened in
    the same browser, were SHARING cache keys — summaries bled across accounts even
    after clearing data on one. Every cached item is now keyed by a hash of the
@@ -1932,7 +1933,7 @@ function goHome(){
   showView('home');
   renderHomeTiles();
   loadHomeStats();
-  prefetchMasterData(); // background warm-up so module taps feel instant
+  scheduleMasterWarmup(); // ordered light warm-up; large labour/parts masters load only when needed
   // SA Dashboard — shown for users without Control Room access (typically Service Advisors)
   // so their daily work (estimates made, holdup vehicles assigned to them) is visible
   const saDash=document.getElementById('sa-dash');
@@ -1970,23 +1971,35 @@ function loadSaDashboard(){
    already in localStorage cache by the time the user opens a module — same idea as
    AppSheet's "sync on start". Errors are silently ignored; modules still fetch live
    on open if a prefetch failed, this is purely a speed optimization. */
+let MASTER_WARMUP_TIMER=null;
+function scheduleMasterWarmup(){
+  if(MASTER_WARMUP_TIMER) clearTimeout(MASTER_WARMUP_TIMER);
+  MASTER_WARMUP_TIMER=setTimeout(function(){ MASTER_WARMUP_TIMER=null; prefetchMasterData(); },1200);
+}
 function prefetchMasterData(){
-  try{
-    jget('master_list', {}, function(){});
-    jget('master_table', {name:'MODEL'}, function(){});
-    jget('master_table', {name:'Location'}, function(){});
-    jget('master_table', {name:'PriceMaster_Labour'}, function(){});
-    jget('master_table', {name:'PreventiveMaintenanceLabour'}, function(){});
-    jget('master_table', {name:'LocalPartsPack'}, function(){});
-    jget('master_table', {name:'PreventiveMaintenanceKits'}, function(){});
-    jget('master_table', {name:'ModelKitParts'}, function(){});
-    jget('master_table', {name:'HoldupReasons'}, function(){});
-    jget('master_table', {name:'EstimatePrices'}, function(res){ try{ heroApplyPriceMaster(res&&res.rows); }catch(e){} }); // editable price master — warm the cache at login so estimates open with live prices
-    jget('master_table', {name:'ModelOilMap'}, function(res){ try{ heroApplyOilMap(res&&res.rows); }catch(e){} }); // per-model oil MRP — warm cache at login
-    jget('app_config', {app:'GateEntry'}, function(){});
-    jget('app_config', {app:'Estimate'}, function(){});
-    loadAppSettings(); // pull the app-wide Gemini key to this device
-  }catch(e){}
+  try{ loadAppSettings(); }catch(e){}
+  const jobs=[
+    ['master_list',{}],
+    ['master_table',{name:'MODEL'}],
+    ['master_table',{name:'Location'}],
+    ['master_table',{name:'EstimatePrices'}],
+    ['master_table',{name:'ModelOilMap'}],
+    ['app_config',{app:'GateEntry'}],
+    ['app_config',{app:'Estimate'}]
+  ];
+  let i=0;
+  function next(){
+    if(i>=jobs.length) return;
+    const j=jobs[i++];
+    jget(j[0],j[1],function(res){
+      try{
+        if(j[0]==='master_table' && j[1].name==='EstimatePrices') heroApplyPriceMaster(res&&res.rows);
+        if(j[0]==='master_table' && j[1].name==='ModelOilMap') heroApplyOilMap(res&&res.rows);
+      }catch(e){}
+      setTimeout(next,120);
+    });
+  }
+  next();
 }
 function isCtlUser(){ return isAdmin() || hasModule('ControlRoom') || hasModule('HoldupMonitor'); }
 function renderHomeTiles(){
@@ -3019,7 +3032,7 @@ function esMdVarItems(){
   VAR.forEach(function(v){
     const m=esFindPriceLabour(v.l);
     if(!m) return;
-    out.push({k:v.k,l:v.l,p:v.p,code:m.code});
+    out.push({k:v.k,l:v.l,p:m.p,code:m.code});
   });
   return out;
 }
@@ -3234,7 +3247,7 @@ function heroApplyPriceMaster(rows){
     if(keyRaw.toUpperCase()==='DEFAULT'){
       HERO_SVC_TYPES.forEach(t=>{
         const f=heroNum(r['Floor '+t.charAt(0).toUpperCase()+t.slice(1)]);
-        if(f&&f>0) FLOOR[t]=f; else if(floorAll&&floorAll>0) FLOOR[t]=floorAll;
+        if(f!==null && f>=0) FLOOR[t]=f; else if(floorAll!==null && floorAll>=0) FLOOR[t]=floorAll;
       });
       applied++; return;
     }
@@ -3250,8 +3263,8 @@ function heroApplyPriceMaster(rows){
     HERO_SVC_TYPES.forEach(t=>{
       const cap=t.charAt(0).toUpperCase()+t.slice(1);
       const f=heroNum(r['Floor '+cap]), iv=heroNum(r['Initial '+cap]);
-      if(f&&f>0) m.floor[t]=f; else if(floorAll&&floorAll>0) m.floor[t]=floorAll;
-      if(iv&&iv>0) m.initial[t]=iv; else if(initAll&&initAll>0) m.initial[t]=initAll;
+      if(f!==null && f>=0) m.floor[t]=f; else if(floorAll!==null && floorAll>=0) m.floor[t]=floorAll;
+      if(iv!==null && iv>=0) m.initial[t]=iv; else if(initAll!==null && initAll>=0) m.initial[t]=initAll;
       if(m.floor[t]==null) m.floor[t]=floorAll||0;      // new-model safety
       if(m.initial[t]==null) m.initial[t]=initAll||m.floor[t]||0;
     });
@@ -3269,7 +3282,7 @@ function heroLoadPriceMaster(){
   }catch(e){}
 }
 function esHasCommercialChange(){
-  return ES_REMOVED.size>0 || Object.keys(ES_PRICE_OVERRIDES||{}).length>0 || ES_ADDLAB.length>0 || ES_ADDPART.length>0 || ES_DEMANDED.length>0;
+  return ES_REMOVED.size>0 || Object.keys(ES_PRICE_OVERRIDES||{}).length>0 || Object.keys(ES_LINE_DISCOUNTS||{}).length>0 || ES_ADDLAB.length>0 || ES_ADDPART.length>0 || ES_DEMANDED.length>0;
 }
 
 function famFor(modelName){ const key=KNOWN_MODELS[String(modelName).toUpperCase()]; return FAM[key] || FAM['B']; }
@@ -3326,43 +3339,60 @@ const SCHED={f4_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:1
 // Labour dropdown is built dynamically in esRebuildLabDropdown() after master data loads
 
 function esBoot(){
-  heroLoadPriceMaster(); // MD_EstimatePrices override — deliberately outside the pending gate: it can never block or break estimate boot
-  heroLoadOilMap();      // MD_ModelOilMap — correct per-model oil MRP (₹373-Harley fix)
-  let pending=8, configRes=null, listRes=null;   // was 9 — the big parts list moved to background load
+  ES_PRICE_LAB=[]; ES_LABOUR_MODEL='';
+  let pending=9, configRes=null, listRes=null;
+  const done=()=>{ if(--pending===0) proceed(); };
   const proceed=()=>{
-    ES_CONFIG = (configRes && configRes.config) || {};
-    ES_FIELDS.forEach(f=>{ if(!ES_CONFIG[f.key] || !ES_CONFIG[f.key].table) ES_CONFIG[f.key]=f.def; });
-    ES_TABLES = (listRes && listRes.tables) || [];
-    esRebuildLabDropdown(); // build dropdown from master data (or fallback)
-    esRebuildDemandedDropdown(); // demanded-repairs dropdown from MD_PartLabourMap
+    ES_CONFIG=(configRes&&configRes.config)||{};
+    ES_FIELDS.forEach(f=>{ if(!ES_CONFIG[f.key]||!ES_CONFIG[f.key].table) ES_CONFIG[f.key]=f.def; });
+    ES_TABLES=(listRes&&listRes.tables)||[];
+    esRebuildLabDropdown();
+    esRebuildDemandedDropdown();
     esCheckAndLoad();
   };
-  jget('app_config', {app:ES_APP}, function(res){ configRes=res; if(--pending===0) proceed(); });
-  jget('master_list', {}, function(res2){ listRes=res2; if(--pending===0) proceed(); });
-  jget('master_table', {name:'PriceMaster_Labour'}, function(res){ ES_PRICE_LAB=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  jget('master_table', {name:'PreventiveMaintenanceLabour'}, function(res){ ES_PM_LAB=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  jget('master_table', {name:'LocalPartsPack'}, function(res){ ES_LOCAL_PARTS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  jget('master_table', {name:'PreventiveMaintenanceKits'}, function(res){ ES_PM_KITS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  jget('master_table', {name:'ModelKitParts'}, function(res){ ES_MODEL_KIT_PARTS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  jget('master_table', {name:'PartLabourMap'}, function(res){ ES_PART_LABOUR_MAP=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  /* BIG parts list is now loaded in the BACKGROUND (20-Jul). It is by far the heaviest
-     table (~16,000 rows) and only the manual "Add Part" picker needs it — a normal
-     service builds its parts automatically from the small kit tables above. So the
-     estimate FORM now appears as soon as the 8 small tables are ready, instead of
-     waiting for this one to arrive and be indexed. The parts picker fills a moment later. */
-  esLoadModelPartBackground();
+  jget('app_config',{app:ES_APP},function(res){ configRes=res; done(); });
+  jget('master_list',{},function(res){ listRes=res; done(); });
+  jget('master_table',{name:'PreventiveMaintenanceLabour'},function(res){ ES_PM_LAB=(res&&res.rows)||[]; done(); });
+  jget('master_table',{name:'LocalPartsPack'},function(res){ ES_LOCAL_PARTS=(res&&res.rows)||[]; done(); });
+  jget('master_table',{name:'PreventiveMaintenanceKits'},function(res){ ES_PM_KITS=(res&&res.rows)||[]; done(); });
+  jget('master_table',{name:'ModelKitParts'},function(res){ ES_MODEL_KIT_PARTS=(res&&res.rows)||[]; done(); });
+  jget('master_table',{name:'PartLabourMap'},function(res){ ES_PART_LABOUR_MAP=(res&&res.rows)||[]; done(); });
+  jget('master_table',{name:'EstimatePrices'},function(res){ try{ heroApplyPriceMaster(res&&res.rows); }catch(e){} done(); });
+  jget('master_table',{name:'ModelOilMap'},function(res){ try{ heroApplyOilMap(res&&res.rows); }catch(e){} done(); });
 }
-let ES_PARTS_READY=false;
-function esLoadModelPartBackground(){
-  jget('master_table', {name:'ModelPart'}, function(res){
-    ES_MODEL_PART=(res&&res.rows)||[];
-    try{ esBuildPartIndex(); }catch(e){}
-    ES_PARTS_READY=true;
-    // now that the list is ready, fill the parts category dropdown (safe if the form
-    // isn't open — the function checks for the element itself)
-    try{ esRenderPartCategoryDropdown(); }catch(e){}
+let ES_LABOUR_REQ=0, ES_LABOUR_MODEL='';
+function esLoadLabourForSelectedModel(modelName){
+  modelName=String(modelName||'').trim();
+  const req=++ES_LABOUR_REQ;
+  const sel=document.getElementById('es-add-lab');
+  if(!modelName){ ES_PRICE_LAB=[]; ES_LABOUR_MODEL=''; esRebuildLabDropdown(); return; }
+  ES_PRICE_LAB=[]; ES_LABOUR_MODEL='';
+  if(sel) sel.innerHTML='<option value="">Loading mapped labour for this model…</option>';
+  jget('labour_for_model',{model:modelName},function(res){
+    if(req!==ES_LABOUR_REQ || val('es-model')!==modelName) return;
+    ES_PRICE_LAB=(res&&res.rows)||[];
+    ES_LABOUR_MODEL=modelName;
+    esRebuildLabDropdown();
+    esRenderVariable();
   });
 }
+let ES_PARTS_READY=false, ES_PARTS_LOADING=false;
+function esEnsurePartsReady(){
+  if(ES_PARTS_READY){ esRenderPartCategoryDropdown(); return; }
+  if(ES_PARTS_LOADING) return;
+  ES_PARTS_LOADING=true;
+  const sel=document.getElementById('es-add-pcat');
+  if(sel){ sel.disabled=true; sel.innerHTML='<option value="">Loading parts master…</option>'; }
+  jget('master_table',{name:'ModelPart'},function(res){
+    ES_MODEL_PART=(res&&res.rows)||[];
+    esBuildPartIndexAsync(function(){
+      ES_PARTS_READY=true; ES_PARTS_LOADING=false;
+      if(sel) sel.disabled=false;
+      esRenderPartCategoryDropdown();
+    });
+  });
+}
+function esLoadModelPartBackground(){ esEnsurePartsReady(); }
 function esCheckAndLoad(){
   ES_MISSING=[]; ES_MODEL_LIST=[];
   const conf = ES_CONFIG['Model'];
@@ -3500,23 +3530,26 @@ function esRenderVariable(){
   esUpdateLive();
 }
 document.getElementById('es-type').addEventListener('change',()=>{
-  document.getElementById('es-freestage-wrap').style.display = val('es-type')==='free'?'block':'none';
-  esRenderVariable(); esUpdateLive();
+  document.getElementById('es-freestage-wrap').style.display=val('es-type')==='free'?'block':'none';
+  esRenderVariable();
 });
-document.getElementById('es-freestage').addEventListener('change',()=>{ esRenderVariable(); esUpdateLive(); });
-document.getElementById('es-model').addEventListener('change', ()=>{ esResetRemoved(); esRebuildLabDropdown(); esUpdateLive(); });
-/* SPEED FIX (19-Jul): typing was recomputing the WHOLE live estimate on every single
-   keystroke, which froze the input on phones — you could not even see the digit you
-   typed. Now we wait 300ms after the last keystroke and recompute once. Typing feels
-   instant; the running price updates a moment after you stop. Dropdowns, checkboxes and
-   the Generate button still update immediately, because those are single taps, not
-   rapid typing. */
+document.getElementById('es-freestage').addEventListener('change',()=>{ esRenderVariable(); });
+document.getElementById('es-model').addEventListener('change',()=>{
+  esResetRemoved();
+  esLoadLabourForSelectedModel(val('es-model'));
+  esUpdateLive();
+});
 let __esLiveTimer=null;
 function esUpdateLiveDebounced(){
   if(__esLiveTimer) clearTimeout(__esLiveTimer);
-  __esLiveTimer=setTimeout(function(){ __esLiveTimer=null; esUpdateLive(); }, 300);
+  __esLiveTimer=setTimeout(function(){ __esLiveTimer=null; esUpdateLive(); },350);
 }
-['es-name','es-mob','es-reg','es-km','es-dos','es-disc'].forEach(id=>document.getElementById(id).addEventListener('input',esUpdateLiveDebounced));
+['es-name','es-mob','es-reg','es-km','es-dos'].forEach(function(id){
+  const el=document.getElementById(id); if(el) el.addEventListener('change',esUpdateLive);
+});
+['es-disc','es-disc-lab','es-disc-parts'].forEach(function(id){
+  const el=document.getElementById(id); if(el) el.addEventListener('input',esUpdateLiveDebounced);
+});
 
 let ES_ADDLAB=[], ES_ADDPART=[];
 function esAddLabourFn(){
@@ -3592,6 +3625,33 @@ function esBuildPartIndex(){
   });
   ES_PART_INDEX={cats:cats, all:all};
 }
+function esBuildPartIndexAsync(done){
+  const rows=ES_MODEL_PART||[], cats={}, all=[];
+  let i=0;
+  function chunk(){
+    const end=Math.min(i+350,rows.length);
+    for(;i<end;i++){
+      const r=rows[i];
+      const pn=esPU(r,['Part No','Part Number']);
+      const desc=esPU(r,['Description','Part Description']);
+      if(!pn&&!desc) continue;
+      const cat=esPU(r,['Category'])||'Other';
+      const sub=esPU(r,['Sub Category','SubCategory'])||'General';
+      const mrp=esPUnum(esPU(r,['MRP']));
+      const rate=esPUnum(esPU(r,['Rate PreGST','Rate Pre GST']));
+      const models=esPU(r,['Models Used On']).toUpperCase();
+      const price=mrp>0?mrp:(rate>0?rate:0);
+      const item={pn:pn,l:desc||pn,price:price,cat:cat,sub:sub,models:models};
+      if(!cats[cat]) cats[cat]={};
+      if(!cats[cat][sub]) cats[cat][sub]=[];
+      cats[cat][sub].push(item); all.push(item);
+    }
+    if(i<rows.length){ setTimeout(chunk,0); return; }
+    ES_PART_INDEX={cats:cats,all:all};
+    if(done) done();
+  }
+  chunk();
+}
 
 function esCurrentModelUP(){
   var el=document.getElementById('es-model');
@@ -3599,10 +3659,10 @@ function esCurrentModelUP(){
 }
 function esPartMatchesModel(item){
   if(ES_PART_SHOWALL) return true;
-  if(!item.models) return true;           // untagged part — always reachable
-  var m=esCurrentModelUP();
+  if(!item.models) return true;
+  const m=heroOilKey(esCurrentModelUP());
   if(!m) return true;
-  return item.models.indexOf(m) > -1;
+  return String(item.models).split('|').some(function(x){ return heroOilKey(x)===m; });
 }
 
 function esRenderPartCategoryDropdown(){
@@ -3682,7 +3742,7 @@ function esAddPartFn(){
       if(!ES_ADDLAB.some(x=>x.l.toLowerCase()===lb.l.toLowerCase())){ ES_ADDLAB.push({l:lb.l,p:lb.p,code:lb.code,cc:lb.cc,_fromPart:row.l}); added.push(lb.l+' ('+inr(lb.p)+')'); }
     });
     const msg=document.getElementById('es-msg');
-    if(msg && added.length){ msg.style.color='var(--ok)'; msg.textContent='🔗 Linked labour added: '+added.join(', ')+' — remove below if not needed.'; setTimeout(()=>{ if(msg.textContent.indexOf('Linked labour')>-1) msg.textContent=''; },7000); }
+    if(msg && added.length){ msg.style.color='var(--ok)'; msg.textContent='🔗 Linked labour added: '+added.join(', ')+'. It will be removed automatically if the part is removed.'; setTimeout(()=>{ if(msg.textContent.indexOf('Linked labour')>-1) msg.textContent=''; },7000); }
   }
   document.getElementById('es-add-pcat').value='';
   var _sub=document.getElementById('es-add-psub'); if(_sub) _sub.innerHTML='<option value="">Sub-category…</option>';
@@ -3734,7 +3794,6 @@ function esBuild(fam, dec, km, modelName){
   const oil=()=>{
     const mo=heroOilForModel(modelName);
     if(mo){ const vol=mo.vol?(' · '+mo.vol+' ml'):''; L.oil.push({l:'Engine Oil'+vol+(mo.part?' ('+mo.part+')':''),p:mo.mrp}); }
-    else L.oil.push({...OIL[fam.oil]});
   };
   const checkedVar=()=>esMdVarItems().filter(function(v){ const el=document.getElementById('esvc-'+v.k); return el&&el.checked; });
   const checkedWearTear=()=>WEARTEAR.filter(function(v){ const el=document.getElementById('eswt-'+v.k); return el&&el.checked; });
@@ -3754,13 +3813,7 @@ function esBuild(fam, dec, km, modelName){
     const bucket=esServiceBucket(dec);
     const kitParts=esMdKitParts(modelName,bucket);
     if(kitParts.length){
-      // Real, exact kit found — use it as-is. Do NOT also stack the old km-based random
-      // parts on top of this; that combination was what caused ₹6000+ paid services.
       kitParts.forEach(k=>{ if(!seen[k.l.toLowerCase()]){ seen[k.l.toLowerCase()]=true; L.parts.push(k); } });
-    } else {
-      // No exact kit for this model/bucket yet — fall back to the old km-based estimate
-      // so the estimate still has reasonable parts, rather than showing nothing.
-      partsForKm(km).forEach(p=>{ if(!seen[p.l.toLowerCase()]){ seen[p.l.toLowerCase()]=true; L.parts.push(p); } });
     }
   };
   // Small consumable bundle from local parts master (nut/bolt/O-ring etc) — always added
@@ -3815,24 +3868,50 @@ let ES_REMOVED=new Set(); // labels of PM/kit items the SA has explicitly remove
    label, applied AFTER esBuild — so the floor minimums still apply on the edited total,
    and a New Estimate always starts clean at master prices. */
 let ES_PRICE_OVERRIDES={};
+let ES_LINE_DISCOUNTS={}; // key = section|label
 let ES_UNDO_STACK=[]; // one-step-back snapshots for the estimate builder (Ctrl+Z for SAs)
 function esEditPrice(label){
   if(ES.locked) return;
-  // find current price for the prompt default
   const c=esComputeCurrent(); if(!c) return;
   const all=[...c.items.oil,...c.items.parts,...c.items.labour];
   const it=all.find(x=>x.l===label); if(!it) return;
   if(it.free){ alert('This line is free of charge for this service type — amount cannot be edited.'); return; }
-  const v=prompt('Enter the correct amount (₹) for:\n'+label, it.p);
+  const v=prompt('Enter the correct amount (₹) for:\n'+label,it.baseP!==undefined?it.baseP:it.p);
   if(v===null) return;
   const n=Number(String(v).replace(/[₹,\s]/g,''));
   if(isNaN(n)||n<0){ alert('Enter a valid amount.'); return; }
   ES_PRICE_OVERRIDES[label]=Math.round(n);
   esUpdateLive();
 }
+function esDiscountLine(label,kind){
+  if(ES.locked) return;
+  const c=esComputeCurrent(); if(!c) return;
+  const arr=(kind&&c.items[kind])||[...c.items.oil,...c.items.parts,...c.items.labour];
+  const it=arr.find(x=>x.l===label); if(!it||it.free) return;
+  const key=(kind||'line')+'|'+label;
+  const old=ES_LINE_DISCOUNTS[key];
+  const def=old?(old.mode==='pct'?old.value+'%':old.value):'';
+  const v=prompt('Line discount for:\n'+label+'\n\nType 5% or an amount such as 50. Leave blank to remove.',def);
+  if(v===null) return;
+  const raw=String(v).trim();
+  if(!raw||raw==='0'||raw==='0%'){ delete ES_LINE_DISCOUNTS[key]; esUpdateLive(); return; }
+  const pct=raw.endsWith('%');
+  const n=Number(raw.replace(/[%₹,\s]/g,''));
+  if(isNaN(n)||n<0){ alert('Enter a valid discount.'); return; }
+  ES_LINE_DISCOUNTS[key]={mode:pct?'pct':'amt',value:n};
+  esUpdateLive();
+}
 function esApplyPriceOverrides(L){
   ['oil','parts','labour'].forEach(k=>{
-    L[k].forEach(it=>{ if(!it.free && ES_PRICE_OVERRIDES[it.l]!==undefined) it.p=ES_PRICE_OVERRIDES[it.l]; });
+    L[k].forEach(it=>{
+      if(!it.free && ES_PRICE_OVERRIDES[it.l]!==undefined) it.p=ES_PRICE_OVERRIDES[it.l];
+      it.baseP=+it.p||0;
+      const d=ES_LINE_DISCOUNTS[k+'|'+it.l];
+      let off=0;
+      if(!it.free&&d) off=d.mode==='pct'?(it.baseP*d.value/100):d.value;
+      it.lineDiscount=Math.max(0,Math.min(it.baseP,Math.round(off)));
+      it.netP=Math.max(0,it.baseP-it.lineDiscount);
+    });
   });
   return L;
 }
@@ -3904,20 +3983,34 @@ function esAnnotateDmsCodes(L, dec, freeStage, modelName){
   return L;
 }
 function esRemoveItem(label){
-  // Snapshot for one-step undo (Ctrl+Z style) — SAs on slow phones often tap ✕
-  // instead of ✎; this lets them restore the last removed line without redoing the
-  // whole estimate. Per project note "Reset button addition while making estimate".
-  ES_UNDO_STACK.push({removed:new Set(ES_REMOVED), overrides:{...ES_PRICE_OVERRIDES}, label:label});
+  const c=esComputeCurrent();
+  const linked=c&&c.items.labour.find(x=>x.l===label&&x._fromPart);
+  if(linked){ alert('This labour is linked to a selected part. Remove the part to remove its labour.'); return; }
+  ES_UNDO_STACK.push({removed:new Set(ES_REMOVED),overrides:{...ES_PRICE_OVERRIDES},lineDiscounts:JSON.parse(JSON.stringify(ES_LINE_DISCOUNTS||{})),label:label});
   if(ES_UNDO_STACK.length>10) ES_UNDO_STACK.shift();
   ES_REMOVED.add(label);
+  // Removing a manually selected part must also remove only the labour that this part
+  // introduced, unless another still-visible part needs the same labour.
+  const removedPart=c&&c.items.parts.find(x=>x.l===label);
+  if(removedPart){
+    const stillNeeded=new Set();
+    c.items.parts.filter(x=>x.l!==label&&!ES_REMOVED.has(x.l)).forEach(function(p){
+      const map=esFindLinkedLabours(p.l);
+      if(map) map.labours.forEach(lb=>stillNeeded.add(String(lb.l||'').toLowerCase()));
+    });
+    ES_ADDLAB.forEach(function(lb){
+      if(lb._fromPart && String(lb._fromPart).toLowerCase()===String(label).toLowerCase() && !stillNeeded.has(String(lb.l||'').toLowerCase())) ES_REMOVED.add(lb.l);
+    });
+  }
   esUpdateLive();
   esRenderUndoBtn();
 }
 function esUndoLast(){
-  if(!ES_UNDO_STACK.length){ return; }
+  if(!ES_UNDO_STACK.length) return;
   const snap=ES_UNDO_STACK.pop();
   ES_REMOVED=new Set(snap.removed);
   ES_PRICE_OVERRIDES=snap.overrides||{};
+  ES_LINE_DISCOUNTS=snap.lineDiscounts||{};
   esUpdateLive();
   esRenderUndoBtn();
   const msg=document.getElementById('es-msg');
@@ -3936,43 +4029,39 @@ function esComputeCurrent(){
   const ftype=val('es-type'); if(!ftype) return null;
   const km=+val('es-km')||0, dos=val('es-dos'), freeStage=val('es-freestage');
   const dec=esDecide(fam,ftype,freeStage); if(!dec) return null;
-  const items=esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)), dec, freeStage, modelName);
+  const items=esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName);
   if(!items.protection) items.protection=[];
-  const sum=a=>a.reduce((x,y)=>x+(+y.p||0),0);
-  let parts=sum(items.parts), oil=sum(items.oil), labour=sum(items.labour);
+  const sumGross=a=>a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0);
+  const sumNet=a=>a.reduce((x,y)=>x+(y.netP!==undefined?+y.netP:(+y.p||0)),0);
+  const sumLine=a=>a.reduce((x,y)=>x+(+y.lineDiscount||0),0);
+  let parts=sumGross(items.parts), oil=sumGross(items.oil), labour=sumGross(items.labour);
+  const netService=sumNet(items.parts)+sumNet(items.oil)+sumNet(items.labour);
+  const lineDisc=sumLine(items.parts)+sumLine(items.oil)+sumLine(items.labour);
   const express=document.getElementById('es-express')&&document.getElementById('es-express').checked;
   const expressFee=express?80:0;
-
-  const inc=(dec.type==='paid')?heroIncrementalPrice(modelName, dec.type):null; // FIX: Ravi's incremental initial/floor is a PAID-service table; applying it to free/joyride/general inflated those estimates and made deletions look 'stuck' (protection refilled every removed line)
+  const inc=(dec.type==='paid')?heroIncrementalPrice(modelName,dec.type):null;
   const oldFloor=(dec.type==='paid')?esPaidFloor(modelName,fam):(FLOOR[dec.type]||0);
-  const floor=inc&&inc.floor?inc.floor:oldFloor;
-  const initial=inc&&inc.initial?inc.initial:Math.max(oldFloor, parts+oil+labour);
+  const floor=(inc&&inc.floor!==undefined&&inc.floor!==null)?inc.floor:oldFloor;
+  const initial=(inc&&inc.initial!==undefined&&inc.initial!==null)?inc.initial:Math.max(oldFloor,parts+oil+labour);
   const changed=esHasCommercialChange();
-  // NO synthetic lines (Ravi 15-Jul): "Minimum floor protection" / "initial estimate
-  // adjustment" looked like overcharging on a customer's screenshot. Everything on the
-  // estimate now comes from Parts, Labour and Oil only. The floor is enforced by
-  // FADING the Generate button instead (belowFloor flag) — SA may delete anything,
-  // but cannot generate an estimate whose service subtotal is under the model floor.
   items.protection=[];
   const rawPre=parts+oil+labour;
-  const belowFloor = rawPre>0 ? (rawPre<floor) : true; // empty estimate is also below floor
-  const protectionTotal=0, protection=0, protectionLabel='';
-  items.express = expressFee>0 ? [{l:'Express Delivery (priority same-day)',p:expressFee,locked:true}] : []; // FIX: express fee now shows as a line so items always add up to the sub-total
-  let pre=rawPre+protectionTotal+expressFee;
-
-  // Separate labour & parts discounts. Discount is clipped so the SERVICE subtotal
-  // cannot go below the model floor from Ravi's incremental table. Express remains extra.
+  const belowFloor=netService>0?(netService<floor):true;
+  const protectionTotal=0, protectionLabel='';
+  items.express=expressFee>0?[{l:'Express Delivery (priority same-day)',p:expressFee,baseP:expressFee,netP:expressFee,lineDiscount:0,locked:true}]:[];
+  const pre=rawPre+expressFee;
   let discLab=+val('es-disc-lab')||0, discParts=+val('es-disc-parts')||0;
   let requestedDisc=discLab+discParts; if(!requestedDisc) requestedDisc=+val('es-disc')||0;
-  const maxDisc=Math.max(0,(pre-expressFee)-floor);
-  let disc=Math.min(requestedDisc,maxDisc);
-  if(disc < requestedDisc && requestedDisc>0){
-    const ratio=requestedDisc?disc/requestedDisc:1;
-    discLab=Math.round(discLab*ratio); discParts=Math.max(0,disc-discLab);
+  const maxOtherDisc=Math.max(0,netService-floor);
+  let otherDisc=Math.min(requestedDisc,maxOtherDisc);
+  if(otherDisc<requestedDisc&&requestedDisc>0){
+    const ratio=requestedDisc?otherDisc/requestedDisc:1;
+    discLab=Math.round(discLab*ratio); discParts=Math.max(0,otherDisc-discLab);
   }
-  const afterDisc=pre-disc, tax=afterDisc*GST, total=afterDisc+tax;
-  const count=items.oil.length+items.parts.length+items.labour.length+items.protection.length+(expressFee>0?1:0);
-  return {modelName,fam,km,dos,dec,items,parts,oil,labour,pre,rawPre,protection:protectionTotal,protectionLabel,floor,initial,inc,disc,requestedDisc,discLab,discParts,expressFee,tax,total,count,type:dec.type,changed,belowFloor};
+  const disc=lineDisc+otherDisc;
+  const afterDisc=Math.max(0,pre-disc), tax=afterDisc*GST, total=afterDisc+tax;
+  const count=items.oil.length+items.parts.length+items.labour.length+(expressFee>0?1:0);
+  return {modelName,fam,km,dos,dec,items,parts,oil,labour,pre,rawPre,protection:protectionTotal,protectionLabel,floor,initial,inc,disc,lineDisc,otherDisc,requestedDisc,discLab,discParts,expressFee,tax,total,count,type:dec.type,changed,belowFloor};
 }
 function esUpdateLive(){
   try{
@@ -3993,12 +4082,11 @@ function esUpdateLive(){
     const gbtn=document.getElementById('es-genbtn');
     if(gbtn && !ES.locked){
       gbtn.disabled=!!c.belowFloor||!ONLINE;
-      gbtn.style.opacity=c.belowFloor?0.4:'';
-      gbtn.title=c.belowFloor?('Below minimum for this model ('+inr(c.floor)+') — add parts/labour/oil'):'';
+      gbtn.style.opacity='';
+      gbtn.removeAttribute('title');
     }
     const fmsg=document.getElementById('es-msg');
-    if(fmsg && c.belowFloor){ fmsg.style.color='var(--signal-d)'; fmsg.textContent='Estimate is below the minimum for this model ('+inr(c.floor)+'). Add parts, labour or oil to enable Generate.'; }
-    else if(fmsg && fmsg.textContent.indexOf('below the minimum')>-1){ fmsg.textContent=''; }
+    if(fmsg && /minimum|model floor|below the/i.test(fmsg.textContent||'')) fmsg.textContent='';
     // Live oil / labour / parts / total summary (requested: "only total running value is
     // coming. Can it be divided into oil, labour, parts summary and then total bill")
     const bd=document.getElementById('es-breakdown');
@@ -4009,7 +4097,7 @@ function esUpdateLive(){
         `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>🔧 Labour${c.topup>0?' <span style=\"font-size:10px;color:#b45309\">(incl. service min)</span>':''}</span><b class="mono">${inr(labTotal)}</b></div>`+
         `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>⚙️ Parts</span><b class="mono">${inr(c.parts)}</b></div>`+
         (c.protection>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:#92400e"><span>🛡 ${c.protectionLabel}</span><b class="mono">${inr(c.protection)}</b></div>`:'')+
-        (c.inc?`<div style="font-size:11px;color:var(--steel);padding:4px 0 2px;border-top:1px dashed var(--line);margin-top:3px">Model price logic: <b>${c.inc.key}</b> · Initial ${inr(c.initial)} · Floor ${inr(c.floor)}</div>`:'')+
+        (c.lineDisc>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:#b45309"><span>Line discounts</span><b class="mono">−${inr(c.lineDisc)}</b></div>`:'')+
         (c.expressFee>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--signal-d)"><span>⚡ Express delivery</span><b class="mono">${inr(c.expressFee)}</b></div>`:'')+
         (c.disc>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--signal-d)"><span>− Discount${c.discLab&&c.discParts?' (L '+inr(c.discLab)+' + P '+inr(c.discParts)+')':''}</span><b class="mono">−${inr(c.disc)}</b></div>`:'')+
         `<div style="display:flex;justify-content:space-between;padding:4px 0 2px;border-top:1px dashed var(--line);margin-top:3px"><span>Sub-total</span><b class="mono">${inr(c.pre-c.disc)}</b></div>`+
@@ -4018,7 +4106,7 @@ function esUpdateLive(){
     }
     const typedDisc = (+val('es-disc')||0)+(+val('es-disc-lab')||0)+(+val('es-disc-parts')||0);
     if(note){
-      if(typedDisc > c.disc){ note.style.display='block'; note.textContent='Discount reduced to '+inr(c.disc)+' because model floor is '+inr(c.floor)+' before GST.'; }
+      if(typedDisc > c.otherDisc){ note.style.display='block'; note.textContent='Discount adjusted to the permitted amount.'; }
       else note.style.display='none';
     }
     esRenderDraft(c);
@@ -4043,12 +4131,12 @@ function esRenderDraft(c){
         <div><div class="k">Advisor</div><div class="v">${USER.personName}</div></div>
       </div>
     </div>
-    <div class="e-body">${ES_DEMANDED.length?`<div style="font-size:12px;font-weight:700;color:#1e40af;background:#eff6ff;border-radius:6px;padding:6px 10px;margin-bottom:8px">🗣 Demanded repairs: ${ES_DEMANDED.map(x=>`${x.name} <span class=\"mono\" style=\"font-size:10.5px\">[${x.cc||'—'}]</span>`).join(' · ')}</div>`:''}${esGrpEditable('Engine Oil',c.items.oil)}${esGrpEditable('Parts',c.items.parts)}${esGrpEditable('Labour',c.items.labour)}${esGrp('Estimate Protection',c.items.protection||[])}${esGrp('Express Delivery',c.items.express||[])}</div>
+    <div class="e-body">${ES_DEMANDED.length?`<div style="font-size:12px;font-weight:700;color:#1e40af;background:#eff6ff;border-radius:6px;padding:6px 10px;margin-bottom:8px">🗣 Demanded repairs: ${ES_DEMANDED.map(x=>`${x.name} <span class=\"mono\" style=\"font-size:10.5px\">[${x.cc||'—'}]</span>`).join(' · ')}</div>`:''}${esGrpEditable('Engine Oil',c.items.oil,'oil')}${esGrpEditable('Parts',c.items.parts,'parts')}${esGrpEditable('Labour',c.items.labour,'labour')}${esGrp('Estimate Protection',c.items.protection||[])}${esGrp('Express Delivery',c.items.express||[])}</div>
     <div class="totals"><div class="trow"><span>Sub-total</span><span class="mono">${inr(c.pre)}</span></div>
       ${c.disc>0?`<div class="trow disc"><span>Discount</span><span class="mono">−${inr(c.disc)}</span></div>`:''}
       <div class="trow"><span>GST @ 18%</span><span class="mono">${inr(c.tax)}</span></div></div>
     <div class="grand"><div class="lab">Running Total (draft)</div><div class="val"><small>₹</small>${Math.round(c.total).toLocaleString('en-IN')}</div></div>
-    <div class="e-note">Tap ✕ next to any item to remove it. Model initial estimate is protected until editing/deletion starts; after that, subtotal cannot go below the model floor.</div>
+    <div class="e-note">Use Discount, Edit or ✕ against an individual line before generating. Labour linked to a selected part is removed only when that part is removed.</div>
   </div>`;
 }
 
@@ -4077,7 +4165,7 @@ function esGenerate(){
   if(!ONLINE){ document.getElementById('es-msg').style.color='var(--signal-d)'; document.getElementById('es-msg').textContent='No internet connection — cannot generate.'; return; }
   // Floor gate — even if the button state was bypassed somehow, generation refuses.
   const cchk=esComputeCurrent();
-  if(cchk && cchk.belowFloor){ const m0=document.getElementById('es-msg'); m0.style.color='var(--signal-d)'; m0.textContent='Below the minimum for this model ('+inr(cchk.floor)+'). Add parts, labour or oil.'; return; }
+  if(cchk && cchk.belowFloor) return;
   const msg=document.getElementById('es-msg'); msg.style.color='var(--steel)'; msg.textContent='';
   // v11.4 compulsory fields — block + popup listing only what's missing
   const missing=reqCheck([
@@ -4093,15 +4181,29 @@ function esGenerate(){
   if(!c){ msg.textContent='Select a model and a service type.'; return; }
   ES.current={id:'EST'+Date.now().toString().slice(-7),ts:Date.now(),name:val('es-name'),mob:val('es-mob'),reg:val('es-reg').toUpperCase(),
     model:c.modelName,fam:c.fam.name,km:c.km,mo:esMonthsSince(c.dos),service:c.dec.label,type:c.type,items:{...c.items,demanded:ES_DEMANDED.slice()},demanded:ES_DEMANDED.slice(),
-    parts:c.parts,oil:c.oil,labour:c.labour,protection:c.protection,initial:c.initial,pre:c.pre,disc:c.disc,tax:c.tax,total:c.total,floor:c.floor};
+    parts:c.parts,oil:c.oil,labour:c.labour,protection:c.protection,initial:c.initial,pre:c.pre,disc:c.disc,lineDiscount:c.lineDisc||0,tax:c.tax,total:c.total,floor:c.floor};
   esRender(ES.current); esLockForm(true); esPushSheet(ES.current);
 }
-function esRows(a){ return a.map(x=>`<tr><td>${x.l}${x.pn?` <span style="font-size:10px;color:var(--steel);font-family:'Roboto Mono'">PN ${x.pn}</span>`:''}${x.code?` <span style="font-size:10px;color:var(--steel);font-family:'Roboto Mono'">[${x.code}]</span>`:''}</td><td class="amt">${x.free?'No charge':inr(x.p)}</td></tr>`).join(''); }
-function esGrp(t,a){ if(!a.length) return ''; const s=a.reduce((x,y)=>x+y.p,0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(s)}</span></div><table class="li">${esRows(a)}</table></div>`; }
-/* Editable version used only in the live (pre-generation) draft — lets SA remove a
-   PM/kit-added line item the customer doesn't need (fixes #4) */
-function esRowsEditable(a){ return a.map(x=>`<tr><td>${x.l}${x.pn?` <span style="font-size:10px;color:var(--steel);font-family:'Roboto Mono'">PN ${x.pn}</span> <span onclick="pfQuickCheck('${String(x.pn).replace(/'/g,"")}')" title="Check all-India stock for this part" style="cursor:pointer;font-size:11px;color:#0891b2;font-weight:700">🔎 stock</span>`:''}${x.code?` <span style="font-size:10px;color:var(--steel);font-family:'Roboto Mono'">[${x.code}]</span>`:''}${ES_PRICE_OVERRIDES[x.l]!==undefined?' <span title="Amount edited by advisor" style="font-size:10px;color:#b45309">\u270e edited</span>':''}</td><td class="amt">${x.free?'No charge':inr(x.p)}</td><td style="width:118px;white-space:nowrap;text-align:right"><button type="button" onclick="esEditPrice('${x.l.replace(/'/g,"\\'")}')" title="Edit this amount" style="min-width:48px;padding:5px 8px;margin-right:8px;border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">\u270f Edit</button><button type="button" onclick="esRemoveItem('${x.l.replace(/'/g,"\\'")}')" title="Remove this item" style="min-width:36px;padding:5px 8px;border:1.5px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">\u2715</button></td></tr>`).join(''); }
-function esGrpEditable(t,a){ if(!a.length) return ''; const s=a.reduce((x,y)=>x+y.p,0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(s)}</span></div><table class="li">${esRowsEditable(a)}</table></div>`; }
+function esCodeHtml(x){
+  if(x.pn) return `<div style="font-size:11px;color:#0f766e;font-family:'Roboto Mono';font-weight:800;margin-top:2px">PART NO: ${x.pn}</div>`;
+  if(x.code) return `<div style="font-size:11px;color:#1d4ed8;font-family:'Roboto Mono';font-weight:800;margin-top:2px">LABOUR CODE: ${x.code}</div>`;
+  return '';
+}
+function esAmountHtml(x){
+  if(x.free) return 'No charge';
+  if(x.lineDiscount>0) return `<div>${inr(x.baseP)}</div><div style="font-size:10px;color:#b45309">−${inr(x.lineDiscount)} · Net ${inr(x.netP)}</div>`;
+  return inr(x.baseP!==undefined?x.baseP:x.p);
+}
+function esRows(a){ return a.map(x=>`<tr><td>${x.l}${esCodeHtml(x)}</td><td class="amt">${esAmountHtml(x)}</td></tr>`).join(''); }
+function esGrp(t,a){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li">${esRows(a)}</table></div>`; }
+function esRowsEditable(a,kind){ return a.map(x=>{
+  const safe=x.l.replace(/'/g,"\\'");
+  const stock=x.pn?` <span onclick="pfQuickCheck('${String(x.pn).replace(/'/g,'')}')" title="Check all-India stock" style="cursor:pointer;font-size:11px;color:#0891b2;font-weight:700">🔎 stock</span>`:'';
+  const marks=(ES_PRICE_OVERRIDES[x.l]!==undefined?' <span style="font-size:10px;color:#b45309">✎ edited</span>':'')+(x.lineDiscount>0?' <span style="font-size:10px;color:#b45309">discounted</span>':'');
+  const del=x._fromPart?'<span title="Remove the part to remove this labour" style="display:inline-flex;padding:5px 7px;border:1px solid #cbd5e1;border-radius:7px;font-size:11px;font-weight:800;color:#64748b">🔒</span>':`<button type="button" onclick="esRemoveItem('${safe}')" title="Remove this item" style="padding:5px 8px;border:1.5px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">✕</button>`;
+  return `<tr><td>${x.l}${stock}${marks}${esCodeHtml(x)}</td><td class="amt">${esAmountHtml(x)}</td><td style="min-width:170px;white-space:nowrap;text-align:right"><button type="button" onclick="esDiscountLine('${safe}','${kind||''}')" title="Discount this line" style="padding:5px 7px;margin-right:5px;border:1.5px solid #fed7aa;background:#fff7ed;color:#b45309;border-radius:7px;font-size:11px;font-weight:800;cursor:pointer">Disc</button><button type="button" onclick="esEditPrice('${safe}')" title="Correct amount" style="padding:5px 7px;margin-right:5px;border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:7px;font-size:11px;font-weight:800;cursor:pointer">Edit</button>${del}</td></tr>`;
+}).join(''); }
+function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li">${esRowsEditable(a,kind)}</table></div>`; }
 function esRender(d){
   const dt=new Date(d.ts).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('es-out').innerHTML=`
@@ -4141,7 +4243,7 @@ function esNewEstimate(){
   document.getElementById('es-model').value=''; document.getElementById('es-type').value=''; const pcat=document.getElementById('es-add-pcat'); if(pcat) pcat.value='';
   const exch=document.getElementById('es-express'); if(exch) exch.checked=false; // FIX: express fee no longer silently carries into the next estimate
   document.getElementById('es-freestage-wrap').style.display='none';
-  ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; esRenderUndoBtn&&esRenderUndoBtn(); esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
+  ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; esRenderUndoBtn&&esRenderUndoBtn(); esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
   ES_MODEL_CTX={reg:'',gateModel:''}; const emf=document.getElementById('es-model-flag'); if(emf){ emf.style.display='none'; emf.innerHTML=''; } const emm=document.getElementById('es-gate-photos'); if(emm){ emm.style.display='none'; }
   esRenderVariable(); esUpdateLive();
   document.getElementById('es-out').innerHTML='<div class="empty"><div class="cond">No estimate yet</div><p style="margin-top:8px">Enter the vehicle details and press <b>Generate estimate</b>.</p></div>';
@@ -4270,7 +4372,7 @@ function esOnGatePick(g){
     // Different vehicle chosen mid-way: old parts/labour must not carry over.
     // Clear item state directly (not via esNewEstimate — that reloads the list
     // and would wipe this very selection).
-    ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[];
+    ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[];
     if(typeof esRenderUndoBtn==='function') esRenderUndoBtn();
     esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
     ['es-disc','es-disc-lab','es-disc-parts','es-add-pname','es-add-pamt'].forEach(i=>{const el=document.getElementById(i); if(el) el.value='';});
@@ -4378,6 +4480,7 @@ function esModelConfirm(){
   const chosen=document.getElementById('es-model-modal-select').value;
   if(!chosen){ document.getElementById('es-model-modal-hint').textContent='Please pick a model first.'; return; }
   document.getElementById('es-model').value=chosen;
+  document.getElementById('es-model').dispatchEvent(new Event('change'));
   const reg=document.getElementById('es-model-modal-reg').value;
   // Teach at SA authority
   try{ jpost({type:'learn_vehicle', reg:(reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''), model:chosen, stage:'SA', by:(USER&&USER.personName)||''}); }catch(e){}
