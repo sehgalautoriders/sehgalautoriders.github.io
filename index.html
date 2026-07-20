@@ -17,8 +17,8 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set19-2026.07.20-s01';
-window.HERO_FRONTEND_PATCH = 'S01-ESTIMATE-STABILITY-2026.07.20';
+window.HERO_BUILD = 'set20-2026.07.20-s02';
+window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -722,6 +722,122 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 }
 </style>
 
+
+<style id="s02-estimate-responsive-polish">
+/* S02 — ESTIMATE UI POLISH. Scoped to the Estimate module only.
+   No login, home, role, backend, pricing or save logic is changed. */
+#view-estimate .card,
+#view-estimate .estimate{box-shadow:0 8px 24px rgba(15,23,42,.055)}
+#view-estimate .card{border-color:#e5e1d9}
+#view-estimate .card-h{min-width:0;gap:10px}
+#view-estimate .card-h>*{min-width:0}
+#view-estimate input,
+#view-estimate select{min-width:0}
+#view-estimate select{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+#view-estimate .hint{line-height:1.45}
+#view-estimate .addbox{overflow:hidden}
+#view-estimate .addrow{min-width:0}
+#view-estimate .addrow>select{min-width:0}
+#view-estimate .es-showall-label{
+  flex:1 1 100%;display:flex;align-items:center;gap:9px;margin:5px 0 0;
+  padding:8px 9px;border-radius:8px;background:#f8fafc;color:#334155;
+  font-size:12px;font-weight:700;text-transform:none;letter-spacing:0;line-height:1.25;cursor:pointer
+}
+#view-estimate .es-showall-label input{width:17px;height:17px;flex:0 0 17px;margin:0}
+#view-estimate .es-showall-label span{min-width:0}
+#view-estimate .es-showall-label small{display:block;color:#64748b;font-size:10.5px;font-weight:600;margin-top:1px}
+
+/* Professional line-item toolbar — replaces the rigid 170px inline action column. */
+#view-estimate table.es-edit-table{table-layout:auto}
+#view-estimate .es-edit-row td{overflow-wrap:normal;word-break:normal}
+#view-estimate .es-item-cell{min-width:0;padding-right:12px}
+#view-estimate .es-item-name{font-weight:650;line-height:1.42;overflow-wrap:break-word;word-break:normal}
+#view-estimate .es-item-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px}
+#view-estimate .es-item-amt{width:112px;min-width:96px}
+#view-estimate .es-item-actions{width:188px;min-width:188px;white-space:nowrap;text-align:right}
+#view-estimate .es-stock-link{
+  appearance:none;border:0;background:transparent;color:#087f8c;padding:0;
+  font:800 10.5px Inter,sans-serif;cursor:pointer
+}
+#view-estimate .es-line-state{
+  display:inline-flex;align-items:center;border-radius:999px;padding:2px 7px;
+  background:#fff7ed;color:#b45309;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.035em
+}
+#view-estimate .es-line-act{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;height:30px;
+  border-radius:7px;padding:0 8px;margin-left:4px;font:800 10.5px Inter,sans-serif;
+  white-space:nowrap;cursor:pointer;vertical-align:middle;box-sizing:border-box
+}
+#view-estimate .es-line-disc{border:1px solid #fed7aa;background:#fff7ed;color:#a8550b}
+#view-estimate .es-line-edit{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8}
+#view-estimate .es-line-remove{border:1px solid #fecaca;background:#fef2f2;color:#dc2626}
+#view-estimate .es-line-lock{border:1px solid #dbe2ea;background:#f8fafc;color:#64748b;cursor:default}
+#view-estimate .es-line-act:active{transform:translateY(1px)}
+#view-estimate .es-item-cell [style*="PART NO"],
+#view-estimate .es-item-cell [style*="LABOUR CODE"]{overflow-wrap:anywhere}
+
+@media(max-width:640px){
+  #view-estimate .wrap{padding:12px}
+  #view-estimate .grid{gap:12px}
+  #view-estimate .card-b{padding:15px}
+  #view-estimate .row2{grid-template-columns:1fr 1fr;gap:9px}
+  #view-estimate label{letter-spacing:.045em}
+  #view-estimate input,#view-estimate select{font-size:14px;padding:10px}
+  #view-estimate .addbox{padding:10px}
+  #view-estimate .addrow.parts{gap:7px}
+  #view-estimate .addrow.parts select{flex-basis:calc(50% - 4px)}
+  #view-estimate .addrow.parts #es-add-pname{flex:1 1 calc(100% - 126px)}
+  #view-estimate .addrow.parts #es-add-pamt{flex:0 0 70px;width:70px}
+  #view-estimate .addrow.parts .plus{height:42px;padding:0 13px}
+
+  #view-estimate .estimate{border-radius:12px;overflow:hidden}
+  #view-estimate .e-head{padding:17px 16px 13px}
+  #view-estimate .e-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start}
+  #view-estimate .e-dealer{font-size:22px;min-width:0}
+  #view-estimate .e-dealer span{font-size:10px;line-height:1.35;overflow-wrap:break-word}
+  #view-estimate .e-doc{font-size:17px;min-width:72px}
+  #view-estimate .e-doc small{font-size:10.5px;overflow-wrap:anywhere}
+  #view-estimate .e-meta{gap:9px 14px}
+  #view-estimate .e-meta .v{font-size:12.5px;overflow-wrap:break-word}
+  #view-estimate .e-body{padding:6px 16px 0}
+  #view-estimate .totals{padding:13px 16px 4px}
+  #view-estimate .grand{margin:12px 16px 0;padding:14px 15px;gap:10px}
+  #view-estimate .grand .lab{font-size:16px;line-height:1.15}
+  #view-estimate .grand .val{font-size:25px;white-space:nowrap}
+  #view-estimate .sign{padding:22px 16px 14px;gap:20px}
+  #view-estimate .e-note{padding:10px 16px 18px;line-height:1.5}
+  #view-estimate .grp{margin-top:13px}
+  #view-estimate .grp-h{align-items:center;gap:9px;font-size:14px}
+  #view-estimate .grp-h span:first-child{min-width:0;overflow-wrap:break-word}
+  #view-estimate table.es-edit-table,
+  #view-estimate table.es-edit-table tbody{display:block;width:100%}
+  #view-estimate table.es-edit-table tr.es-edit-row{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:"item amount" "actions actions";
+    column-gap:10px;row-gap:8px;padding:10px 0;border-bottom:1px dashed var(--line)
+  }
+  #view-estimate table.es-edit-table tr.es-edit-row:last-child{border-bottom:0}
+  #view-estimate table.es-edit-table td{display:block;border:0;padding:0;width:auto;min-width:0}
+  #view-estimate .es-item-cell{grid-area:item;padding-right:0}
+  #view-estimate .es-item-amt{grid-area:amount;text-align:right;white-space:nowrap;min-width:70px;font-size:12.5px}
+  #view-estimate .es-item-actions{
+    grid-area:actions;display:flex;align-items:center;justify-content:flex-end;
+    gap:6px;width:100%;min-width:0;white-space:normal;text-align:right
+  }
+  #view-estimate .es-line-act{height:32px;margin:0;padding:0 9px;font-size:10.5px}
+  #view-estimate .es-item-name{font-size:13px;line-height:1.38}
+  #view-estimate .es-item-meta{margin-top:5px}
+}
+
+@media(max-width:380px){
+  #view-estimate .row2{grid-template-columns:1fr}
+  #view-estimate .e-meta{grid-template-columns:1fr 1fr}
+  #view-estimate .es-line-act{padding:0 8px}
+  #view-estimate .es-line-act span:last-child{display:none}
+  #view-estimate .es-line-lock span:last-child{display:inline}
+}
+</style>
+
 </head>
 <body>
 <div id="global-progress" style="position:fixed;top:0;left:0;height:3px;width:0%;background:var(--signal);z-index:9999;transition:width .2s ease;display:none"></div>
@@ -1040,9 +1156,9 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
                 <select id="es-add-pname" style="flex:1;min-width:150px"><option value="">Select category first…</option></select>
                 <input id="es-add-pamt" inputmode="numeric" placeholder="₹" style="width:80px">
                 <button class="plus" onclick="esAddPartFn()">+</button>
-                <label style="flex-basis:100%;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:4px">
-                  <input type="checkbox" id="es-add-showall" onchange="esTogglePartShowAll(this)" style="width:auto">
-                  Show all parts (accidental / any model)
+                <label class="es-showall-label">
+                  <input type="checkbox" id="es-add-showall" onchange="esTogglePartShowAll(this)">
+                  <span>Show all parts <small>Accidental / any model</small></span>
                 </label>
               </div>
               <div class="chips" id="es-chips"></div>
@@ -4197,13 +4313,13 @@ function esAmountHtml(x){
 function esRows(a){ return a.map(x=>`<tr><td>${x.l}${esCodeHtml(x)}</td><td class="amt">${esAmountHtml(x)}</td></tr>`).join(''); }
 function esGrp(t,a){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li">${esRows(a)}</table></div>`; }
 function esRowsEditable(a,kind){ return a.map(x=>{
-  const safe=x.l.replace(/'/g,"\\'");
-  const stock=x.pn?` <span onclick="pfQuickCheck('${String(x.pn).replace(/'/g,'')}')" title="Check all-India stock" style="cursor:pointer;font-size:11px;color:#0891b2;font-weight:700">🔎 stock</span>`:'';
-  const marks=(ES_PRICE_OVERRIDES[x.l]!==undefined?' <span style="font-size:10px;color:#b45309">✎ edited</span>':'')+(x.lineDiscount>0?' <span style="font-size:10px;color:#b45309">discounted</span>':'');
-  const del=x._fromPart?'<span title="Remove the part to remove this labour" style="display:inline-flex;padding:5px 7px;border:1px solid #cbd5e1;border-radius:7px;font-size:11px;font-weight:800;color:#64748b">🔒</span>':`<button type="button" onclick="esRemoveItem('${safe}')" title="Remove this item" style="padding:5px 8px;border:1.5px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">✕</button>`;
-  return `<tr><td>${x.l}${stock}${marks}${esCodeHtml(x)}</td><td class="amt">${esAmountHtml(x)}</td><td style="min-width:170px;white-space:nowrap;text-align:right"><button type="button" onclick="esDiscountLine('${safe}','${kind||''}')" title="Discount this line" style="padding:5px 7px;margin-right:5px;border:1.5px solid #fed7aa;background:#fff7ed;color:#b45309;border-radius:7px;font-size:11px;font-weight:800;cursor:pointer">Disc</button><button type="button" onclick="esEditPrice('${safe}')" title="Correct amount" style="padding:5px 7px;margin-right:5px;border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:7px;font-size:11px;font-weight:800;cursor:pointer">Edit</button>${del}</td></tr>`;
+  const safe=String(x.l).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const stock=x.pn?` <button type="button" class="es-stock-link" onclick="pfQuickCheck('${String(x.pn).replace(/'/g,'')}')" title="Check all-India stock">🔎 Check stock</button>`:'';
+  const marks=(ES_PRICE_OVERRIDES[x.l]!==undefined?' <span class="es-line-state">Edited</span>':'')+(x.lineDiscount>0?' <span class="es-line-state">Discounted</span>':'');
+  const del=x._fromPart?'<span class="es-line-act es-line-lock" title="Remove the selected part to remove this labour">🔒 <span>Linked</span></span>':`<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem('${safe}')" title="Remove this item"><span aria-hidden="true">✕</span><span>Remove</span></button>`;
+  return `<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">${x.l}</div><div class="es-item-meta">${stock}${marks}</div>${esCodeHtml(x)}</td><td class="amt es-item-amt">${esAmountHtml(x)}</td><td class="es-item-actions"><button type="button" class="es-line-act es-line-disc" onclick="esDiscountLine('${safe}','${kind||''}')" title="Discount this line"><span aria-hidden="true">%</span><span>Discount</span></button><button type="button" class="es-line-act es-line-edit" onclick="esEditPrice('${safe}')" title="Correct amount"><span aria-hidden="true">✎</span><span>Edit</span></button>${del}</td></tr>`;
 }).join(''); }
-function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li">${esRowsEditable(a,kind)}</table></div>`; }
+function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li es-edit-table">${esRowsEditable(a,kind)}</table></div>`; }
 function esRender(d){
   const dt=new Date(d.ts).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('es-out').innerHTML=`

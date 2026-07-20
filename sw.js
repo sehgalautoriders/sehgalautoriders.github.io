@@ -26,7 +26,7 @@
      what tells the phones a new version exists and shows the update bar.
    ========================================================================== */
 
-const HERO_BUILD = 'set19-2026.07.20-s01';
+const HERO_BUILD = 'set20-2026.07.20-s02';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
 const LIB_CACHE   = 'hero-lib-v1';   // versioned CDN URLs; contents never change
 
