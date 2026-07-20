@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set20-2026.07.20-s02';
+window.HERO_BUILD = 'set21-2026.07.20-s03';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -976,7 +976,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
           <!-- STEP 1: Photos first. Nothing else is shown until the vehicle is identified. -->
           <div class="fld" id="ge-photo-fld">
-            <label style="font-weight:800;color:var(--ink);font-size:15px">📸 Step 1 — Capture 5 Photos</label>
+            <label style="font-weight:800;color:var(--ink);font-size:15px">📸 Step 1 — Capture Photos (Front, Back, Odometer · Dicky optional)</label>
             <div style="font-size:12px;color:var(--steel);margin:2px 0 8px">Front · Back · Right · Left · Odometer. For scooters/bikes with a dicky, also open &amp; shoot the dicky (theft-proof record). <b>Tell the customer to remove all valuables first.</b></div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px" id="ge-photo-grid"></div>
             <button class="btn" id="ge-recognise-btn" style="margin-top:10px;background:#7c3aed;display:none" onclick="geRecognise()">🔍 Read Plate &amp; Identify Vehicle</button>
@@ -2298,7 +2298,7 @@ const GE_FIELDS=[
   {key:'Model',label:'Model',def:{table:'MODEL',column:'MODEL'}}
 ];
 let GE_CONFIG={}, GE_TABLES=[], GE_OPTIONS={}, GE_MISSING=[], GE_PURPOSE='Service', GE_SVC_TYPE='Paid Service', GE_GUARD_LOCKED=false;
-const GE_SIDES=[{k:'front',l:'Front'},{k:'back',l:'Back'},{k:'right',l:'Right'},{k:'left',l:'Left'},{k:'odo',l:'Odometer'},{k:'dicky',l:'Dicky (if any)'}];
+const GE_SIDES=[{k:'front',l:'Front'},{k:'back',l:'Back'},{k:'odo',l:'Odometer'},{k:'dicky',l:'Dicky (if any)'}];
 let GE_PHOTOS={front:'',back:'',right:'',left:'',odo:'',dicky:''};
 let GE_AI_RESULT=null; // last Gemini recognition result
 let GE_AI_AUTORAN=false; // recognition already auto-fired for this vehicle
@@ -2481,8 +2481,8 @@ function geFinalPurpose(){
   if(GE_PURPOSE==='Other'){ const d=val('ge-other'); return d?('Other: '+d):'Other'; }
   return GE_PURPOSE;
 }
-/* ---- 5-photo capture: Front / Back / Right / Left / Odometer (+ optional Dicky) ---- */
-const GE_MANDATORY_PHOTOS=['front','back','right','left','odo'];
+/* ---- photo capture: Front / Back / Odometer (mandatory) + optional Dicky ---- */
+const GE_MANDATORY_PHOTOS=['front','back','odo'];
 function geRenderPhotoGrid(){
   const grid=document.getElementById('ge-photo-grid'); if(!grid) return;
   grid.innerHTML=GE_SIDES.map(s=>{
@@ -3042,6 +3042,27 @@ function esFindLinkedLabours(partLabel){
       });
       if(outL.length) return {labours:outL, cc:cc, part:String(r['Part Name']||'').trim()};
     }
+  }
+  return null;
+}
+
+/* EXACT match on Part Name — used ONLY for the Demanded Repair dropdown, whose value is
+   already the exact Part Name from MD_PartLabourMap. The fuzzy esFindLinkedLabours above
+   is for free-typed part labels; using it for demanded repairs matched the wrong row and
+   returned unrelated ("random") labour. This picks the exact row's labour + complaint code. */
+function esFindDemandedLabours(name){
+  const want=String(name||'').trim().toUpperCase();
+  if(!want) return null;
+  for(const r of ES_PART_LABOUR_MAP){
+    if(String(r['Part Name']||'').trim().toUpperCase()!==want) continue;
+    const cc=String(r['Complaint Code']||'').trim();
+    const outL=[];
+    [1,2,3].forEach(n=>{
+      const l=String(r['Labour '+n]||'').trim();
+      if(!l) return;
+      outL.push({l:l, p:Number(r['Amount '+n]||0), code:String(r['Job Code '+n]||'').trim(), cc:cc});
+    });
+    if(outL.length) return {labours:outL, cc:cc, part:String(r['Part Name']||'').trim()};
   }
   return null;
 }
@@ -3690,7 +3711,7 @@ function esRebuildDemandedDropdown(){
 function esAddDemandedFn(){
   const name=val('es-add-dem'); if(!name){ alert('Select a demanded repair first.'); return; }
   if(ES_DEMANDED.some(d=>d.name===name)){ alert('Already added.'); return; }
-  const map=esFindLinkedLabours(name);
+  const map=esFindDemandedLabours(name);
   if(!map){ alert('No labour mapping found for this repair in MD_PartLabourMap.'); return; }
   ES_DEMANDED.push({name:name, cc:map.cc});
   let added=[];
