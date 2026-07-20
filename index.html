@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set22-2026.07.20-s04';
+window.HERO_BUILD = 'set23-2026.07.20-s05';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2188,12 +2188,16 @@ function loadRecentActivity(){
   jgetReliable('report_today', {}, function(res){
     if(!res||!res.ok){ box.innerHTML='<div class="hint">No recent activity loaded yet.</div>'; return; }
     const isGuard=(typeof isGuardUser==='function')&&isGuardUser();
-    const gates=(res.gateEntries||[]).filter(g=>wsAllowed(g.location)).slice(isGuard?-5:-2).reverse().map(g=>({title:(g.reg||g.token||'Gate Entry')+' — '+(g.model||''),sub:'Gate entry by '+(g.guard||g.empname||'team'),tag:'Gate'}));
-    // Guard cares only about gate entries — estimates/holdup are noise for him.
-    const est=isGuard?[]:(res.estimates||[]).filter(e=>wsAllowed(e.ws)).slice(-2).reverse().map(e=>({title:(e.reg||'Estimate')+' — '+(e.model||''),sub:'Estimate prepared — '+inr(e.total||0),tag:'Estimate'}));
-    const rows=[...gates,...est].slice(0,isGuard?5:4);
-    if(!rows.length){ box.innerHTML='<div class="hint">No activity yet today.</div>'; return; }
-    box.innerHTML=rows.map(r=>`<div class="ops-list-row"><div><div class="ops-list-title">${r.title}</div><div class="ops-list-sub">${r.sub}</div></div><span class="ops-pill blue" style="font-size:10px">${r.tag}</span></div>`).join('');
+    const gates=(res.gateEntries||[]).filter(g=>wsAllowed(g.location)).slice(-5).reverse().map(g=>({title:(g.reg||g.token||'Gate Entry')+' — '+(g.model||''),sub:'Gate entry by '+(g.guard||g.empname||'team')}));
+    // Guard cares only about gate entries — estimates are noise for him.
+    const est=isGuard?[]:(res.estimates||[]).filter(e=>wsAllowed(e.ws)).slice(-5).reverse().map(e=>({title:(e.reg||'Estimate')+' — '+(e.model||''),sub:'Estimate prepared — '+inr(e.total||0)}));
+    // Separated feed (Ravi 20-Jul): Gate Entry and Estimate shown as two distinct sections,
+    // no longer mixed into one list.
+    const rowHtml=(r,tag,cls)=>`<div class="ops-list-row"><div><div class="ops-list-title">${r.title}</div><div class="ops-list-sub">${r.sub}</div></div><span class="ops-pill ${cls}" style="font-size:10px">${tag}</span></div>`;
+    const section=(label,rows,tag,cls)=>`<div style="font-size:11px;font-weight:800;color:var(--steel);text-transform:uppercase;letter-spacing:.4px;margin:8px 2px 4px">${label}</div>`+(rows.length?rows.map(r=>rowHtml(r,tag,cls)).join(''):'<div class="hint" style="margin:0 2px 8px">Nothing yet today.</div>');
+    let html=section('Gate Entry', gates.slice(0,5), 'Gate', 'blue');
+    if(!isGuard) html+=section('Estimate', est.slice(0,4), 'Estimate', 'green');
+    box.innerHTML=html;
   });
 }
 function loadHoldupSnapshot(){
@@ -2906,7 +2910,10 @@ function geModelConfirm(){
   const chosen=document.getElementById('ge-model-modal-select').value;
   if(!chosen){ document.getElementById('ge-model-modal-hint').textContent='Please pick a model first.'; return; }
   geApplyModelToDropdown(chosen);
-  geTeachModel(GE_MODEL_LEARN.reg, chosen);
+  // Do NOT write to the backend here (Ravi 20-Jul, issue 1). Teaching reg→model at confirm
+  // time wrote the vehicle to the customer master BEFORE Save — and again if the model was
+  // corrected. The model still saves with the gate entry; it is now taught once, only after
+  // the entry is actually saved (see geAfterToken).
   geCloseModelModal();
   geAiStatus('✅ Model set to <b>'+chosen.replace(/</g,'&lt;')+'</b>. Complete the remaining fields.','ok');
 }
@@ -3015,6 +3022,8 @@ function geSaveEntry(){
     jpost(rec).then(()=>{
       const ban=document.getElementById('ge-okban');
       if(ban) { ban.textContent='Saved — '+reg+' · Token: '+token; }
+      // Teach reg→model ONCE, only now that the entry is actually saved (issue 1 fix).
+      try{ geTeachModel(reg, model); }catch(e){}
       geAddMyEntry({reg,model,token,time:new Date(),name,mob,alt,purpose,km,guard,empno:USER.empno,empname:USER.personName});
     }).catch(()=>{
       const ban=document.getElementById('ge-okban');
