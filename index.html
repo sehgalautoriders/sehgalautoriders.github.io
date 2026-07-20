@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set21-2026.07.20-s03';
+window.HERO_BUILD = 'set22-2026.07.20-s04';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -986,8 +986,8 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
           <!-- OR type the reg directly — the only other thing allowed before identification -->
           <div class="fld" id="ge-reg-fld">
             <label>Reg No * <span style="font-weight:400;color:var(--steel)">— or type / paste it here</span></label>
-            <input id="ge-reg" placeholder="Take the 5 photos first" disabled style="text-transform:uppercase;background:#f1f5f9" oninput="geRegInput()" onpaste="setTimeout(geRegInput,50)" onblur="geRegLookup(true)" autocomplete="off">
-            <div id="ge-photo-lock" style="font-size:11px;color:var(--signal-d);font-weight:700;margin-top:4px">📷 Take all 5 photos first — then the reg number opens.</div>
+            <input id="ge-reg" placeholder="Take the photos first" disabled style="text-transform:uppercase;background:#f1f5f9" oninput="geRegInput()" onpaste="setTimeout(geRegInput,50)" onblur="geRegLookup(true)" autocomplete="off">
+            <div id="ge-photo-lock" style="font-size:11px;color:var(--signal-d);font-weight:700;margin-top:4px">📷 Take the required photos first — then the reg number opens.</div>
             <div id="ge-reg-status" style="display:none;font-size:11px;margin-top:3px"></div>
           </div>
 
@@ -1007,7 +1007,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
             <div class="fld"><label>KM Reading (Odometer) *</label><input id="ge-km" inputmode="numeric" placeholder="e.g. 15800 — read from meter"></div>
             <div class="fld"><label>Visit Purpose *</label>
               <div class="pillgrid" id="ge-purpose-grid">
-                <div class="pill sel" data-v="Service">Service</div>
+                <div class="pill" data-v="Service">Service</div>
                 <div class="pill" data-v="Accidental / Bodyshop">Accidental / Bodyshop</div>
                 <div class="pill" data-v="Spare Parts">Spare Parts</div>
                 <div class="pill" data-v="Sales Enquiry">Sales Enquiry</div>
@@ -1017,7 +1017,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
             </div>
             <div class="fld" id="ge-svc-wrap"><label>Service Type * <span style="font-weight:400;color:var(--steel)">(SA can change later)</span></label>
               <div class="pillgrid" id="ge-svc-grid">
-                <div class="pill sel" data-v="Paid Service">Paid Service</div>
+                <div class="pill" data-v="Paid Service">Paid Service</div>
                 <div class="pill" data-v="Free Service">Free Service</div>
                 <div class="pill" data-v="General Repair">General Repair</div>
                 <div class="pill" data-v="Joyride">Joyride</div>
@@ -1912,7 +1912,23 @@ function loadUser(){
   }catch(e){}
 }
 function saveUser(u){ USER = u; try{ localStorage.setItem('sehgalhero_user', JSON.stringify(u)); localStorage.setItem('sehgalhero_user_ts', String(Date.now())); }catch(e){} }
-function logout(){ USER = null; try{ localStorage.removeItem('sehgalhero_user'); localStorage.removeItem('sehgalhero_user_ts'); }catch(e){} showView('login'); }
+/* Cross-account safety (Ravi 20-Jul): the last-good snapshots (report_today, estimates,
+   home summary) are user-visible and role-specific. They must NOT survive a logout, or a
+   CEO summary flashes briefly under the next Guard login on the same phone. Shared master
+   tables are NOT user-specific, so those are left in place (no needless 8 MB re-download). */
+function clearVolatileUserCache(){
+  try{
+    const dead=[];
+    HKV.forEach(function(v,k){ if(k.indexOf('sehgal_lastgood:')===0) dead.push(k); });
+    dead.forEach(function(k){ HKV.delete(k); if(typeof hkvDel==='function') hkvDel(k); });
+  }catch(e){}
+  try{
+    const rm=[];
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf('sehgal_lastgood:')===0) rm.push(k); }
+    rm.forEach(function(k){ localStorage.removeItem(k); });
+  }catch(e){}
+}
+function logout(){ USER = null; try{ localStorage.removeItem('sehgalhero_user'); localStorage.removeItem('sehgalhero_user_ts'); }catch(e){} clearVolatileUserCache(); showView('login'); }
 
 function fpOpen(){
   document.getElementById('fp-modal').style.display='block';
@@ -2297,7 +2313,7 @@ const GE_FIELDS=[
   {key:'Location',label:'Location',def:{table:'Location',column:'Location'}},
   {key:'Model',label:'Model',def:{table:'MODEL',column:'MODEL'}}
 ];
-let GE_CONFIG={}, GE_TABLES=[], GE_OPTIONS={}, GE_MISSING=[], GE_PURPOSE='Service', GE_SVC_TYPE='Paid Service', GE_GUARD_LOCKED=false;
+let GE_CONFIG={}, GE_TABLES=[], GE_OPTIONS={}, GE_MISSING=[], GE_PURPOSE='', GE_SVC_TYPE='', GE_GUARD_LOCKED=false;
 const GE_SIDES=[{k:'front',l:'Front'},{k:'back',l:'Back'},{k:'odo',l:'Odometer'},{k:'dicky',l:'Dicky (if any)'}];
 let GE_PHOTOS={front:'',back:'',right:'',left:'',odo:'',dicky:''};
 let GE_AI_RESULT=null; // last Gemini recognition result
@@ -2746,12 +2762,12 @@ function geApplyPhotoGate(){
   const missing=GE_MANDATORY_PHOTOS.filter(k=>!GE_PHOTOS[k]);
   const ok=missing.length===0;
   el.disabled=!ok;
-  el.placeholder = ok ? 'MH14 ____' : 'Take the 5 photos first';
+  el.placeholder = ok ? 'MH14 ____' : 'Take the photos first';
   el.style.background = ok ? '' : '#f1f5f9';
   const lock=document.getElementById('ge-photo-lock');
   if(lock){
     lock.style.display = ok ? 'none' : 'block';
-    lock.textContent = '📷 Take all 5 photos first — then the reg number opens. Still needed: '+missing.join(', ');
+    lock.textContent = '📷 Take the required photos first — then the reg number opens. Still needed: '+missing.join(', ');
   }
 }
 /* Shared fill used by BOTH the photo path and the reg path (records match found). */
@@ -2953,6 +2969,8 @@ function geSaveEntry(){
     {v:km, label:'Odometer / KM'},
     {v:loc, label:'Location'}
   ]);
+  if(!GE_PURPOSE) missing.push('Visit purpose');
+  if(GE_PURPOSE==='Service' && !GE_SVC_TYPE) missing.push('Service type');
   if(GE_PURPOSE==='Other' && !val('ge-other')) missing.push('What other work');
   // PHOTOS ARE COMPULSORY (Ravi 14-Jul): guards were saving with 2–3 photos because
   // only text fields were checked. All 5 mandatory shots must exist before Save.
@@ -2967,10 +2985,8 @@ function geSaveEntry(){
   ['ge-name','ge-mob','ge-alt','ge-reg','ge-km','ge-other'].forEach(i=>{ const el=document.getElementById(i); if(el) el.value=''; });
   document.getElementById('ge-model').value='';
   document.querySelectorAll('#ge-purpose-grid .pill').forEach(x=>x.classList.remove('sel'));
-  const svc=document.querySelector('#ge-purpose-grid .pill[data-v="Service"]'); if(svc) svc.classList.add('sel');
   document.querySelectorAll('#ge-svc-grid .pill').forEach(x=>x.classList.remove('sel'));
-  const paid=document.querySelector('#ge-svc-grid .pill[data-v="Paid Service"]'); if(paid) paid.classList.add('sel');
-  GE_PURPOSE='Service'; GE_SVC_TYPE='Paid Service'; geSyncPurposeUI(); geRemovePhoto();
+  GE_PURPOSE=''; GE_SVC_TYPE=''; geSyncPurposeUI(); geRemovePhoto();
   GE_LAST_REG_LOOKED=''; geRegStatus('',''); geCloseModelModal();
   // Back to photos-only for the next vehicle: hide Step 2 and the identity card again.
   const db=document.getElementById('ge-details-block'); if(db) db.style.display='none';
@@ -4523,17 +4539,8 @@ function esOnGatePick(g){
   ES.gateId=g.entryId||g.id||''; ES.token=g.token||''; ES.location=g.location||'';
   if(!ES.gateId && ES.token) ES.gateId='TOKEN:'+ES.token; // never stay locked because backend omitted entryId
   esApplyPickLock();
-  const typEl=document.getElementById('es-type');
-  if(typEl){
-    const pu=String(g.purpose||'').toLowerCase();
-    let t='';
-    if(pu.indexOf('free')>-1) t='free';
-    else if(pu.indexOf('paid')>-1) t='paid';
-    else if(pu.indexOf('general')>-1) t='general';
-    else if(pu.indexOf('joyride')>-1) t='joyride';
-    else if(pu.indexOf('accident')>-1) t='accidental';
-    if(t && typEl.value!==t){ typEl.value=t; typEl.dispatchEvent(new Event('change')); }
-  }
+  // Service type is left OPEN for the SA to choose (Ravi 20-Jul): the gate purpose no
+  // longer preselects it. The SA physically sees the vehicle and decides the service type.
   try{
     jgetRaw('lookup_vehicle',{reg:g.reg},function(res){
       const v=(res&&res.found&&res.vehicle)||null; if(!v) return;
