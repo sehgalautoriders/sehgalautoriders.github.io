@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set24-2026.07.20-s06';
+window.HERO_BUILD = 'set25-2026.07.20-s07';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1153,7 +1153,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
                 <select id="es-add-psub" onchange="esRenderPartDropdown()" style="flex:1;min-width:120px">
                   <option value="">Sub-category…</option>
                 </select>
-                <select id="es-add-pname" style="flex:1;min-width:150px"><option value="">Select category first…</option></select>
+                <select id="es-add-pname" style="flex:1;min-width:150px"><option value="">Part…</option></select>
                 <input id="es-add-pamt" inputmode="numeric" placeholder="₹" style="width:80px">
                 <button class="plus" onclick="esAddPartFn()">+</button>
                 <label class="es-showall-label">
@@ -3161,11 +3161,10 @@ function esPriceLabourOptions(){
     const old=byKey[key];
     if(!old || item._score>old._score || (item._score===old._score && item._used>old._used)) byKey[key]=item;
   });
-  return Object.values(byKey).sort(function(a,b){
-    if(b._score!==a._score) return b._score-a._score;
-    if(b._used!==a._used) return b._used-a._used;
-    return a.l.localeCompare(b.l);
-  });
+  // Organised by Labour Description (Ravi 20-Jul): the old score/usage order looked random.
+  // The dedup above still keeps the best-matched row per code+description; here we simply
+  // list them alphabetically so the SA can scan it like the DMS labour master.
+  return Object.values(byKey).sort(function(a,b){ return a.l.localeCompare(b.l); });
 }
 function esFindPartLabourMappedCode(label){
   const raw=esLabNorm(label);
@@ -3255,7 +3254,7 @@ function esRebuildLabDropdown(){
   if(!sel) return;
   const items=esPriceLabourOptions();
   sel.innerHTML=items.length ? '<option value="">Select mapped DMS labour…</option>' : '<option value="">MD_PriceMaster_Labour not loaded — tap ↻ Sync Now</option>';
-  items.forEach(function(v,i){ const code=v.code?` [${v.code}]`:''; const model=v.model?` · ${v.model}`:''; sel.insertAdjacentHTML('beforeend',`<option value="${i}">${v.l}${code}${model} — ${inr(v.p)}</option>`); });
+  items.forEach(function(v,i){ const code=v.code?` [${v.code}]`:''; sel.insertAdjacentHTML('beforeend',`<option value="${i}">${v.l}${code} — ${inr(v.p)}</option>`); });
 }
 
 const GST=0.18;
@@ -3540,7 +3539,13 @@ function esLoadLabourForSelectedModel(modelName){
 }
 let ES_PARTS_READY=false, ES_PARTS_LOADING=false;
 function esEnsurePartsReady(){
-  if(ES_PARTS_READY){ esRenderPartCategoryDropdown(); return; }
+  if(ES_PARTS_READY){
+    // Build the category list only ONCE. Re-rendering it on every tap/focus reset the
+    // selection on Android and broke the dependent sub-category dropdown. (Ravi 20-Jul)
+    const s=document.getElementById('es-add-pcat');
+    if(s && s.options.length<=1) esRenderPartCategoryDropdown();
+    return;
+  }
   if(ES_PARTS_LOADING) return;
   ES_PARTS_LOADING=true;
   const sel=document.getElementById('es-add-pcat');
@@ -3699,6 +3704,7 @@ document.getElementById('es-freestage').addEventListener('change',()=>{ esRender
 document.getElementById('es-model').addEventListener('change',()=>{
   esResetRemoved();
   esLoadLabourForSelectedModel(val('es-model'));
+  esEnsurePartsReady(); // preload parts now so Category is ready and fast when the SA reaches it
   esUpdateLive();
 });
 let __esLiveTimer=null;
@@ -3832,7 +3838,7 @@ function esRenderPartCategoryDropdown(){
   var cats=Object.keys(ES_PART_INDEX.cats).sort();
   sel.innerHTML='<option value="">Category…</option>'+cats.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
   var sub=document.getElementById('es-add-psub'); if(sub) sub.innerHTML='<option value="">Sub-category…</option>';
-  var nm=document.getElementById('es-add-pname'); if(nm) nm.innerHTML='<option value="">Select category first…</option>';
+  var nm=document.getElementById('es-add-pname'); if(nm) nm.innerHTML='<option value="">Part…</option>';
   var amt=document.getElementById('es-add-pamt'); if(amt){ amt.value=''; amt.readOnly=false; }
 }
 
@@ -3842,7 +3848,7 @@ function esRenderPartSubDropdown(){
   var nm=document.getElementById('es-add-pname');
   var amt=document.getElementById('es-add-pamt'); if(amt) amt.value='';
   if(!sub) return;
-  if(!cat){ sub.innerHTML='<option value="">Sub-category…</option>'; if(nm) nm.innerHTML='<option value="">Select category first…</option>'; return; }
+  if(!cat){ sub.innerHTML='<option value="">Sub-category…</option>'; if(nm) nm.innerHTML='<option value="">Part…</option>'; return; }
   var subs=Object.keys(ES_PART_INDEX.cats[cat]||{}).sort();
   sub.innerHTML='<option value="">Sub-category…</option>'+subs.map(function(x){return '<option value="'+x+'">'+x+'</option>';}).join('');
   if(nm) nm.innerHTML='<option value="">Select sub-category…</option>';
@@ -3908,7 +3914,7 @@ function esAddPartFn(){
   }
   document.getElementById('es-add-pcat').value='';
   var _sub=document.getElementById('es-add-psub'); if(_sub) _sub.innerHTML='<option value="">Sub-category…</option>';
-  document.getElementById('es-add-pname').innerHTML='<option value="">Select category first…</option>';
+  document.getElementById('es-add-pname').innerHTML='<option value="">Part…</option>';
   document.getElementById('es-add-pamt').value='';
   var _sa=document.getElementById('es-add-showall'); if(_sa){ _sa.checked=false; ES_PART_SHOWALL=false; }
   esDrawChips();
@@ -4651,7 +4657,7 @@ function esModelConfirm(){
 function esRenderGatePhotos(g){
   const box=document.getElementById('es-gate-photos'); if(!box) return;
   const ph=(g&&g.photos)||{};
-  const order=[['front','Front'],['back','Back'],['right','Right'],['left','Left'],['odo','Odometer'],['dicky','Dicky']];
+  const order=[['front','Front'],['back','Back'],['dicky','Dicky']];
   const pics=order.filter(([k])=>ph[k]&&String(ph[k]).indexOf('http')===0);
   box.style.display='block';
   if(!pics.length){
