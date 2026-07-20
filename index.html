@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set25-2026.07.20-s07';
+window.HERO_BUILD = 'set26-2026.07.20-s08';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -6471,6 +6471,22 @@ function showEstimatePreview(est, reg, name, mob){
     q.innerHTML=actions.map(a=>`<button class="ops-quick ${a.ok?'':'disabled'}" onclick="${a.ok?a.fn:'return false'}"><span class="qic">${a.ic}</span><span>${a.t}</span></button>`).join('');
   };
 
+  /* Robust estimate total (Ravi 20-Jul): summaries showed ₹0 while the estimate opened
+     inside showed the real value. The 'Total Estimate' value was coming through blank in
+     the summary, so we read the total from any likely field, parse ₹/comma text, and if it
+     is still blank, compute it from the parts + oil + labour + GST − discount the row has. */
+  function esEntryTotal(e){
+    if(!e) return 0;
+    const num=v=>{ const n=Number(String(v==null?'':v).replace(/[₹,\s]/g,'')); return isNaN(n)?0:n; };
+    let t=num(e.total)||num(e.grandTotal)||num(e['Total Estimate'])||num(e.totalEstimate);
+    if(t>0) return t;
+    const gst=num(e.gst||e.GST), disc=num(e.discount||e.Discount);
+    const sub=num(e.subtotal||e.SubTotal||e['Sub-total']);
+    if(sub>0) return Math.round(sub+gst-disc);
+    const base=num(e.parts)+num(e.oil)+num(e.labour);
+    if(base>0) return Math.round(base+gst-disc);
+    return t;
+  }
   window.loadHomeStats = function(){
     const box=document.getElementById('home-stats');
     const upd=document.getElementById('ops-updated'); if(upd) upd.textContent='Last updated: Today '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
@@ -6488,7 +6504,7 @@ function showEstimatePreview(est, reg, name, mob){
         const todayN=mine.reduce((s,L)=>s+Number(L.today||0),0);
         const allN=mine.reduce((s,L)=>s+Number(L.allDays||0),0);
         const cardsG=[
-          {ic:'🚗',n:todayN,t:'Gate Entries Today',sub:'All guards combined',color:'#2563eb'},
+          {ic:'🚗',n:todayN,t:'Gate Entries Today',sub:'All guards combined · tap to view',color:'#2563eb',click:"raviOpenGateHistory()"},
           {ic:'📅',n:allN,t:'All Entries — All days',sub:'Every guard · tap to see by month & date',color:'#16a34a',click:"raviOpenGateHistory()"},
           {ic:'↻',n:getQueue().length,t:'Pending Sync',sub:'Offline saves waiting',color:'#7c3aed'}
         ];
@@ -6508,7 +6524,7 @@ function showEstimatePreview(est, reg, name, mob){
         // Today's gate queue remains only a reminder; it is not shown as all-workshop performance.
         pending=pending.filter(function(g){ return String(g.empno||'')===String(USER.empno||'') || String(g.sa||g.advisor||'').toUpperCase()===String(USER.personName||'').toUpperCase(); });
       }
-      const estTotal=est.reduce((s,e)=>s+Number(e.total||e.grandTotal||0),0);
+      const estTotal=est.reduce((s,e)=>s+esEntryTotal(e),0);
       // v11.1 stability fix: dedupe by JC+Dealer and drop delivered/clear so the count
       // can't fluctuate (75/90/123) between loads from stale or duplicated local rows.
       let huRows=[]; try{ huRows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){}
@@ -6549,12 +6565,12 @@ function showEstimatePreview(est, reg, name, mob){
         ];
       } else {
         cards=[
-          {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:'Live from Gate Entry',color:'#2563eb'},
-          {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending',color:'#16a34a'},
-          {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Saved today',color:'#f59e0b'},
-          {ic:'₹',n:billing,t:'Estimate Value Today',sub:'Estimate value till now',color:'#7c3aed'},
-          {ic:'⛔',n:hu,t:'Holdup Cases',sub:'Active DMS holdup',color:'#dc2626'},
-          {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer',color:'#0891b2'}
+          {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',click:"raviOpenGateHistory()"},
+          {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending · tap',color:'#16a34a',click:"openModule('control')"},
+          {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',click:"openModule('control')"},
+          {ic:'₹',n:billing,t:'Estimate Value Today',sub:'Tap to view — value till now',color:'#7c3aed',click:"openModule('control')"},
+          {ic:'⛔',n:hu,t:'Holdup Cases',sub:'Tap to view — Active DMS holdup',color:'#dc2626',click:"openModule('holdup')"},
+          {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer · tap',color:'#0891b2',click:"openModule('holdup')"}
         ];
       }
       box.innerHTML=cards.map(k=>`<div class="kpi-card ops" style="--kpi-color:${k.color}${k.click?';cursor:pointer':''}" ${k.click?`onclick="${k.click}"`:''}><div class="kpi-ic">${k.ic}</div><div class="kpi-n" title="${raviEsc(k.n)}">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
@@ -6570,13 +6586,13 @@ function showEstimatePreview(est, reg, name, mob){
       if(!mine.length){ box.innerHTML='<div class="hint">No estimates prepared by you yet today.</div>'; return; }
       box.innerHTML=(isStale?'<div class="hint" style="margin-bottom:6px">⏳ Refreshing…</div>':'')+
         mine.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(e.reg||'')} · ${raviEsc(e.model||'')}</div>
-        <div class="small">${raviEsc(e.name||'')} · ${raviEsc(e.service||'')} · ${inr(e.total||0)}</div>
+        <div class="small">${raviEsc(e.name||'')} · ${raviEsc(e.service||'')} · ${inr(esEntryTotal(e))}</div>
         <div class="ravi-actions">
           <button onclick="raviUseExistingEstimate(${i},'view')">View</button>
           <button class="pdf" onclick="raviUseExistingEstimate(${i},'pdf')">Download PDF</button>
           <button class="wa" onclick="raviUseExistingEstimate(${i},'wa')">WhatsApp Text</button>
           <button class="wa" onclick="raviUseExistingEstimate(${i},'wapdf')">Send PDF</button>
-        </div></div><div><span class="badge done">${inr(e.total||0)}</span></div></div>`).join('');
+        </div></div><div><span class="badge done">${inr(esEntryTotal(e))}</span></div></div>`).join('');
       window.RAVI_SA_EST_CACHE=mine;
     });
     const box2=document.getElementById('sa-myholdup'); if(!box2) return;
