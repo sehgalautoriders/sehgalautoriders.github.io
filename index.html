@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set15-2026.07.19-a';
+window.HERO_BUILD = 'set17-2026.07.20-a';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
@@ -1541,12 +1541,22 @@ function checkBackendVersion(){
 let GP_INFLIGHT=0;
 function gpStart(){
   GP_INFLIGHT++;
+  /* RED LINE REMOVED (20-Jul, Ravi): the top progress bar jumped to 70% and sat there
+     ("always half full") whenever any background call was in flight, so the app always
+     looked like it was loading. The in-flight counter stays (harmless), but the bar is
+     never shown. */
+}
+function gpEnd(){
+  GP_INFLIGHT=Math.max(0,GP_INFLIGHT-1);
+}
+function gpStart_OLD_unused(){
+  GP_INFLIGHT++;
   const bar=document.getElementById('global-progress'); if(!bar) return;
   bar.style.display='block';
   bar.style.width='0%';
   requestAnimationFrame(()=>{ bar.style.width='70%'; });
 }
-function gpEnd(){
+function gpEnd_OLD_unused(){
   GP_INFLIGHT=Math.max(0,GP_INFLIGHT-1);
   const bar=document.getElementById('global-progress'); if(!bar) return;
   if(GP_INFLIGHT>0) return; // other calls still running — keep it visible
@@ -1597,6 +1607,16 @@ function jFetchFallback_(action, params, done, why){
     });
 }
 function jget(action, params, cb){
+  /* SPEED (20-Jul): for master tables only, wait for the phone database to finish
+     loading into memory BEFORE deciding phone-copy-vs-server. This keeps the app itself
+     instant (boot is never blocked) while still serving masters from the phone instead
+     of re-downloading them. Live data (today / estimates / holdup) is not a cacheable
+     action, so it is never delayed here — it always goes straight to the server. */
+  if(CACHEABLE_ACTIONS.indexOf(action)!==-1 && typeof __hkvReady!=='undefined' && !__hkvReady
+     && typeof __hkvPreload!=='undefined' && __hkvPreload && __hkvPreload.then){
+    __hkvPreload.then(function(){ jget(action, params, cb); });
+    return;
+  }
   const cached = getCache(action, params);
   if(cached){ cb(cached); return; }
   gpStart();
@@ -3300,7 +3320,7 @@ const SCHED={f4_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:1
 function esBoot(){
   heroLoadPriceMaster(); // MD_EstimatePrices override — deliberately outside the pending gate: it can never block or break estimate boot
   heroLoadOilMap();      // MD_ModelOilMap — correct per-model oil MRP (₹373-Harley fix)
-  let pending=9, configRes=null, listRes=null;
+  let pending=8, configRes=null, listRes=null;   // was 9 — the big parts list moved to background load
   const proceed=()=>{
     ES_CONFIG = (configRes && configRes.config) || {};
     ES_FIELDS.forEach(f=>{ if(!ES_CONFIG[f.key] || !ES_CONFIG[f.key].table) ES_CONFIG[f.key]=f.def; });
@@ -3317,7 +3337,23 @@ function esBoot(){
   jget('master_table', {name:'PreventiveMaintenanceKits'}, function(res){ ES_PM_KITS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
   jget('master_table', {name:'ModelKitParts'}, function(res){ ES_MODEL_KIT_PARTS=(res&&res.rows)||[]; if(--pending===0) proceed(); });
   jget('master_table', {name:'PartLabourMap'}, function(res){ ES_PART_LABOUR_MAP=(res&&res.rows)||[]; if(--pending===0) proceed(); });
-  jget('master_table', {name:'ModelPart'}, function(res){ ES_MODEL_PART=(res&&res.rows)||[]; esBuildPartIndex(); if(--pending===0) proceed(); });
+  /* BIG parts list is now loaded in the BACKGROUND (20-Jul). It is by far the heaviest
+     table (~16,000 rows) and only the manual "Add Part" picker needs it — a normal
+     service builds its parts automatically from the small kit tables above. So the
+     estimate FORM now appears as soon as the 8 small tables are ready, instead of
+     waiting for this one to arrive and be indexed. The parts picker fills a moment later. */
+  esLoadModelPartBackground();
+}
+let ES_PARTS_READY=false;
+function esLoadModelPartBackground(){
+  jget('master_table', {name:'ModelPart'}, function(res){
+    ES_MODEL_PART=(res&&res.rows)||[];
+    try{ esBuildPartIndex(); }catch(e){}
+    ES_PARTS_READY=true;
+    // now that the list is ready, fill the parts category dropdown (safe if the form
+    // isn't open — the function checks for the element itself)
+    try{ esRenderPartCategoryDropdown(); }catch(e){}
+  });
 }
 function esCheckAndLoad(){
   ES_MISSING=[]; ES_MODEL_LIST=[];
@@ -6791,22 +6827,10 @@ window.addEventListener('popstate', function(){
 });
 
 loadUser();
-/* STEP 1 (19-Jul): wait for the phone database (IndexedDB) to finish loading the
-   saved masters into memory BEFORE we start any screen. Earlier the app started
-   asking the server for masters at the same instant the phone copy was still loading,
-   so it always lost the race and re-downloaded everything for nothing. Now the boot
-   waits for the phone copy first, so masters are read from the phone, not the server.
-   The 2.5s timeout is only a safety net: if the phone database is ever slow to open,
-   the app still boots (worst case it just fetches masters like before — never stuck). */
-function __heroBoot(){
-  if(window.__heroBooted) return; window.__heroBooted = true;
-  if(USER){ showView('home'); goHome(); } else { showView('login'); }
-}
-(function(){
-  var waited = (typeof __hkvPreload!=='undefined' && __hkvPreload && __hkvPreload.then)
-    ? __hkvPreload : Promise.resolve();
-  Promise.race([ waited, new Promise(function(r){ setTimeout(r, 2500); }) ]).then(__heroBoot);
-})();
+/* Boot immediately so login and home appear at once. Masters are still served from the
+   phone (not re-downloaded) — that waiting now happens only inside jget for master
+   tables, not for the whole app. See the jget preload-gate. */
+if(USER){ showView('home'); goHome(); } else { showView('login'); }
 </script>
 
 <!-- ========= DOCUMENT UPLOAD / TAGGING MODAL ========= -->
