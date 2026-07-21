@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set29-2026.07.21-s11';
+window.HERO_BUILD = 'set31-2026.07.21-s13';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -921,7 +921,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
         <div class="ops-two-col">
           <div class="ops-panel" id="recent-panel">
-            <div class="ops-panel-head"><span>Recent Activity</span><a onclick="(typeof isGuardUser==='function'&&isGuardUser())?raviOpenGateHistory():openModule('control')">View all</a></div>
+            <div class="ops-panel-head"><span>Recent Activity</span><a onclick="canUseModule('ControlRoom')?openModule('control'):raviOpenGateHistory()">View all</a></div>
             <div class="ops-list" id="recent-list"><div class="hint">Loading…</div></div>
           </div>
           <div class="ops-panel">
@@ -1813,13 +1813,23 @@ async function jpost(body){
   if(body && typeof body.type==='string' && body.type.indexOf('master_')===0) clearMasterCache();
   if(body && body.type==='set_app_config') clearMasterCache();
   if(!SHEET_URL) return;
-  if(!navigator.onLine){ queueWrite(body); return; } // no internet right now — queue it, don't lose it
-  gpStart();
+  /* QUEUE FIRST, ALWAYS (Ravi 21-Jul). Writing to localStorage is synchronous and near-
+     instant — this line runs and completes before any network call is even attempted, so
+     the entry is durably on the phone the moment Save is pressed. Even if the app is
+     refreshed or closed a millisecond later, nothing is lost: the queue already has it,
+     and the existing background retry (flushQueue every 20s, plus the 'online' listener)
+     delivers it the moment a connection exists. This also removes the old "wait for the
+     network, then decide" delay — Save now confirms instantly, syncing happens quietly
+     after. */
+  const qid='q'+Date.now()+Math.random().toString(36).slice(2);
+  const q=getQueue(); q.push({id:qid, body, ts:Date.now()}); setQueue(q);
+  if(!navigator.onLine) return; // stays queued; background retry sends it once online
   try{
     await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+    setQueue(getQueue().filter(x=>x.id!==qid)); // sent — remove only this item, not the whole queue
   }catch(e){
-    queueWrite(body); // request failed mid-flight (flaky signal) — queue instead of dropping it
-  } finally { gpEnd(); }
+    // stays queued — background retry will pick it up, nothing lost
+  }
 }
 
 /* ---------- Reliable read wrapper for heavy/live actions (today, report_today,
@@ -2189,16 +2199,17 @@ function loadRecentActivity(){
   const box=document.getElementById('recent-list'); if(!box) return;
   jgetReliable('report_today', {}, function(res){
     if(!res||!res.ok){ box.innerHTML='<div class="hint">No recent activity loaded yet.</div>'; return; }
-    const isGuard=(typeof isGuardUser==='function')&&isGuardUser();
+    // Show the Estimate section only if this login can actually prepare estimates
+    // (permission-based, not a designation-text guess — same fragility class as B1-2 fix).
+    const canSeeEst=(typeof canUseModule==='function')&&(canUseModule('Estimate')||canUseModule('ControlRoom'));
     const gates=(res.gateEntries||[]).filter(g=>wsAllowed(g.location)).slice(-5).reverse().map(g=>({title:(g.reg||g.token||'Gate Entry')+' — '+(g.model||''),sub:'Gate entry by '+(g.guard||g.empname||'team')}));
-    // Guard cares only about gate entries — estimates are noise for him.
-    const est=isGuard?[]:(res.estimates||[]).filter(e=>wsAllowed(e.ws)).slice(-5).reverse().map(e=>({title:(e.reg||'Estimate')+' — '+(e.model||''),sub:'Estimate prepared — '+inr(e.total||0)}));
+    const est=canSeeEst?(res.estimates||[]).filter(e=>wsAllowed(e.ws)).slice(-5).reverse().map(e=>({title:(e.reg||'Estimate')+' — '+(e.model||''),sub:'Estimate prepared — '+inr(e.total||0)})):[];
     // Separated feed (Ravi 20-Jul): Gate Entry and Estimate shown as two distinct sections,
     // no longer mixed into one list.
     const rowHtml=(r,tag,cls)=>`<div class="ops-list-row"><div><div class="ops-list-title">${r.title}</div><div class="ops-list-sub">${r.sub}</div></div><span class="ops-pill ${cls}" style="font-size:10px">${tag}</span></div>`;
     const section=(label,rows,tag,cls)=>`<div style="font-size:11px;font-weight:800;color:var(--steel);text-transform:uppercase;letter-spacing:.4px;margin:8px 2px 4px">${label}</div>`+(rows.length?rows.map(r=>rowHtml(r,tag,cls)).join(''):'<div class="hint" style="margin:0 2px 8px">Nothing yet today.</div>');
     let html=section('Gate Entry', gates.slice(0,5), 'Gate', 'blue');
-    if(!isGuard) html+=section('Estimate', est.slice(0,4), 'Estimate', 'green');
+    if(canSeeEst) html+=section('Estimate', est.slice(0,4), 'Estimate', 'green');
     box.innerHTML=html;
   });
 }
@@ -3040,7 +3051,8 @@ function geSaveEntry(){
   };
   jget('next_token', {location:loc}, function(t1){
     if(t1 && t1.token){ geAfterToken(t1); return; }
-    jget('next_token', {location:loc}, function(t2){ geAfterToken(t2); }); // one retry, then lettered fallback
+    if(t1 && t1.error==='network'){ geAfterToken(t1); return; } // network is clearly down — use the safe fallback token now, don't make the guard wait through a second 20s timeout
+    jget('next_token', {location:loc}, function(t2){ geAfterToken(t2); }); // one retry only when the first reply wasn't a network failure
   });
 }
 </script>
@@ -3508,6 +3520,11 @@ const SCHED={f4_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:1
 // Labour dropdown is built dynamically in esRebuildLabDropdown() after master data loads
 
 function esBoot(){
+  // ALWAYS start with a clean form (Ravi 21-Jul): a half-filled estimate must never survive
+  // pressing Home and coming back — that risks the wrong estimate being generated. This is
+  // separate from the s10 speed fix below, which only skips re-fetching master DATA, not the
+  // in-progress entry.
+  if(typeof esNewEstimate==='function') esNewEstimate();
   if(window.ES_BOOTED){
     // Already loaded this session — masters, price/oil maps and dropdowns are in memory.
     // Show the form instantly instead of re-fetching and re-processing 9 tables. A Sync Now
@@ -6369,9 +6386,10 @@ function showEstimatePreview(est, reg, name, mob){
   };
   window.raviEstimateIsMine = function(e){
     if(!USER||!e) return false;
-    const emp=String(e.empno||e.empNo||e.EmpNo||'').trim();
-    const name=String(e.empname||e.empName||e.preparedBy||e.advisor||'').trim().toUpperCase();
-    return emp===String(USER.empno||'').trim() || (!!name && name===String(USER.personName||'').trim().toUpperCase());
+    const norm=s=>String(s||'').trim().toUpperCase().replace(/\s+/g,' ');
+    const emp=norm(e.empno||e.empNo||e.EmpNo||e['Emp No']||e['SA Empno']);
+    const name=norm(e.empname||e.empName||e.preparedBy||e.advisor||e.sa||e.SA||e['Prepared By']||e['Service Advisor']||e['SA Name']);
+    return (!!emp && emp===norm(USER.empno)) || (!!name && name===norm(USER.personName));
   };
   window.raviRowsAllowedForUser = function(rows, wsField){
     rows=rows||[];
