@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set31-2026.07.21-s13';
+window.HERO_BUILD = 'set32-2026.07.21-s14';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -6571,6 +6571,7 @@ function showEstimatePreview(est, reg, name, mob){
         pending=pending.filter(function(g){ return String(g.empno||'')===String(USER.empno||'') || String(g.sa||g.advisor||'').toUpperCase()===String(USER.personName||'').toUpperCase(); });
       }
       const estTotal=est.reduce((s,e)=>s+esEntryTotal(e),0);
+      window.RAVI_TODAY_EST_CACHE=est; // today's estimates, already correctly filtered — reused by the instant 'My Estimates Today' tap (Ravi 21-Jul)
       // v11.1 stability fix: dedupe by JC+Dealer and drop delivered/clear so the count
       // can't fluctuate (75/90/123) between loads from stale or duplicated local rows.
       let huRows=[]; try{ huRows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){}
@@ -6837,7 +6838,7 @@ function showEstimatePreview(est, reg, name, mob){
   window.raviOpenGateHistory=function(){
     const m=heroModal(); if(!m.modal) return;
     m.title.textContent='All Gate Entries'; m.body.innerHTML='<div class="hint">Loading…</div>'; m.modal.style.display='block';
-    jget('gate_history', {days:180}, function(res){
+    jget('gate_history', {days:45}, function(res){
       if(!res || res.ok===false){ m.body.innerHTML='<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'; return; }
       const entries=res.entries||[];
       if(!entries.length){ m.body.innerHTML='<div class="hint">No gate entries yet.</div>'; return; }
@@ -8279,7 +8280,27 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   window.raviOpenPartsEstimates=function(){ window.blBoot(); if(typeof showView==='function') showView('billing'); };
   const OLD_RAVI_OPEN_SA_KPI=window.raviOpenSaKpi;
   window.raviOpenSaKpi=function(kind){
-    if(kind==='estimates' || kind==='estvalue'){ window.blBoot(); if(typeof showView==='function') showView('billing'); return; }
+    if(kind==='estimates' || kind==='estvalue'){
+      // INSTANT, from today's already-loaded data — no new fetch, no 92/180-day pull.
+      // (Ravi 21-Jul: an estimate from 15-Jul was showing under "Today" because the old
+      // path opened a 92-day history view under the "Today" label. Now "Today" really
+      // means today, and is instant because the data is already in memory from the
+      // home-screen KPI calculation.)
+      const m=heroModal(); if(!m.modal) return;
+      const mine=window.RAVI_TODAY_EST_CACHE||[];
+      m.title.textContent = kind==='estvalue' ? "Today's Estimate Value" : 'My Estimates Today';
+      const histBtn='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="window.blBoot();if(typeof showView===\'function\')showView(\'billing\')">📅 All My Estimates — full history</button>';
+      if(!mine.length){ m.body.innerHTML=histBtn+'<div class="hint">No estimates prepared by you yet today.</div>'; m.modal.style.display='block'; return; }
+      if(kind==='estvalue'){
+        const total=mine.reduce((s,e)=>s+esEntryTotal(e),0);
+        m.body.innerHTML=histBtn+`<div class="ctlitem"><div><div class="big">${mine.length} estimate(s) today</div><div class="small">Total value so far</div></div><div><span class="badge done">${inr(total)}</span></div></div>`;
+      } else {
+        m.body.innerHTML=histBtn+mine.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(e.reg||'')} · ${raviEsc(e.model||'')}</div>
+          <div class="small">${raviEsc(e.name||'')} · ${raviEsc(e.service||'')}</div></div><div><span class="badge done">${inr(esEntryTotal(e))}</span></div></div>`).join('');
+      }
+      m.modal.style.display='block';
+      return;
+    }
     if(OLD_RAVI_OPEN_SA_KPI) return OLD_RAVI_OPEN_SA_KPI(kind);
   };
 })();
