@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set26-2026.07.20-s08';
+window.HERO_BUILD = 'set28-2026.07.20-s10';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1643,6 +1643,8 @@ function clearMasterCache(){
   HKV.forEach(function(v,k){ if(k.indexOf('sehgal_cache:')===0) dead.push(k); });
   dead.forEach(function(k){ HKV.delete(k); hkvDel(k); });
   try{ const keys=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf('sehgal_cache:')===0) keys.push(k); } keys.forEach(k=>localStorage.removeItem(k)); }catch(e){}
+  // Force the Gate and Estimate screens to reload fresh next time they open (Ravi 20-Jul).
+  window.ES_BOOTED=false; window.GE_BOOTED=false;
 }
 
 function checkBackendVersion(){
@@ -2324,11 +2326,13 @@ let GE_AI_RESULT=null; // last Gemini recognition result
 let GE_AI_AUTORAN=false; // recognition already auto-fired for this vehicle
 
 function geBoot(){
+  if(window.GE_BOOTED){ geAfterCheck(); return; } // loaded this session — show form instantly; Sync Now clears this (Ravi 20-Jul)
   let pending=2, configRes=null, listRes=null;
   const proceed=()=>{
     GE_CONFIG = (configRes && configRes.config) || {};
     GE_FIELDS.forEach(f=>{ if(!GE_CONFIG[f.key] || !GE_CONFIG[f.key].table) GE_CONFIG[f.key]=f.def; });
     GE_TABLES = (listRes && listRes.tables) || [];
+    window.GE_BOOTED=true;
     geCheckAndLoad();
   };
   jget('app_config', {app:GE_APP}, function(res){ configRes=res; if(--pending===0) proceed(); });
@@ -2465,7 +2469,11 @@ function geToggleMyEntry(i){
    photo thumbnails opening the in-app viewer. */
 function geEntryDetailHtml(g){
   const ph=g.photos||{}; const legacy=(g.photo&&String(g.photo).indexOf('http')===0)?g.photo:'';
-  const sides=[['front','Front'],['back','Back'],['right','Right'],['left','Left'],['odo','Odometer'],['dicky','Dicky']];
+  // Odometer photo hidden from the SA (Ravi 20-Jul) so the SA records the reading himself;
+  // WM/CEO still see it (gate history) to compare gate vs SA readings.
+  const sides=(typeof isSAUser==='function' && isSAUser())
+    ? [['front','Front'],['back','Back'],['dicky','Dicky']]
+    : [['front','Front'],['back','Back'],['right','Right'],['left','Left'],['odo','Odometer'],['dicky','Dicky']];
   const pics=sides.map(([k,l])=>{
     const u=(ph[k]&&String(ph[k]).indexOf('http')===0)?ph[k]:(k==='front'?legacy:'');
     return u?`<div onclick="heroPhotoView('${String(u).replace(/'/g,'')}','${l} — ${raviEsc(g.reg||'')}')" style="flex:0 0 auto;text-align:center;cursor:pointer">
@@ -3500,6 +3508,12 @@ const SCHED={f4_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:1
 // Labour dropdown is built dynamically in esRebuildLabDropdown() after master data loads
 
 function esBoot(){
+  if(window.ES_BOOTED){
+    // Already loaded this session — masters, price/oil maps and dropdowns are in memory.
+    // Show the form instantly instead of re-fetching and re-processing 9 tables. A Sync Now
+    // or admin setup-save clears this flag (via clearMasterCache) so fresh data reloads. (Ravi 20-Jul)
+    esAfterCheck(); return;
+  }
   ES_PRICE_LAB=[]; ES_LABOUR_MODEL='';
   let pending=9, configRes=null, listRes=null;
   const done=()=>{ if(--pending===0) proceed(); };
@@ -3509,6 +3523,7 @@ function esBoot(){
     ES_TABLES=(listRes&&listRes.tables)||[];
     esRebuildLabDropdown();
     esRebuildDemandedDropdown();
+    window.ES_BOOTED=true;
     esCheckAndLoad();
   };
   jget('app_config',{app:ES_APP},function(res){ configRes=res; done(); });
@@ -3848,8 +3863,20 @@ function esRenderPartSubDropdown(){
   var nm=document.getElementById('es-add-pname');
   var amt=document.getElementById('es-add-pamt'); if(amt) amt.value='';
   if(!sub) return;
-  if(!cat){ sub.innerHTML='<option value="">Sub-category…</option>'; if(nm) nm.innerHTML='<option value="">Part…</option>'; return; }
+  if(!cat){ sub.innerHTML='<option value="">Sub-category…</option>'; sub.style.display=''; if(nm) nm.innerHTML='<option value="">Part…</option>'; return; }
   var subs=Object.keys(ES_PART_INDEX.cats[cat]||{}).sort();
+  // If the parts data has no real sub-categories (only the fallback 'General'), skip the
+  // sub-category step and go straight to the parts list — otherwise the SA gets stuck on an
+  // empty sub dropdown. When the master DOES carry sub-categories, they show normally. (Ravi 20-Jul)
+  var realSubs=subs.filter(function(s){ return s && s!=='General'; });
+  if(realSubs.length===0){
+    var only=subs[0]||'General';
+    sub.innerHTML='<option value="'+only+'">'+only+'</option>';
+    sub.value=only; sub.style.display='none';
+    esRenderPartDropdown();
+    return;
+  }
+  sub.style.display='';
   sub.innerHTML='<option value="">Sub-category…</option>'+subs.map(function(x){return '<option value="'+x+'">'+x+'</option>';}).join('');
   if(nm) nm.innerHTML='<option value="">Select sub-category…</option>';
 }
@@ -4342,7 +4369,8 @@ function esGenerate(){
     {v:val('es-name'), label:'Customer Name'},
     {v:val('es-model'), label:'Model'},
     {v:val('es-km'), label:'Odometer (km)'},
-    {v:val('es-type'), label:'Service Type'}
+    {v:val('es-type'), label:'Service Type'},
+    {v:val('es-dos'), label:'Date of sale'}
   ]);
   if(missing.length){ reqShowMissing(missing); return; }
   const c=esComputeCurrent();
