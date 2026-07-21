@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set28-2026.07.20-s10';
+window.HERO_BUILD = 'set29-2026.07.21-s11';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -921,7 +921,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
         <div class="ops-two-col">
           <div class="ops-panel" id="recent-panel">
-            <div class="ops-panel-head"><span>Recent Activity</span><a onclick="openModule('control')">View all</a></div>
+            <div class="ops-panel-head"><span>Recent Activity</span><a onclick="(typeof isGuardUser==='function'&&isGuardUser())?raviOpenGateHistory():openModule('control')">View all</a></div>
             <div class="ops-list" id="recent-list"><div class="hint">Loading…</div></div>
           </div>
           <div class="ops-panel">
