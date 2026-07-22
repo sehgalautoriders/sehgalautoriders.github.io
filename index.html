@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set32-2026.07.21-s14';
+window.HERO_BUILD = 'set33-2026.07.22-s15a';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2005,7 +2005,7 @@ function isPartsPerson(){
   return !seniorLogin && (explicitPartsModule || explicitPartsText);
 }
 function canUseModule(m){ return isAdmin() || hasModule(m); }
-function canEditHoldup(){ return isAdmin() || hasModule('HoldupMonitor'); }
+/* dead canEditHoldup() removed 22-Jul-2026 (s15a). Live version is the window.canEditHoldup override in a later patch block. */
 function placeholderToast(name){ alert(name+' is a placeholder for the next version. Current live modules are Gate Entry, Estimate, Control Room, Holdup Monitor and Master Data.'); }
 
 function doLogin(){
@@ -2086,31 +2086,7 @@ function goHome(){
     else saDash.style.display='none';
   }
 }
-function loadSaDashboard(){
-  const box=document.getElementById('sa-myest'); if(box) box.innerHTML='<div class="hint">Loading…</div>';
-  jgetReliable('estimates_today', {}, function(res, isStale){
-    if(!box) return;
-    if(!res || res.ok===false){ if(!isStale) box.innerHTML='<div class="hint" style="color:var(--signal-d)">Could not load — still retrying in the background. Tap ↻ Sync Now if this persists.</div>'; return; }
-    const mine=((res&&res.entries)||[]).filter(e=>e.empno===USER.empno);
-    if(!mine.length){ box.innerHTML='<div class="hint">No estimates prepared by you yet today.</div>'; return; }
-    box.innerHTML=(isStale?'<div class="hint" style="margin-bottom:6px">⏳ Refreshing…</div>':'')+mine.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${e.reg||''} · ${e.model||''}</div>
-      <div class="small">${e.name||''} · ${e.service||''}</div></div><div><span class="badge done">${inr(e.total||0)}</span></div></div>`).join('');
-  });
-  // Holdup vehicles assigned to this SA — only meaningful if Holdup has been uploaded this session
-  const box2=document.getElementById('sa-myholdup'); if(!box2) return;
-  try{
-    const raw=localStorage.getItem(HU_STORE_KEY);
-    if(!raw) return;
-    const data=JSON.parse(raw);
-    const mineHu=data.filter(r=>{
-      const sup=String(r['Supervisor ID']||r['SA']||'').toUpperCase();
-      return sup===String(USER.empno).toUpperCase() || sup===String(USER.personName||'').toUpperCase();
-    });
-    if(!mineHu.length){ box2.innerHTML='<div class="hint">No holdup vehicles currently assigned to you.</div>'; return; }
-    box2.innerHTML=mineHu.map((r,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${r['Vehicle Registration Number']||r['Reg No']||''} · ${r['Model']||''}</div>
-      <div class="small">${r['Job Card Type']||''} · ${String(r['Order Status ']||r['Order Status']||'').trim()}</div></div></div>`).join('');
-  }catch(e){}
-}
+/* dead loadSaDashboard() removed 22-Jul-2026 (s15a). Live version is the window.loadSaDashboard override in a later patch block. */
 /* Fires all slow-changing lookups in the background right after login so they're
    already in localStorage cache by the time the user opens a module — same idea as
    AppSheet's "sync on start". Errors are silently ignored; modules still fetch live
@@ -2146,55 +2122,8 @@ function prefetchMasterData(){
   next();
 }
 function isCtlUser(){ return isAdmin() || hasModule('ControlRoom') || hasModule('HoldupMonitor'); }
-function renderHomeTiles(){
-  const nameEl=document.getElementById('hg-name-val');
-  if(nameEl) nameEl.textContent=USER.personName||USER.empno||'there';
-  const dateEl=document.getElementById('hg-date');
-  if(dateEl){ const now=new Date(); dateEl.innerHTML=now.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+'<br><span style="font-size:14px;color:var(--steel)">'+now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+'</span>'; }
-  const defs=[
-    {key:'GateEntry',id:'gate',ic:'🚗',tt:'Gate Entry',dd:'New vehicle entry, customer & vehicle registration.',c:'#2563eb',bg:'#eff6ff',live:true},
-    {key:'Estimate',id:'estimate',ic:'📋',tt:'Estimate Preparation',dd:'Prepare, review & send estimates quickly.',c:'#16a34a',bg:'#ecfdf5',live:true},
-    {key:'HoldupMonitor',id:'holdup',ic:'⛔',tt:'Holdup Monitor',dd:'Track holdup cases, reasons, ETA & status in real time.',c:'#dc2626',bg:'#fef2f2',live:true},
-    {key:'BillingComparison',id:'billing',ic:'₹',tt:'Estimates & Billing',dd:'All estimates of all dates + actual DMS billing comparison & deviation %.',c:'#7c3aed',bg:'#f5f3ff',live:true},
-    {key:'PartFinder',id:'partfinder',ic:'🔎',tt:'All-India Part Finder',dd:'Find any part across all Hero dealers in India. Nearest-first, downloadable.',c:'#0891b2',bg:'#ecfeff',live:true},
-    {key:'PendingReports',id:'pending',ic:'▣',tt:'Pending Reports',dd:'All pending internal reports & documents at a glance.',c:'#f59e0b',bg:'#fff7ed',live:false},
-    {key:'PartsDesk',id:'partsdesk',ic:'📦',tt:'Parts Desk',dd:'Parts issue, returns, stock check & request.',c:'#0891b2',bg:'#ecfeff',live:false},
-    {key:'CRM',id:'crm',ic:'👥',tt:'CRM / Customer Actions',dd:'Customer follow-ups, reminders & communications.',c:'#334155',bg:'#f1f5f9',live:false},
-    {key:'ControlRoom',id:'control',ic:'📡',tt:'Control Room',dd:"Today's gate entries, estimates and pending work.",c:'#0f766e',bg:'#f0fdfa',live:true},
-    {key:'MasterData',id:'master',ic:'🗂️',tt:'Master Data',dd:'Users, modules, models, locations and dropdown masters.',c:'#475569',bg:'#f8fafc',live:true}
-  ];
-  const visible=defs.filter(d=>canUseModule(d.key));
-  const box=document.getElementById('home-tiles');
-  if(!visible.length){ box.innerHTML='<div class="hint">No modules assigned to your login yet. Contact admin.</div>'; return; }
-  box.innerHTML=visible.map(t=>`<div class="mod-tile ops ${t.live?'':'placeholder'}" style="--tile-c:${t.c};--tile-bg:${t.bg}" onclick="${t.live?`openModule('${t.id}')`:`placeholderToast('${t.tt.replace(/'/g,"\\'")}')`}"><div class="mt-ic">${t.ic}</div><div><div class="mt-tt">${t.tt}</div><div class="mt-dd">${t.dd}</div>${t.live?'':'<span class="mt-badge" style="background:#94a3b8">Coming Soon</span>'}</div><div class="mt-arrow">›</div></div>`).join('');
-  renderQuickActions();
-  // Parts login: no workshop-wide priority feed or total-holdup snapshot — his home
-  // is his own KPI cards (parts-pending + estimates with parts to issue) only.
-  const isPartsHome = (typeof isPartsPerson==='function' && isPartsPerson() && !isTopMgmtUser());
-  const pp=document.getElementById('priority-panel'); if(pp) pp.style.display=(!isPartsHome && (canUseModule('ControlRoom')||canUseModule('HoldupMonitor')))?'block':'none';
-  const snap=document.getElementById('holdup-snapshot'); if(snap) snap.style.display=(!isPartsHome && canUseModule('HoldupMonitor'))?'block':'none';
-  loadPriorityPanel();
-  loadRecentActivity();
-  loadHoldupSnapshot();
-}
-function renderQuickActions(){
-  const q=document.getElementById('quick-actions'); if(!q) return;
-  const actions=[
-    {m:'GateEntry',ic:'🚗',t:'New Gate Entry',fn:"openModule('gate')"},
-    {m:'Estimate',ic:'📋',t:'Create Estimate',fn:"openModule('estimate')"},
-    {m:'HoldupMonitor',ic:'⛔',t:'Update Holdup',fn:"openModule('holdup')"},
-    {m:'HoldupMonitor',ic:'☁️',t:'Upload Documents',fn:"openModule('holdup')"},
-    {m:'CRM',ic:'🟢',t:'WhatsApp Customer',fn:"placeholderToast('WhatsApp Customer')"},
-    {m:'CRM',ic:'✉️',t:'Email Customer',fn:"placeholderToast('Email Customer')"},
-    {m:'ControlRoom',ic:'🔍',t:'Search Vehicle',fn:"openModule('control')"},
-    {m:'ControlRoom',ic:'☰',t:'Check Backlog',fn:"openModule('control')"},
-    {m:'ALL',ic:'↻',t:'Sync Now',fn:"globalSyncNow()"}
-  ];
-  q.innerHTML=actions.map(a=>{
-    const ok=a.m==='ALL'||canUseModule(a.m);
-    return `<button class="ops-quick ${ok?'':'disabled'}" onclick="${ok?a.fn:'return false'}"><span class="qic">${a.ic}</span><span>${a.t}</span></button>`;
-  }).join('');
-}
+/* dead renderHomeTiles() removed 22-Jul-2026 (s15a). Live version is the window.renderHomeTiles override in a later patch block. */
+/* dead renderQuickActions() removed 22-Jul-2026 (s15a). Live version is the window.renderQuickActions override in a later patch block. */
 function loadRecentActivity(){
   const box=document.getElementById('recent-list'); if(!box) return;
   jgetReliable('report_today', {}, function(res){
@@ -2296,31 +2225,7 @@ function openModule(id){
   if(id==='gateout') goBoot();
   showView(id);
 }
-function loadHomeStats(){
-  const box=document.getElementById('home-stats');
-  const upd=document.getElementById('ops-updated'); if(upd) upd.textContent='Last updated: Today '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-  if(!box) return;
-  box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Loading…</div></div>';
-  jgetReliable('report_today', {}, function(res, isStale){
-    if(!res || res.ok===false){ if(!isStale) box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Could not load</div></div>'; return; }
-    const gates=(res.gateEntries||[]).filter(g=>wsAllowed(g.location));
-    const pending=(res.pending||[]).filter(g=>wsAllowed(g.location));
-    const est=(res.estimates||[]).filter(e=>wsAllowed(e.ws));
-    const estTotal=est.reduce((s,e)=>s+Number(e.total||0),0);
-    const billing = estTotal>=100000 ? (Math.round(estTotal/10000)/10)+' L' : inr(estTotal);
-    huComputeHomeCounts(function(c){
-      const hu=c.hu, appr=c.appr;
-      box.innerHTML=[
-        {ic:'🚗',n:gates.length,t:'Today Gate Entries',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',go:'raviOpenGateHistory()'},
-        {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending',color:'#16a34a'},
-        {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',go:'esOpenMyEstHistory()'},
-        {ic:'₹',n:billing,t:'Billing Today',sub:'Estimate value till now',color:'#7c3aed'},
-        {ic:'⛔',n:hu,t:'Holdup Cases',sub:'Active DMS holdup',color:'#dc2626'},
-        {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer',color:'#0891b2'}
-      ].map(k=>`<div class="kpi-card ops" ${k.go?`onclick="${k.go}" style="--kpi-color:${k.color};cursor:pointer"`:`style="--kpi-color:${k.color}"`}><div class="kpi-ic">${k.ic}</div><div class="kpi-n">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
-    });
-  });
-}
+/* dead loadHomeStats() removed 22-Jul-2026 (s15a). Live version is the window.loadHomeStats override in a later patch block. */
 
 </script>
 <script>
@@ -5989,68 +5894,10 @@ function huSoftValidate(r, newStatus){
 }
 
 /* ===== BAR CHART (#3, #9) ===== */
-function huRenderBarChart(rows){
-  const el=document.getElementById('hu-bar-chart'); if(!el) return;
-  if(!rows||!rows.length){ el.innerHTML='<div style="font-size:12px;color:var(--steel)">No data</div>'; return; }
-  // Grouped chart mapping — several DRS values combine into one bar category
-  const groups={
-    'Not Allocated':['Not Allocated','UNREGISTERED','GATE_MATCHED','Not Set'],
-    'Work In Progress':['Work In Progress','WIP'],
-    'Diagnosis Pending':['Diagnosis Pending'],
-    'Parts Pending':['Major Work - Parts Available','Major Work - Pending for Parts','Minor Work - Pending for Parts','PENDING_PARTS','PARTS_ORDERED','PARTS_RECEIVED'],
-    'Warranty\nApproval':['Warranty Approval Pending'],
-    'Insurance\nApproval':['Insurance Approval Pending','INSURANCE_PENDING'],
-    'Customer\nApproval':['Additional Approval from Customer Pending','CUSTOMER_PENDING'],
-    'Customer Not\nReachable':['Customer Not Reachable'],
-    'Ready / Not\nDelivered':['Ready - Not Picked by Customer','Ready - DMS Billing Issue','Vehicle Physically Delivered - JC Closure Pending','READY','CLEAR'],
-    'Shifted':['Shifted to Bodyshop / Service'],
-    'Other':['Other - See Remarks']
-  };
-  const palette={'Not Allocated':'#9ca3af','Work In Progress':'#2563eb','Diagnosis Pending':'#d97706','Parts Pending':'#b91c1c','Warranty\nApproval':'#7c3aed','Insurance\nApproval':'#4f46e5','Customer\nApproval':'#0891b2','Customer Not\nReachable':'#db2777','Ready / Not\nDelivered':'#16a34a','Shifted':'#92400e','Other':'#6b7280'};
-  const counts={};
-  Object.keys(groups).forEach(g=>{ counts[g]=0; });
-  rows.forEach(r=>{
-    const s=r['Holdup Status']||'Not Set';
-    let found=false;
-    Object.entries(groups).forEach(([g,vals])=>{ if(!found&&vals.some(v=>v.toLowerCase()===s.toLowerCase())){ counts[g]++; found=true; } });
-    if(!found) counts['Other']=(counts['Other']||0)+1;
-  });
-  const sorted=Object.entries(counts).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
-  const max=Math.max(...sorted.map(e=>e[1]),1);
-  const maxH=70;
-  el.innerHTML=sorted.map(([g,n])=>`<div class="hu-bar-item" title="${g}: ${n} vehicles"><span class="hu-bar-n">${n}</span><div class="hu-bar" style="height:${Math.max(4,Math.round(n/max*maxH))}px;background:${palette[g]||'#6b7280'}"></div><span class="hu-bar-label">${g}</span></div>`).join('');
-}
+/* dead huRenderBarChart() removed 22-Jul-2026 (s15a). Live version is the window.huRenderBarChart override in a later patch block. */
 
 /* ===== PHOTO GALLERY (#11) ===== */
-function huRenderPhotoGallery(){
-  const el=document.getElementById('hu-photo-gallery');
-  const countEl=document.getElementById('hu-photo-count');
-  if(!el) return;
-  const photos=[];
-  try{
-    for(let i=0;i<localStorage.length;i++){
-      const key=localStorage.key(i);
-      if(key&&key.startsWith(HU_PHOTO_KEY_PREFIX)){
-        const jcKey=key.replace(HU_PHOTO_KEY_PREFIX,'');
-        const dataUrl=localStorage.getItem(key);
-        if(dataUrl) photos.push({jcKey,dataUrl});
-      }
-    }
-  }catch(e){}
-  try{
-    const seen={}; photos.forEach(p=>seen[p.jcKey]=true);
-    (HU_DATA||[]).forEach(r=>{
-      const u=String(r['Requisition Photo URL']||'');
-      if(!u.startsWith('http')) return;
-      const jcKey=String(r[HU_COLS.jcNo]||'').trim()+'|'+String(r[HU_COLS.code]||'').trim();
-      if(seen[jcKey]) return; seen[jcKey]=true;
-      photos.push({jcKey,dataUrl:huDrivePhotoSrc(u)});
-    });
-  }catch(e){}
-  if(countEl) countEl.textContent=photos.length?`(${photos.length} photos)` :'';
-  if(!photos.length){ el.innerHTML='<div class="hu-gallery-empty">📷 No photos yet<br>Upload requisition slips per row using the camera icon in the table</div>'; return; }
-  el.innerHTML=photos.slice(-9).reverse().map(p=>`<div class="hu-gallery-item" onclick="huViewPhotoByUrl('${p.dataUrl}','${p.jcKey}')"><img src="${p.dataUrl}" alt="${p.jcKey}"><div class="gal-label">${p.jcKey.split('|')[0]}</div></div>`).join('');
-}
+/* dead huRenderPhotoGallery() removed 22-Jul-2026 (s15a). Live version is the window.huRenderPhotoGallery override in a later patch block. */
 function huViewPhotoByUrl(dataUrl,label){
   document.getElementById('preview-title').textContent='Requisition Photo — '+label.split('|')[0];
   document.getElementById('preview-body').innerHTML=`<img src="${dataUrl}" style="max-width:100%;border-radius:8px">`;
@@ -7337,24 +7184,7 @@ function blShowInfo(msg,kind){
   el.textContent=msg;
 }
 function blIsScoped(){ return (typeof isSAUser==='function' && isSAUser()) && !isTopMgmtUser() && !isAdmin(); }
-function blBoot(){
-  BL_SA_FILTER=''; BL_UNMATCHED=null; // re-fetch bills-with-no-estimate on refresh
-  const wrap=document.getElementById('bl-table-wrap');
-  if(wrap) wrap.innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">Loading estimates of all dates…</div>';
-  // SA logins: only their own estimates + no upload buttons (uploads are WM/GM/CEO daily discipline)
-  const scoped=blIsScoped();
-  const up=document.getElementById('bl-upload-btns');
-  if(up){ up.querySelectorAll('label').forEach(l=>l.style.display=scoped?'none':'inline-flex'); }
-  const params={days:92};
-  if(scoped) params.empno=USER.empno;
-  jgetReliable('estimates_all', params, function(res,isStale){
-    if(!res||res.ok===false){ if(!isStale) blShowInfo('Could not load estimates — check connection and tap ↻ Refresh.','error'); return; }
-    BL_DATA=(res.entries||[]).filter(e=>wsAllowed(e.ws));
-    blBuildFilters();
-    blRender();
-  }, 20000);
-  jgetRaw('billing_status', {}, function(st){ BL_STATUS=st; blRenderStatusLine(); }, 15000);
-}
+/* dead blBoot() removed 22-Jul-2026 (s15a). Live version is the window.blBoot override in a later patch block. */
 function blRenderStatusLine(){
   if(!BL_STATUS||BL_STATUS.ok===false) return;
   if(!BL_STATUS.billRows && !BL_STATUS.jcRows) { blShowInfo('No DMS billing uploaded yet — upload Daily JC Summary + Total Bill Value (both from Hero DMS) to activate comparison.','error'); return; }
