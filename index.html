@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set46-2026.07.26-s28';
+window.HERO_BUILD = 'set47-2026.07.26-s29';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1938,6 +1938,36 @@ function heroCheckMasterStamps(force){
 const CUST_DB='hero_cust_v1', CUST_STORE='cust';
 const CUST_STAMP_KEY='hero_cust_stamp', CUST_COUNT_KEY='hero_cust_count';
 const CUST_RETRY_KEY='hero_cust_retry_after';
+
+/* ===== INSTANT RE-OPEN (Ravi 26-Jul-2026) =========================================
+   Going back into a register and being shown "Loading…" all over again is the single
+   thing that makes this app feel slower than it is. The rows are almost always the
+   same ones you were just looking at. So a register now paints what it showed last
+   time, immediately, and refreshes behind it. "Loading…" is shown only on the very
+   first open of that register, when there is genuinely nothing to put on screen.
+
+   Cached HTML and the in-memory array behind it are always replaced together, so a
+   row tapped before the refresh lands still refers to the vehicle it names. */
+const HERO_VIEW_CACHE=new Map();
+const HERO_VIEW_TTL=10*60*1000;
+function heroViewPaint(el, key, loadingHtml){
+  if(!el) return false;
+  try{ el.setAttribute('data-hero-viewkey', key); }catch(e){}
+  const c=HERO_VIEW_CACHE.get(key);
+  if(c && c.html && (Date.now()-c.at)<HERO_VIEW_TTL){ el.innerHTML=c.html; return true; }
+  el.innerHTML=loadingHtml;
+  return false;
+}
+function heroViewSave(el, key){
+  if(!el) return;
+  // Never remember a placeholder or a failure — that would make the next open
+  // show "Loading…" or "Could not load" instantly, which is worse than nothing.
+  const t=(el.textContent||'').trim();
+  if(!t || /^(Loading|Could not load|Still trying)/i.test(t)) return;
+  try{ HERO_VIEW_CACHE.set(key,{html:el.innerHTML, at:Date.now()}); }catch(e){}
+}
+window.heroViewPaint=heroViewPaint;
+window.heroViewSave=heroViewSave;
 let __custDbP=null;
 
 function custNormReg(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
@@ -1999,13 +2029,19 @@ function heroCustFind(query, cb){
   });
 }
 
-/* Local first, server second. Never leaves the user with nothing. */
+/* Local first, server second. Never leaves the user with nothing.
+   IMPORTANT (Ravi 26-Jul-2026): "the server answered and has no such vehicle" and
+   "the lookup could not run at all" are completely different answers, and collapsing
+   both into found:false made every existing vehicle look brand new the moment the
+   backend action was missing or slow. `found:false` now means genuinely not in
+   records; `found:null` means we do not know. Callers must treat them differently. */
 function heroCustLookup(query, cb){
   heroCustFind(query, function(local){
     if(local && local.found){ local.source='phone'; cb(local); return; }
     jgetRaw('customer_find', {q:String(query||'')}, function(res){
-      if(res && res.ok && res.found){ res.source='server'; cb(res); }
-      else cb({found:false, source: (res&&res.ok)?'server':'offline'});
+      if(res && res.ok && res.found){ res.source='server'; cb(res); return; }
+      if(res && res.ok===true){ cb({found:false, source:'server'}); return; }  // server checked, no such vehicle
+      cb({found:null, source:'unavailable'});                                   // no answer — do NOT call it new
     }, 12000);
   });
 }
@@ -3249,7 +3285,9 @@ function geRegLookup(isBlur){
       geRevealDetails();
       geAskModel(raw, '', null, false);
     } else {
-      geRegStatus('',''); // lookup unavailable — but still let the guard proceed manually
+      // Lookup could not run. Say so plainly rather than silently letting the guard
+      // believe the vehicle was checked. (Ravi 26-Jul-2026)
+      geRegStatus('⚠ Records could not be checked just now — please enter the details by hand.','warn');
       geRevealDetails();
     }
   }, 15000);
@@ -3328,6 +3366,13 @@ function geHandleLookup(res, g){
     // Known vehicle → fill everything, model is trusted from records.
     geFillFromVehicle(res.vehicle, res.fuzzy);
     geAiStatus('✅ Vehicle found — details filled. Please verify with the customer.'+(res.fuzzy?' <b>(plate close-matched — check reg)</b>':''),'ok');
+  } else if(!res || res.found===null || res.found===undefined){
+    // The records lookup could not run (backend action missing, or no answer in time).
+    // This is NOT a new vehicle. Saying so wrongly overwrote a known model with
+    // "Unknown" and burned AI credits on a bike already in the master. (Ravi 26-Jul-2026)
+    geAiStatus('🔎 Plate read: <b>'+(plate||'not clear')+'</b> — records could not be checked just now. Please confirm the details with the customer.','warn');
+    geRevealDetails();
+    geAskModel(plate, '', null, false);
   } else {
     // NEW vehicle, not in records. Only NOW spend AI on model identification
     // (known vehicles skip this entirely — Ravi 15-Jul). Then ask the guard.
@@ -5269,7 +5314,9 @@ function mdCloseModal(id){ document.getElementById(id).style.display='none'; }
 /* ================= CONTROL ROOM MODULE (WM / GM / CEO visibility) ================= */
 let CTL_DATA=null, CTL_TAB='pending', CTL_EST_LIST=[];
 function ctlBoot(){
-  document.getElementById('ctl-list').innerHTML='<div class="hint">Loading…</div>';
+  // Re-entering Control Room keeps what was already drawn. Only a genuinely
+  // first open shows "Loading…". (Ravi 26-Jul-2026)
+  if(!CTL_DATA) document.getElementById('ctl-list').innerHTML='<div class="hint">Loading…</div>';
   ctlLoad();
 }
 function ctlLoad(){
@@ -7384,7 +7431,17 @@ function heroSoftPlaceholder(el, html){
     reader.readAsDataURL(file);
   };
 
-  window.raviCloseKpiModal=function(){ const m=document.getElementById('ravi-kpi-modal'); if(m) m.style.display='none'; };
+  window.raviCloseKpiModal=function(){
+    // Remember what the SA KPI screens were showing, so tapping the same tile
+    // again paints at once instead of going back to "Loading…". The drill-down
+    // registers save their own top level and are skipped here on purpose.
+    try{
+      const b=document.getElementById('ravi-kpi-body');
+      const k=b?b.getAttribute('data-hero-viewkey'):'';
+      if(b && k && k.indexOf('sakpi:')===0) heroViewSave(b,k);
+    }catch(e){}
+    const m=document.getElementById('ravi-kpi-modal'); if(m) m.style.display='none';
+  };
 
   /* Parts login: today's estimates with the exact parts (and oil) to issue per vehicle,
      itemised from each estimate's saved breakup. This is the parts executive's work
@@ -7393,9 +7450,10 @@ function heroSoftPlaceholder(el, html){
     const modal=document.getElementById('ravi-kpi-modal'), body=document.getElementById('ravi-kpi-body'), title=document.getElementById('ravi-kpi-title');
     if(!modal||!body||!title) return;
     title.textContent="Today's Estimates — Parts to Issue";
-    body.innerHTML='<div class="hint">Loading…</div>'; modal.style.display='block';
+    heroViewPaint(body,'parts_estimates','<div class="hint">Loading…</div>');
+    modal.style.display='block';
     jgetReliable('estimates_today', {}, function(res){
-      if(!res || res.ok===false){ body.innerHTML='<div class="hint">Could not load — tap ↻ Sync Now if this persists.</div>'; return; }
+      if(!res || res.ok===false){ heroSoftPlaceholder(body,'<div class="hint">Could not load — tap ↻ Sync Now if this persists.</div>'); return; }
       const arr=raviRowsAllowedForUser(res.entries||[], 'ws');
       if(!arr.length){ body.innerHTML='<div class="hint">No estimates prepared yet today.</div>'; return; }
       body.innerHTML=arr.map(function(e,i){
@@ -7411,6 +7469,7 @@ function heroSoftPlaceholder(el, html){
             <span class="badge done">${parts.length} part${parts.length===1?'':'s'}</span>
           </div>${partsHtml}</div>`;
       }).join('');
+      heroViewSave(body,'parts_estimates');   // so re-opening paints instantly
     });
   };
 
@@ -7429,9 +7488,11 @@ function heroSoftPlaceholder(el, html){
   }
   window.esOpenMyEstHistory=function(){
     const m=heroModal(); if(!m.modal) return;
-    m.title.textContent='My Estimates'; m.body.innerHTML='<div class="hint">Loading…</div>'; m.modal.style.display='block';
+    m.title.textContent='My Estimates';
+    heroViewPaint(m.body,'my_estimates','<div class="hint">Loading…</div>');
+    m.modal.style.display='block';
     jget('my_estimates_daywise', {empno:USER.empno, days:180}, function(res){
-      if(!res || res.ok===false){ m.body.innerHTML='<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'; return; }
+      if(!res || res.ok===false){ heroSoftPlaceholder(m.body,'<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'); return; }
       window.ES_HIST_DAYS=(res.days||[]);
       if(!window.ES_HIST_DAYS.length){ m.body.innerHTML='<div class="hint">No estimates prepared by you yet.</div>'; return; }
       esHistShowMonths();
@@ -7454,6 +7515,7 @@ function heroSoftPlaceholder(el, html){
       const tot=mo.days.reduce((s,d)=>s+(+d.total||0),0);
       return '<div class="hero-drill-row" onclick="esHistShowDates('+mi+')"><div style="font-weight:800">🗓 '+raviEsc(mo.label)+'</div><div><span class="badge done">'+cnt+' · '+inr(tot)+'</span> ›</div></div>';
     }).join('');
+    heroViewSave(m.body,'my_estimates');   // so re-opening paints instantly
   };
   window.esHistShowDates=function(mi){
     const m=heroModal(); const mo=(window.ES_HIST_MONTHS||[])[mi]; if(!mo) return;
@@ -7475,7 +7537,8 @@ function heroSoftPlaceholder(el, html){
   window.raviOpenSaKpi=function(kind){
     const modal=document.getElementById('ravi-kpi-modal'), body=document.getElementById('ravi-kpi-body'), title=document.getElementById('ravi-kpi-title');
     if(!modal||!body||!title) return;
-    body.innerHTML='<div class="hint">Loading…</div>'; modal.style.display='block';
+    heroViewPaint(body,'sakpi:'+String(kind||''),'<div class="hint">Loading…</div>');
+    modal.style.display='block';
     if(kind==='estimates' || kind==='estvalue'){
       title.textContent = kind==='estvalue' ? 'My Estimate Value — Day-wise' : 'My Estimates — Today';
       jget('my_estimates_daywise', {empno:USER.empno, days:180}, function(res){
@@ -7531,9 +7594,11 @@ function heroSoftPlaceholder(el, html){
   function heroModal(){ return {modal:document.getElementById('ravi-kpi-modal'), body:document.getElementById('ravi-kpi-body'), title:document.getElementById('ravi-kpi-title')}; }
   window.raviOpenGateHistory=function(){
     const m=heroModal(); if(!m.modal) return;
-    m.title.textContent='All Gate Entries'; m.body.innerHTML='<div class="hint">Loading…</div>'; m.modal.style.display='block';
+    m.title.textContent='All Gate Entries';
+    heroViewPaint(m.body,'gate_history','<div class="hint">Loading…</div>');
+    m.modal.style.display='block';
     jget('gate_history', {days:45}, function(res){
-      if(!res || res.ok===false){ m.body.innerHTML='<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'; return; }
+      if(!res || res.ok===false){ heroSoftPlaceholder(m.body,'<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'); return; }
       const entries=res.entries||[];
       if(!entries.length){ m.body.innerHTML='<div class="hint">No gate entries yet.</div>'; return; }
       // Build months → dates → items
@@ -7559,6 +7624,7 @@ function heroSoftPlaceholder(el, html){
       const total=mo.dates.reduce((s,d)=>s+d.items.length,0);
       return '<div class="hero-drill-row" onclick="geHistShowDates('+mi+')"><div style="font-weight:800">🗓 '+raviEsc(mo.label)+'</div><div><span class="badge done">'+total+' entries</span> ›</div></div>';
     }).join('');
+    heroViewSave(m.body,'gate_history');   // so re-opening paints instantly
   };
   window.geHistShowDates=function(mi){
     const m=heroModal(); const mo=window.GE_HIST[mi]; if(!mo) return;
@@ -8294,7 +8360,12 @@ function goShowInfo(msg,kind){
 }
 function goBoot(){
   const list=document.getElementById('go-list');
-  if(list) list.innerHTML='<div class="hint">Loading vehicles inside the workshop…</div>';
+  // Coming back into Gate Out must not blank the list. If we already hold the
+  // vehicles, draw them at once and let the refresh land behind them.
+  if(list){
+    if(GO_DATA && GO_DATA.length) goRenderList();
+    else list.innerHTML='<div class="hint">Loading vehicles inside the workshop…</div>';
+  }
   // empno:'' → all guards' entries (a vehicle entered by Guard1 can exit on Guard2 shift)
   jgetReliable('gate_history', {days:7, empno:''}, function(res,isStale){
     if(!res||res.ok===false){ if(!isStale) goShowInfo('Could not load gate entries — tap ↻ Refresh.','error'); return; }
