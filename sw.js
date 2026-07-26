@@ -26,12 +26,19 @@
      what tells the phones a new version exists and shows the update bar.
    ========================================================================== */
 
-const HERO_BUILD = 'set39-2026.07.26-s21';
+const HERO_BUILD = 'set40-2026.07.26-s22';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
+/* Throttle for the background shell refresh — see the fetch handler. */
+let LAST_SHELL_REFRESH = 0;
+const SHELL_REFRESH_MS = 6 * 60 * 60 * 1000;
 const LIB_CACHE   = 'hero-lib-v1';   // versioned CDN URLs; contents never change
 
 /* The app shell — same-origin, changes on every deploy. */
-const SHELL_URLS = ['./', './index.html'];
+/* SPEED 2 (Ravi 26-Jul-2026): this used to list BOTH './' and './index.html'.
+   They are the same 590 KB page, so every install downloaded and stored it twice.
+   One entry only. The fetch handler already matches with ignoreSearch, so './'
+   navigations still hit this cached copy. */
+const SHELL_URLS = ['./index.html'];
 
 /* The heavy libraries — the URLs carry a version number, so the content behind
    a URL can never change. Safe to keep forever. */
@@ -124,20 +131,35 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  /* Our own files (index.html): show the phone's copy at once, then quietly
-     fetch the latest in the background for next time. This is what makes the
-     app open instantly instead of downloading 557 KB first. */
+  /* Our own files (index.html): serve the phone's copy at once.
+     SPEED 2 (Ravi 26-Jul-2026): this used to fire a full no-store re-download of the
+     whole 590 KB page on EVERY request, in the background, on every app open — on
+     mobile data, every time. That was pure waste: sw.js itself already carries the
+     build string, so when a new build is deployed the worker changes, installs, and
+     re-caches the page anyway. The background refresh is now throttled to once every
+     six hours, purely as a safety net if a worker update is ever missed. */
   if (url.origin === self.location.origin) {
     event.respondWith((async function () {
       const cache = await caches.open(SHELL_CACHE);
       const hit = await cache.match(req, { ignoreSearch: true });
-      const fresh = fetch(new Request(req.url, { cache: 'no-store' }))
-        .then(function (res) {
+      if (!hit) {
+        // Nothing stored yet — must go to the network.
+        try {
+          const res = await fetch(req);
           if (res && res.ok) { try { cache.put(req, res.clone()); } catch (e) {} }
           return res;
-        })
-        .catch(function () { return hit; });
-      return hit || fresh;
+        } catch (e) { return new Response('Offline', { status: 503 }); }
+      }
+      const now = Date.now();
+      if (now - LAST_SHELL_REFRESH > SHELL_REFRESH_MS) {
+        LAST_SHELL_REFRESH = now;
+        event.waitUntil(
+          fetch(new Request(req.url, { cache: 'no-store' }))
+            .then(function (res) { if (res && res.ok) { try { cache.put(req, res.clone()); } catch (e) {} } })
+            .catch(function () {})
+        );
+      }
+      return hit;
     })());
   }
 });

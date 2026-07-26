@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set39-2026.07.26-s21';
+window.HERO_BUILD = 'set40-2026.07.26-s22';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -222,10 +222,85 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 })();
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script>
+/* ═══ SPEED 1 — HEAVY LIBRARIES ARE NO LONGER LOADED AT STARTUP ═══════════════
+   (Ravi 26-Jul-2026)
+   These four files — jsPDF, jsPDF-autotable, SheetJS and ExcelJS — total roughly
+   2.2 MB. They used to sit as plain <script src> tags right here, which means the
+   browser had to download and parse ALL of them before it would even paint the
+   login screen. A security guard, who never exports anything in his life, was
+   paying that 2.2 MB every single time he opened the app.
+   Now: nothing is fetched at startup. They are pulled in the first time something
+   actually needs them (Upload, Download, PDF), and pre-warmed quietly a few
+   seconds after the app is idle so the first Export tap still feels instant.
+   heroEnsureLibs(group, cb) is the single entry point — see the call sites in
+   huDownload, huHandleFile, esBuildPDF, blHandleJcFile, blHandleBillFile,
+   pfDownload, pfHandleStockFile and pfLiveFetch. */
+(function(){
+  var LIBS = {
+    xlsx:   ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'],
+    exceljs:['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'],
+    pdf:    ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+             'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js']
+  };
+  var loaded = {}, inflight = {};
+
+  function one(url){
+    if (loaded[url]) return Promise.resolve();
+    if (inflight[url]) return inflight[url];
+    inflight[url] = new Promise(function(res, rej){
+      var s = document.createElement('script');
+      s.src = url; s.async = false;
+      s.onload = function(){ loaded[url] = true; res(); };
+      s.onerror = function(){ inflight[url] = null; rej(new Error('Could not load '+url)); };
+      document.head.appendChild(s);
+    });
+    return inflight[url];
+  }
+
+  /* group: 'xlsx' | 'exceljs' | 'pdf' | 'all'. cb runs once the group is ready.
+     On failure cb(false) is called so the caller can show a real message instead
+     of throwing "XLSX is not defined" at the user. */
+  window.heroEnsureLibs = function(group, cb){
+    var urls = group === 'all'
+      ? LIBS.xlsx.concat(LIBS.exceljs, LIBS.pdf)
+      : (LIBS[group] || []);
+    var pending = urls.filter(function(u){ return !loaded[u]; });
+    if (!pending.length) { if (cb) cb(true); return Promise.resolve(true); }
+    // Only show the wait message if it is actually taking a moment.
+    var slow = setTimeout(function(){
+      if (typeof window.heroLibToast === 'function') window.heroLibToast('Preparing…');
+    }, 400);
+    var p = Promise.all(urls.map(one))
+      .then(function(){ clearTimeout(slow); if (typeof window.heroLibToastHide==='function') window.heroLibToastHide(); if (cb) cb(true); return true; })
+      .catch(function(e){ clearTimeout(slow); if (typeof window.heroLibToastHide==='function') window.heroLibToastHide();
+        try{ alert('Could not load the file tools. Check your internet and try again.'); }catch(x){}
+        if (cb) cb(false); return false; });
+    return p;
+  };
+
+  /* Quiet pre-warm once the app has settled, so the first Export still feels instant.
+     requestIdleCallback where available; a plain timer otherwise. */
+  window.addEventListener('load', function(){
+    var warm = function(){ window.heroEnsureLibs('all'); };
+    if (window.requestIdleCallback) requestIdleCallback(warm, { timeout: 6000 });
+    else setTimeout(warm, 4000);
+  });
+})();
+/* Small non-blocking "Preparing…" chip, used only if a library is genuinely slow. */
+(function(){
+  var el=null;
+  window.heroLibToast=function(msg){
+    if(!el){ el=document.createElement('div');
+      el.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:22px;z-index:99998;'
+        +'background:#1e293b;color:#fff;padding:9px 16px;border-radius:99px;'
+        +'font:600 12px Inter,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+      document.body.appendChild(el); }
+    el.textContent=msg||'Preparing…'; el.style.display='block';
+  };
+  window.heroLibToastHide=function(){ if(el) el.style.display='none'; };
+})();
+</script>
 <style>
   :root{--ink:#15181c;--steel:#5b6470;--paper:#fbfaf7;--line:#ddd8cf;--signal:#c0392b;--signal-d:#922b21;--ok:#1f7a4d;--shade:#f1eee8;--field:#fff}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -1523,6 +1598,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       <input id="bl-f-search" type="text" placeholder="🔍 Reg No / Customer / JC No…" oninput="blRender()" style="flex:1;min-width:140px;font-size:12px;padding:5px 10px;border:1.5px solid var(--line);border-radius:6px">
     </div>
     <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--line)">
+      <div id="bl-viewbar" class="hu-sum-chips" style="display:none;margin-bottom:10px"></div>
       <div id="bl-table-wrap">
         <div style="text-align:center;padding:50px;color:var(--steel)">
           <div style="font-size:40px;margin-bottom:12px">₹</div>
@@ -1945,6 +2021,7 @@ async function globalSyncNow(){
   if(btn) btn.textContent='Syncing…';
   await flushQueue(); // send anything that was waiting offline, first
   clearMasterCache(); // forget cached master tables
+  if(typeof jrClearFresh==='function') jrClearFresh(); // Sync Now must genuinely re-ask, not reuse the 4-second window
   prefetchMasterData(); // re-pull everything fresh in the background
   /* Sync Now must re-read the full holdup ROW SET, not only the status fields.
      (Ravi 26-Jul-2026) The old call only patched status/reason/ETA onto whatever
@@ -2021,27 +2098,57 @@ function jgetRaw(action, params, cb, timeoutMs){
   const timer = setTimeout(() => { jFetchFallback_(action, params, finish, 'jsonp timeout'); }, timeoutMs||25000);
   document.body.appendChild(script);
 }
+/* ═══ SPEED 3+4 — SINGLE-FLIGHT / SHARED RESULT (Ravi 26-Jul-2026) ════════════
+   MEASURED problem: opening Home fired report_today FOUR separate times —
+   loadPriorityPanel, loadRecentActivity, loadHomeStats and loadSaDashboard each
+   asked for it independently. Same heavy joined read, four round trips, four waits.
+   Now: the first caller does the work, everyone else who asks in the same moment
+   is attached to that same request, and for a few seconds afterwards the answer is
+   handed back straight from memory. Callers did not change at all — the sharing
+   happens inside here, so nothing else in the app had to be touched.
+   IN_FLIGHT_MS is deliberately short. This is live data, not a cache; it only
+   collapses the burst of calls that happen together on one screen open. */
+const JR_FRESH_MS = 4000;
+const JR_INFLIGHT = {}, JR_RECENT = {};
+function jrKey(action, params){ return action+':'+JSON.stringify(params||{}); }
 function jgetReliable(action, params, cb){
+  const key = jrKey(action, params);
+
+  // Answered a moment ago on this same screen — reuse it, no network at all.
+  const recent = JR_RECENT[key];
+  if(recent && (Date.now()-recent.at) < JR_FRESH_MS){ cb(recent.res, false); return; }
+
+  // Someone else already asked and is still waiting — ride along with them.
+  if(JR_INFLIGHT[key]){ JR_INFLIGHT[key].push(cb); return; }
+  JR_INFLIGHT[key] = [cb];
+  const fanout = (res, isStale) => {
+    const list = JR_INFLIGHT[key] || [];
+    if(!isStale){ JR_INFLIGHT[key] = null; JR_RECENT[key] = {at:Date.now(), res:res}; }
+    list.forEach(function(f){ try{ f(res, isStale); }catch(e){} });
+  };
+
   const stale = getLastGood(action, params);
-  if(stale) cb(stale, true); // show instantly, mark as "stale" (2nd arg)
+  if(stale) fanout(stale, true); // show instantly, mark as "stale" (2nd arg)
   let attempt=0;
   const tryFetch=()=>{
     attempt++;
     jgetRaw(action, params, function(res){
       if(res && res.ok!==false){
         setLastGood(action, params, res);
-        cb(res, false);
+        fanout(res, false);
       } else if(attempt<3){
         setTimeout(tryFetch, 1500*attempt); // brief backoff, then retry
       } else if(!stale){
-        cb(res, false); // genuinely failed and we have nothing to fall back on
+        fanout(res, false); // genuinely failed and we have nothing to fall back on
+      } else {
+        JR_INFLIGHT[key] = null; // failed, but stale data is already on screen — leave it
       }
-      // if it failed but we DO have stale data already shown, leave that stale data
-      // on screen rather than replacing it with an error banner
     }, 25000); // generous timeout for these heavier joined reads
   };
   tryFetch();
 }
+/* Sync Now must ignore the freshness window and genuinely re-ask. */
+function jrClearFresh(){ for(const k in JR_RECENT) delete JR_RECENT[k]; }
 
 /* ---------- Online status (shared) ---------- */
 let ONLINE = navigator.onLine;
@@ -2252,28 +2359,44 @@ function scheduleMasterWarmup(){
 }
 function prefetchMasterData(){
   try{ loadAppSettings(); }catch(e){}
+  /* ═══ SPEED 5 — ROLE-AWARE, PARALLEL WARM-UP (Ravi 26-Jul-2026) ══════════════
+     Before: seven backend calls, fired one after another with a 120 ms gap between
+     each, identical for every role. A security guard — who only ever fills a gate
+     form — was downloading the estimate price master and the model-oil map on every
+     single open, and waiting through all seven before anything felt ready.
+     Now: each role pulls only what its own screens actually use, and they go out
+     together instead of in a queue. The guard drops from 7 calls to 3.
+     Nothing is removed from anyone who needs it — an SA/WM/GM/CEO still gets the
+     full set; they just get it in parallel. */
+  const needEstimate = (typeof hasModule==='function' && hasModule('Estimate'))
+                     || (typeof isAdmin==='function' && isAdmin())
+                     || (typeof isTopMgmtUser==='function' && isTopMgmtUser());
+  const isGuard = (typeof isGuardUser==='function') && isGuardUser();
+
   const jobs=[
     ['master_list',{}],
     ['master_table',{name:'MODEL'}],
     ['master_table',{name:'Location'}],
-    ['master_table',{name:'EstimatePrices'}],
-    ['master_table',{name:'ModelOilMap'}],
-    ['app_config',{app:'GateEntry'}],
-    ['app_config',{app:'Estimate'}]
+    ['app_config',{app:'GateEntry'}]
   ];
-  let i=0;
-  function next(){
-    if(i>=jobs.length) return;
-    const j=jobs[i++];
+  if(!isGuard){
+    // Holdup / advisor names — needed by every non-guard screen that shows an SA.
+    jobs.push(['master_table',{name:'SA_Master'}]);
+    jobs.push(['master_table',{name:'HoldupReasons'}]);
+  }
+  if(needEstimate){
+    jobs.push(['master_table',{name:'EstimatePrices'}]);
+    jobs.push(['master_table',{name:'ModelOilMap'}]);
+    jobs.push(['app_config',{app:'Estimate'}]);
+  }
+  jobs.forEach(function(j){
     jget(j[0],j[1],function(res){
       try{
         if(j[0]==='master_table' && j[1].name==='EstimatePrices') heroApplyPriceMaster(res&&res.rows);
         if(j[0]==='master_table' && j[1].name==='ModelOilMap') heroApplyOilMap(res&&res.rows);
       }catch(e){}
-      setTimeout(next,120);
     });
-  }
-  next();
+  });
 }
 function isCtlUser(){ return isAdmin() || hasModule('ControlRoom') || hasModule('HoldupMonitor'); }
 /* dead renderHomeTiles() removed 22-Jul-2026 (s15a). Live version is the window.renderHomeTiles override in a later patch block. */
@@ -4544,6 +4667,7 @@ function esWaText(){
 function esSendWAtext(){ if(!ES.current) return; const n=esWaNum(ES.current.mob); if(n.length<11){ document.getElementById('es-msg').textContent='Enter a valid 10-digit mobile number.'; return; }
   window.open('https://wa.me/'+n+'?text='+encodeURIComponent(esWaText()),'_blank'); }
 function esBuildPDF(){
+
   const d=ES.current; const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'}); const W=doc.internal.pageSize.getWidth();
   doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.setTextColor(21,24,28); doc.text('SEHGAL AUTO',40,52);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(91,100,112); doc.text('Authorised Hero MotoCorp Workshop · '+USER.ws,40,66);
@@ -4571,9 +4695,14 @@ function esBuildPDF(){
   doc.setTextColor(91,100,112); doc.text('Service Advisor',60,yy+60); doc.text('Customer signature',W-200,yy+60);
   return doc;
 }
-function esDownloadPDF(){ if(!ES.current) return; esBuildPDF().save('Estimate_'+ES.current.id+'.pdf'); }
+/* SPEED 1: esBuildPDF returns a document the caller chains onto, so the library
+   guard lives HERE, not inside the builder. */
+function esDownloadPDF(){ if(!ES.current) return;
+  heroEnsureLibs('pdf', function(ok){ if(!ok) return; esBuildPDF().save('Estimate_'+ES.current.id+'.pdf'); });
+}
 async function esSharePDF(){
   if(!ES.current) return; const m=document.getElementById('es-msg');
+  const libsOk=await heroEnsureLibs('pdf'); if(!libsOk) return;
   const blob=esBuildPDF().output('blob'); const file=new File([blob],'Estimate_'+ES.current.id+'.pdf',{type:'application/pdf'});
   if(navigator.canShare && navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file],title:'Service Estimate',text:'Sehgal Auto — your service estimate'}); }catch(e){} }
   else{ esBuildPDF().save('Estimate_'+ES.current.id+'.pdf'); m.textContent='PDF downloaded. Open WhatsApp and attach it (file-sharing works directly on a phone).'; }
@@ -5501,6 +5630,11 @@ function huApplyRoundTripRowsLocal(rows){
   return changed;
 }
 async function huDownload(){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_huDownload){ heroEnsureLibs('all', function(ok){ if(!ok) return; window.__heroLibsOK_huDownload=1; huDownload(); window.__heroLibsOK_huDownload=0; }); return; }
+
   const rows=(HU_ROWS_CURRENT&&HU_ROWS_CURRENT.length?HU_ROWS_CURRENT:HU_DATA)||[];
   if(!rows.length){ alert('No holdup data loaded to download.'); return; }
   const fileName='Holdup_Reupload_'+new Date().toISOString().slice(0,10)+'.xlsx';
@@ -5550,6 +5684,11 @@ async function huDownload(){
 }
 
 function huHandleFile(input){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_huHandleFile){ heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_huHandleFile=1; huHandleFile(input); window.__heroLibsOK_huHandleFile=0; }); return; }
+
   const file=input.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=function(e){
@@ -6541,23 +6680,33 @@ function showEstimatePreview(est, reg, name, mob){
   window.isSAUser = function(){ return !!USER && /\b(SA\d*|SERVICE ADVISOR\d*|ADVISOR\d*)\b/.test(raviUserText()) && !/\b(WM\d*|GM\d*|CEO\d*|ADMIN|PARTS\d*|GUARD\d*)\b/.test(raviUserText()); };
   window.isGuardUser = function(){ return !!USER && /\b(GUARD\d*|SECURITY\d*|GATE\d*)\b/.test(raviUserText()) && !/\b(WM\d*|GM\d*|CEO\d*|ADMIN)\b/.test(raviUserText()); };
   window.isTopMgmtUser = function(){ return !!USER && (isAdmin() || /\b(CEO\d*|GM\d*|WM\d*|WORKSHOP MANAGER|GENERAL MANAGER|DEALERADMIN|SUPERADMIN)\b/.test(raviUserText())); };
+  /* Employee numbers come back from Sheets as floats — 5004 arrives as "5004.0".
+     (Ravi 26-Jul-2026) The same trap that broke the labour-rate lookup earlier.
+     A plain string compare of "5004" against "5004.0" fails, so an SA's own
+     estimates and holdup rows silently counted as somebody else's, and his Home
+     tiles read 0. Every identity compare goes through this now. */
+  window.raviEmpKey = function(v){
+    let s=String(v==null?'':v).trim().toUpperCase();
+    if(/^\d+\.0+$/.test(s)) s=s.replace(/\.0+$/,'');   // 5004.0 -> 5004
+    return s;
+  };
   window.raviAssignedToMe = function(r){
     if(!USER || !r) return false;
     const candidates = [
       r['Supervisor ID'], r['SA'], r['SA Name'], r['Service Advisor'], r['Advisor'],
       r['Estimate SA'], r['Prepared By'], r['Updated By']
-    ].map(x=>String(x||'').trim().toUpperCase()).filter(Boolean);
-    const myEmp = String(USER.empno||'').trim().toUpperCase();
-    const myName = String(USER.personName||'').trim().toUpperCase();
+    ].map(raviEmpKey).filter(Boolean);
+    const myEmp = raviEmpKey(USER.empno);
+    const myName = raviEmpKey(USER.personName);
     const mySaCodes = [];
     try{
-      Object.entries(HU_SA_MAP||{}).forEach(([code,name])=>{ if(String(name||'').trim().toUpperCase()===myName) mySaCodes.push(String(code||'').trim().toUpperCase()); });
+      Object.entries(HU_SA_MAP||{}).forEach(([code,name])=>{ if(raviEmpKey(name)===myName) mySaCodes.push(raviEmpKey(code)); });
     }catch(e){}
     return candidates.some(c => c===myEmp || c===myName || mySaCodes.includes(c));
   };
   window.raviEstimateIsMine = function(e){
     if(!USER||!e) return false;
-    const norm=s=>String(s||'').trim().toUpperCase().replace(/\s+/g,' ');
+    const norm=s=>raviEmpKey(s).replace(/\s+/g,' ');
     const emp=norm(e.empno||e.empNo||e.EmpNo||e['Emp No']||e['SA Empno']);
     const name=norm(e.empname||e.empName||e.preparedBy||e.advisor||e.sa||e.SA||e['Prepared By']||e['Service Advisor']||e['SA Name']);
     return (!!emp && emp===norm(USER.empno)) || (!!name && name===norm(USER.personName));
@@ -6963,7 +7112,7 @@ function showEstimatePreview(est, reg, name, mob){
     if(!modal||!body||!title) return;
     body.innerHTML='<div class="hint">Loading…</div>'; modal.style.display='block';
     if(kind==='estimates' || kind==='estvalue'){
-      title.textContent = kind==='estvalue' ? 'My Estimate Value — Day-wise' : 'My Estimates Today';
+      title.textContent = kind==='estvalue' ? 'My Estimate Value — Day-wise' : 'My Estimates — Today';
       jget('my_estimates_daywise', {empno:USER.empno, days:180}, function(res){
         const days=(res&&res.days)||[];
         if(!res || res.ok===false){ body.innerHTML='<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'; return; }
@@ -6971,9 +7120,25 @@ function showEstimatePreview(est, reg, name, mob){
         window.ES_HIST_DAYS=days;
         if(kind==='estimates'){
           const histBtn='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="esHistShowMonths()">📅 All My Estimates — Month &amp; Date wise</button>';
-          const list=(days[0]&&days[0].estimates)||[];
+          /* ARITHMETIC FIX (Ravi 26-Jul-2026): days[0] is the most recent day that HAS
+             estimates — not necessarily today. The window was titled "My Estimates
+             Today" and then listed an estimate from an earlier date, while the Home
+             tile correctly counted today and showed 0. Top said 0, inside said 1.
+             Now the date is checked and named honestly. */
+          const todayKeyLocal=(function(){ const d=new Date(); const p=n=>String(n).padStart(2,'0');
+            return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); })();
+          const d0=days[0]||{};
+          const d0key=String(d0.dateKey||d0.date||'').slice(0,10);
+          const isToday=(d0key===todayKeyLocal);
+          const list=(isToday && d0.estimates)||[];
           window.RAVI_SA_EST_CACHE=list;
-          if(!list.length){ body.innerHTML=histBtn+'<div class="hint">No estimates prepared by you yet today.</div>'; return; }
+          if(!list.length){
+            const latest=(d0.estimates||[]).length;
+            const note = latest
+              ? '<div class="hint">No estimates prepared by you today.<br>Your most recent was on <b>'+raviEsc(d0key||'an earlier date')+'</b> ('+latest+').</div>'
+              : '<div class="hint">No estimates prepared by you yet.</div>';
+            body.innerHTML=histBtn+note; return;
+          }
           body.innerHTML=histBtn+esHistDayItemsHtml(list);
         } else {
           body.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:13px">'+
@@ -7393,6 +7558,7 @@ if(USER){ showView('home'); goHome(); } else { showView('login'); }
 
 /* ---------- ESTIMATES & BILLING ---------- */
 let BL_DATA=[], BL_STATUS=null, BL_SA_FILTER='';
+let BL_VIEW=''; // '' | 'billed' | 'unbilled' | 'deviation' — set by tapping a KPI tile (Ravi 26-Jul-2026)
 let BL_ROWS_CURRENT=[], BL_LEAK_OPEN=false, BL_UNMATCHED=null; // leakage report state (Ravi 08-Jul)
 
 /* ===== LEAKAGE REPORT (Fable-doc priority #4: "This will show leakage immediately") ===
@@ -7535,6 +7701,8 @@ function blMonthChanged(skipRender){
 function blDevPct(e){ const t=Number(e.total||0), b=Number(e.billed||0); if(!t||!b) return null; return Math.round(((b-t)/t)*1000)/10; }
 function blDevColor(p){ if(p===null) return '#6b7280'; const a=Math.abs(p); return a<=10?'#16a34a':a<=25?'#d97706':'#dc2626'; }
 function blSetSa(name){ BL_SA_FILTER=(BL_SA_FILTER===name)?'':name; blRender(); }
+/* Tap a billing KPI tile -> narrow the list. Tapping the same tile again clears it. */
+function blSetView(v){ BL_VIEW=(BL_VIEW===v)?'':v; blRender(); }
 function blRender(){
   const fWs=blVal('bl-f-ws'), fSa=blVal('bl-f-sa'), fSvc=blVal('bl-f-service'), fM=blVal('bl-f-month'), fD=blVal('bl-f-day'), fB=blVal('bl-f-billed');
   const fS=blVal('bl-f-search').toLowerCase().trim();
@@ -7566,13 +7734,16 @@ function blRender(){
   const devPct=estOfBilled>0?Math.round(((billTot-estOfBilled)/estOfBilled)*1000)/10:null;
   const fmtL=v=>v>=100000?(Math.round(v/10000)/10)+' L':inr(v);
   document.getElementById('bl-kpi-row').innerHTML=[
-    {ic:'🧾',n:rows.length,label:'Estimates',color:'#2563eb'},
-    {ic:'₹',n:fmtL(estTot),label:'Estimate Value',color:'#7c3aed'},
-    {ic:'✅',n:billedRows.length,label:'Billed (matched)',color:'#16a34a'},
-    {ic:'💰',n:fmtL(billTot),label:'Billed Value',color:'#166534'},
-    {ic:'📉',n:rows.length-billedRows.length,label:'Unbilled / Pending',color:'#d97706'},
-    {ic:'⚖️',n:devPct===null?'—':(devPct>0?'+':'')+devPct+'%',label:'Overall Deviation',color:blDevColor(devPct)}
-  ].map(k=>`<div class="hu-kpi-tile" style="--ktc:${k.color}"><span class="kt-ic">${k.ic}</span><div class="kt-body"><div class="kt-n">${k.n}</div><div class="kt-label">${k.label}</div></div></div>`).join('');
+    /* Ravi 26-Jul-2026: all six of these showed a number and did nothing when tapped.
+       Each one now filters the list underneath it. Value tiles drill to the same set
+       as the count tile beside them, so the number and the list always agree. */
+    {ic:'🧾',n:rows.length,label:'Estimates',color:'#2563eb',go:"blSetView('all')"},
+    {ic:'₹',n:fmtL(estTot),label:'Estimate Value',color:'#7c3aed',go:"blSetView('all')"},
+    {ic:'✅',n:billedRows.length,label:'Billed (matched)',color:'#16a34a',go:"blSetView('billed')"},
+    {ic:'💰',n:fmtL(billTot),label:'Billed Value',color:'#166534',go:"blSetView('billed')"},
+    {ic:'📉',n:rows.length-billedRows.length,label:'Unbilled / Pending',color:'#d97706',go:"blSetView('unbilled')"},
+    {ic:'⚖️',n:devPct===null?'—':(devPct>0?'+':'')+devPct+'%',label:'Overall Deviation',color:blDevColor(devPct),go:"blSetView('deviation')"}
+  ].map(k=>`<div class="hu-kpi-tile${k.go?' clickable':''}" style="--ktc:${k.color}${k.go?';cursor:pointer':''}" ${k.go?`onclick="${k.go}"`:''} ${k.go?'title="Tap to filter the list below"':''}><span class="kt-ic">${k.ic}</span><div class="kt-body"><div class="kt-n">${k.n}</div><div class="kt-label">${k.label}</div></div></div>`).join('');
 
   // SA-wise summary strip (reports, not vehicle details — per SA-login idea)
   const strip=document.getElementById('bl-sa-strip');
@@ -7587,6 +7758,20 @@ function blRender(){
       return `<button class="hu-sl-btn${BL_SA_FILTER===n?' active':''}" onclick="blSetSa('${n.replace(/'/g,"\\'")}')" title="Estimates ${inr(v.est)} · Billed ${inr(v.bill)}">${n} <span class="sl-count">${v.c}</span>${p===null?'':` <span style="color:${blDevColor(p)};font-weight:800">${p>0?'+':''}${p}%</span>`}</button>`;
     }).join('');
   } else if(strip) strip.style.display='none';
+
+  /* KPI-tile drill-down. (Ravi 26-Jul-2026) Applied here, AFTER the tiles have been
+     computed, so the tiles keep showing the full picture while the table narrows to
+     what you tapped. The tests match the tile arithmetic exactly. */
+  if(BL_VIEW==='billed')    rows=rows.filter(e=>Number(e.billed||0)>0);
+  else if(BL_VIEW==='unbilled') rows=rows.filter(e=>!(Number(e.billed||0)>0));
+  else if(BL_VIEW==='deviation') rows=rows.filter(e=>Number(e.billed||0)>0 && Number(e.billed)!==Number(e.total||0));
+  const vbar=document.getElementById('bl-viewbar');
+  if(vbar){
+    const names={billed:'Billed (matched)',unbilled:'Unbilled / Pending',deviation:'Estimate vs Billed differs'};
+    vbar.innerHTML = BL_VIEW&&names[BL_VIEW]
+      ? '<span class="hu-chip clear" onclick="blSetView(\'\')">\u2715 Showing: '+names[BL_VIEW]+' ('+rows.length+') \u00b7 tap to clear</span>' : '';
+    vbar.style.display = BL_VIEW&&names[BL_VIEW] ? 'flex' : 'none';
+  }
 
   const wrap=document.getElementById('bl-table-wrap');
   if(!rows.length){ wrap.innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)"><div style="font-size:32px;margin-bottom:8px">🔍</div><div style="font-weight:700">No estimates match the current filters</div></div>'; return; }
@@ -7648,6 +7833,11 @@ async function blPostChunks(type, records, extra){
   }
 }
 function blHandleJcFile(input){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_blHandleJcFile){ heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_blHandleJcFile=1; blHandleJcFile(input); window.__heroLibsOK_blHandleJcFile=0; }); return; }
+
   const file=input.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=async function(ev){
@@ -7684,6 +7874,11 @@ function blHandleJcFile(input){
 }
 /* --- Total Bill Value upload: aggregate line items → one row per JC, incl. GST --- */
 function blHandleBillFile(input){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_blHandleBillFile){ heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_blHandleBillFile=1; blHandleBillFile(input); window.__heroLibsOK_blHandleBillFile=0; }); return; }
+
   const file=input.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=async function(ev){
@@ -7885,6 +8080,11 @@ function pfTownFromDealer(dealer, town){
   return ''; // stock file may carry Town separately; else blank
 }
 function pfHandleStockFile(input){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_pfHandleStockFile){ heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_pfHandleStockFile=1; pfHandleStockFile(input); window.__heroLibsOK_pfHandleStockFile=0; }); return; }
+
   const file=input.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=async function(ev){
@@ -7991,6 +8191,11 @@ function pfReplacePartFilter(node, pn){
   return n;
 }
 async function pfLiveFetch(){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_pfLiveFetch){ heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_pfLiveFetch=1; pfLiveFetch(); window.__heroLibsOK_pfLiveFetch=0; }); return; }
+
   const pn=pfVal('pf-partno').trim().toUpperCase();
   if(!pn){ pfInfo('Enter a part number first.','warn'); return; }
   const raw=pfVal('pf-fetch').trim();
@@ -8109,6 +8314,11 @@ function pfRender(){
   </tr>`).join('')}</tbody></table>`;
 }
 function pfDownload(){
+  /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
+     Make sure this one's tools are in memory, then run the real work. Costs nothing
+     when they are already warm, which they normally are. */
+  if(!window.__heroLibsOK_pfDownload){ heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_pfDownload=1; pfDownload(); window.__heroLibsOK_pfDownload=0; }); return; }
+
   const rows=pfFiltered(); if(!rows.length){ alert('Nothing to download.'); return; }
   if(!window.XLSX){ alert('Excel engine still loading, try again in a moment.'); return; }
   const aoa=[['Part Number','Description','Dealer Code','Dealer Name','Town','Area Office','Zonal Office','Inventory Location','Qty','Curr DLC','DLC Value','Stock Date']];
