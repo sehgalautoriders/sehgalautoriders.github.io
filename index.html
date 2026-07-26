@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set40-2026.07.26-s22';
+window.HERO_BUILD = 'set41-2026.07.26-s23';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -653,6 +653,12 @@ body { font-size:14px; }
 .hu-actions{display:flex;gap:8px;flex-wrap:wrap}
 
 .hu-kpi-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+/* Refresh-in-progress / not-fresh look. Deliberately gentle: the cards stay exactly
+   where they are and at the same size, they just soften slightly. Nothing moves,
+   nothing disappears. (Ravi 26-Jul-2026) */
+.kpi-stale .kpi-n{opacity:.55;transition:opacity .25s ease}
+.kpi-stale .kpi-card{position:relative}
+.kpi-card .kpi-n{transition:opacity .25s ease}
 .hu-kpi-tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .12s;border-left:5px solid var(--ktc,var(--line));box-shadow:0 1px 4px rgba(0,0,0,.06);flex:1 1 130px;min-width:120px}
 .hu-kpi-tile:hover{background:var(--shade);transform:translateY(-1px);box-shadow:0 3px 8px rgba(0,0,0,.1)}
 .hu-kpi-tile.active{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -2404,7 +2410,7 @@ function isCtlUser(){ return isAdmin() || hasModule('ControlRoom') || hasModule(
 function loadRecentActivity(){
   const box=document.getElementById('recent-list'); if(!box) return;
   jgetReliable('report_today', {}, function(res){
-    if(!res||!res.ok){ box.innerHTML='<div class="hint">No recent activity loaded yet.</div>'; return; }
+    if(!res||!res.ok){ heroSoftPlaceholder(box,'<div class="hint">No recent activity loaded yet.</div>'); return; }
     // Show the Estimate section only if this login can actually prepare estimates
     // (permission-based, not a designation-text guess — same fragility class as B1-2 fix).
     const canSeeEst=(typeof canUseModule==='function')&&(canUseModule('Estimate')||canUseModule('ControlRoom'));
@@ -2483,13 +2489,28 @@ function loadPriorityPanel(){
               which is a different thing entirely — now "Estimates not yet prepared".
            "Estimates to be delivered" counted every estimate made today — now
               "Estimates prepared today", which is what the number actually is. */
-      box.innerHTML=[
+      const items=[
         {label:'Holdup cases pending update', sub:'Needs immediate attention', n:hu, cls:hu>0?'red':'green', go:"openModule('holdup')"},
         {label:'Estimates not yet prepared', sub:'Gate entry done, estimate pending', n:pending, cls:pending>0?'orange':'green', go:"openModule('control')"},
         {label:'Parts requests pending issue', sub:'Affecting workshop progress', n:parts, cls:parts>0?'blue':'green', go:"raviOpenHoldupBucket('parts')"},
         {label:'Vehicles in workshop', sub:'Gate entries today', n:entries, cls:'blue', go:"raviOpenGateHistory()"},
         {label:'Estimates prepared today', sub:'Saved today across the workshop', n:ests, cls:'green', go:"openModule('control')"}
-      ].map(p=>`<div class="priority-item" style="cursor:pointer" onclick="${p.go}" title="Tap to open"><div><div class="pi-label">${p.label}</div><div class="pi-sub">${p.sub}</div></div><div class="ops-pill ${p.cls}">${p.n}</div></div>`).join('');
+      ];
+      /* Build the rows once, then only rewrite the pill numbers. (Ravi 26-Jul-2026)
+         This used to re-write the whole panel on every refresh, so the five rows
+         blinked out and back. */
+      const sig=items.map(p=>p.label).join('|');
+      if(box.getAttribute('data-sig')!==sig){
+        box.innerHTML=items.map(p=>`<div class="priority-item" data-p="${raviEsc(p.label)}" style="cursor:pointer" onclick="${p.go}" title="Tap to open"><div><div class="pi-label">${p.label}</div><div class="pi-sub">${p.sub}</div></div><div class="ops-pill ${p.cls}">${p.n}</div></div>`).join('');
+        box.setAttribute('data-sig',sig);
+      } else {
+        items.forEach(p=>{
+          const row=box.querySelector('.priority-item[data-p="'+String(p.label).replace(/"/g,'')+'"]');
+          if(!row) return;
+          const pill=row.querySelector('.ops-pill');
+          if(pill){ if(pill.textContent!==String(p.n)) pill.textContent=p.n; pill.className='ops-pill '+p.cls; }
+        });
+      }
     });
   });
 }
@@ -6853,11 +6874,80 @@ function showEstimatePreview(est, reg, name, mob){
     if(base>0) return Math.round(base+gst-disc);
     return t;
   }
+
+/* ═══ NO-FLICKER PANELS (Ravi 26-Jul-2026) ═══════════════════════════════════
+   Ravi: "Why should the UI disappear from the app. It should quietly edit the nos
+   in the background. The arithmetic, not the structure."
+   Exactly right, and this is what was happening: every refresh threw away the whole
+   tile row and wrote "Loading…" in its place, so the cards vanished and came back a
+   second later. On a slow connection that gap was several seconds of empty screen.
+   Three rules from now on:
+     1. The card structure is built ONCE. After that only the number text changes.
+     2. The last numbers are remembered per user, so on the next open the tiles are
+        already there with yesterday's figures while today's are fetched behind them.
+        You never look at an empty box.
+     3. A failed refresh changes nothing on screen. The old numbers simply stay, with
+        a small dot to say they are not fresh. It never wipes back to "Could not load". */
+function heroKpiCacheKey(boxId){
+  var who='';
+  try{ who=String((USER&&(USER.empno||USER.personName))||''); }catch(e){}
+  return 'hero_kpi:'+boxId+':'+who;
+}
+function heroKpiCardHtml(k){
+  return '<div class="kpi-card ops" data-k="'+raviEsc(k.key)+'" style="--kpi-color:'+k.color+(k.click?';cursor:pointer':'')+'"'
+    + (k.click?' onclick="'+k.click+'"':'') + '>'
+    + '<div class="kpi-ic">'+k.ic+'</div>'
+    + '<div class="kpi-n" data-n="1" title="'+raviEsc(k.n)+'">'+k.n+'</div>'
+    + '<div class="kpi-t">'+k.t+'</div>'
+    + '<div class="kpi-sub">'+k.sub+'</div></div>';
+}
+/* cards: [{key, ic, n, t, sub, color, click}]. Structure is rebuilt only when the SET
+   of cards changes (role switch); otherwise just the numbers are written. */
+function heroKpiPaint(boxId, cards, isStale){
+  var box=document.getElementById(boxId); if(!box) return;
+  cards=(cards||[]).map(function(k,i){ k.key=k.key||k.t||('k'+i); return k; });
+  var sig=cards.map(function(k){ return k.key; }).join('|');
+  if(box.getAttribute('data-sig')!==sig){
+    box.innerHTML=cards.map(heroKpiCardHtml).join('');
+    box.setAttribute('data-sig',sig);
+  } else {
+    cards.forEach(function(k){
+      var card=box.querySelector('.kpi-card[data-k="'+String(k.key).replace(/"/g,'')+'"]');
+      if(!card) return;
+      var n=card.querySelector('[data-n]');
+      if(n && n.textContent!==String(k.n)){ n.textContent=k.n; n.setAttribute('title',k.n); }
+    });
+  }
+  box.classList.toggle('kpi-stale', !!isStale);
+  if(!isStale){
+    try{ localStorage.setItem(heroKpiCacheKey(boxId), JSON.stringify(cards)); }catch(e){}
+  }
+}
+/* Draw last-known numbers instantly so the box is never empty while we fetch. */
+function heroKpiFromCache(boxId){
+  try{
+    var raw=localStorage.getItem(heroKpiCacheKey(boxId));
+    if(!raw) return false;
+    var cards=JSON.parse(raw);
+    if(!cards || !cards.length) return false;
+    heroKpiPaint(boxId, cards, true);
+    return true;
+  }catch(e){ return false; }
+}
+/* Only fill a container if it is genuinely empty. Never overwrite real content with
+   the word "Loading". */
+function heroSoftPlaceholder(el, html){
+  if(!el) return;
+  var t=(el.textContent||'').trim();
+  if(!t || /^Loading/i.test(t)) el.innerHTML=html;
+}
+
   window.loadHomeStats = function(){
     const box=document.getElementById('home-stats');
     const upd=document.getElementById('ops-updated'); if(upd) upd.textContent='Last updated: Today '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     if(!box) return;
-    box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Loading…</div></div>';
+    // Show last-known figures at once. Never blank the row. (Ravi 26-Jul-2026)
+    heroKpiFromCache('home-stats');
     /* C1 (17-Jul): guard home now uses ONE light call — home_summary — instead of
        report_today (full rows + photo URLs) plus gate_history (entire sheet, 12-32s,
        and a missing ok-check that printed a false 0 on timeout: the "0 vs 2" bug).
@@ -6865,7 +6955,8 @@ function showEstimatePreview(est, reg, name, mob){
        On failure it shows "Could not load", never a fake 0. */
     if(isGuardUser()){
       jgetReliable('home_summary', {}, function(sres, sStale){
-        if(!sres || sres.ok===false){ if(!sStale) box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Could not load</div></div>'; return; }
+        // A failed refresh leaves the previous numbers exactly where they are.
+        if(!sres || sres.ok===false){ box.classList.add('kpi-stale'); if(!sStale && !box.getAttribute('data-sig')) heroKpiPaint('home-stats',[{key:'x',ic:'\u26A0',n:'\u2014',t:'Could not load',sub:'Tap \u21bb Sync Now',color:'#64748b'}],true); return; }
         const mine=(sres.locations||[]).filter(L=>wsAllowed(L.location));
         const todayN=mine.reduce((s,L)=>s+Number(L.today||0),0);
         const allN=mine.reduce((s,L)=>s+Number(L.allDays||0),0);
@@ -6874,12 +6965,13 @@ function showEstimatePreview(est, reg, name, mob){
           {ic:'📅',n:allN,t:'All Entries — All days',sub:'Every guard · tap to see by month & date',color:'#16a34a',click:"raviOpenGateHistory()"},
           {ic:'↻',n:getQueue().length,t:'Pending Sync',sub:'Offline saves waiting',color:'#7c3aed'}
         ];
-        box.innerHTML=cardsG.map(k=>`<div class="kpi-card ops" style="--kpi-color:${k.color}${k.click?';cursor:pointer':''}" ${k.click?`onclick="${k.click}"`:''}><div class="kpi-ic">${k.ic}</div><div class="kpi-n" title="${raviEsc(k.n)}">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+        heroKpiPaint('home-stats', cardsG, !!sStale);
       });
       return;
     }
     jgetReliable('report_today', {}, function(res, isStale){
-      if(!res || res.ok===false){ if(!isStale) box.innerHTML='<div class="kpi-card ops" style="--kpi-color:#64748b"><div class="kpi-n">—</div><div class="kpi-t">Could not load</div></div>'; return; }
+      // A failed refresh leaves the previous numbers exactly where they are.
+      if(!res || res.ok===false){ box.classList.add('kpi-stale'); if(!isStale && !box.getAttribute('data-sig')) heroKpiPaint('home-stats',[{key:'x',ic:'\u26A0',n:'\u2014',t:'Could not load',sub:'Tap \u21bb Sync Now',color:'#64748b'}],true); return; }
       /* C1 (17-Jul): guard branch moved above to the light home_summary call — this
          callback now serves SA/WM/GM/CEO only. */
       let gates=raviRowsAllowedForUser(res.gateEntries||[],'location');
@@ -6932,12 +7024,13 @@ function showEstimatePreview(est, reg, name, mob){
           {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer · tap',color:'#0891b2',click:"openModule('holdup')"}
         ];
       }
-      box.innerHTML=cards.map(k=>`<div class="kpi-card ops" style="--kpi-color:${k.color}${k.click?';cursor:pointer':''}" ${k.click?`onclick="${k.click}"`:''}><div class="kpi-ic">${k.ic}</div><div class="kpi-n" title="${raviEsc(k.n)}">${k.n}</div><div class="kpi-t">${k.t}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+      heroKpiPaint('home-stats', cards, !!isStale);
     });
   };
 
   window.loadSaDashboard = function(){
-    const box=document.getElementById('sa-myest'); if(box) box.innerHTML='<div class="hint">Loading…</div>';
+    // Keep whatever is on screen while refreshing. (Ravi 26-Jul-2026)
+    const box=document.getElementById('sa-myest'); heroSoftPlaceholder(box,'<div class="hint">Loading…</div>');
     jgetReliable('report_today', {}, function(res, isStale){
       if(!box) return;
       if(!res || res.ok===false){ if(!isStale) box.innerHTML='<div class="hint" style="color:var(--signal-d)">Could not load — tap ↻ Sync Now if this persists.</div>'; return; }
