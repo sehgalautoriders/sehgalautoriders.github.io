@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set33-2026.07.22-s15a';
+window.HERO_BUILD = 'set36-2026.07.26-s18';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1802,7 +1802,17 @@ async function globalSyncNow(){
   await flushQueue(); // send anything that was waiting offline, first
   clearMasterCache(); // forget cached master tables
   prefetchMasterData(); // re-pull everything fresh in the background
-  if(typeof huSyncStatusFromBackend==='function' && document.getElementById('view-holdup') && document.getElementById('view-holdup').style.display!=='none') huSyncStatusFromBackend();
+  /* Sync Now must re-read the full holdup ROW SET, not only the status fields.
+     (Ravi 26-Jul-2026) The old call only patched status/reason/ETA onto whatever
+     rows this device already had, so pressing Sync Now on the uploader's machine
+     never picked up rows from a later upload done elsewhere. Forced, so it
+     ignores the 20-second freshness window — the user asked for it explicitly. */
+  if(typeof huHydrateFromBackend==='function'){
+    huHydrateFromBackend(function(n){
+      const v=document.getElementById('view-holdup');
+      if(n>0 && v && v.style.display!=='none' && typeof huRender==='function') huRender();
+    }, true);
+  }
   setTimeout(()=>{ if(btn) btn.textContent=orig||'↻ Sync Now'; renderHomeTiles(); loadHomeStats(); }, 1200);
 }
 window.addEventListener('online', flushQueue);
@@ -2145,10 +2155,14 @@ function loadRecentActivity(){
 function loadHoldupSnapshot(){
   const totalEl=document.getElementById('snap-hu-total'), list=document.getElementById('snap-hu-list'); if(!totalEl||!list) return;
   let rows=[]; try{ rows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){ rows=[]; }
-  // No local copy on this device (e.g. WM's phone, SA's own login) — pull the rows
-  // from the backend once, then re-render this snapshot with real data.
-  if(!rows.length && !HU_HYDRATE_TRIED && typeof huHydrateFromBackend==='function'){
-    huHydrateFromBackend(function(n){ if(n>0) loadHoldupSnapshot(); });
+  /* Same row set as the Holdup screen. (Ravi 26-Jul-2026) Previously this panel
+     rendered off whatever happened to be in this device's localStorage, so Home
+     and the Holdup screen could show different totals on the same phone.
+     Loop guard: remember the fetch stamp before asking. If the data was already
+     fresh the stamp will not move and we do not re-render, so this cannot recurse. */
+  const snapSeen=(typeof HU_LAST_FETCH==="number")?HU_LAST_FETCH:0;
+  if(typeof huHydrateFromBackend==='function'){
+    huHydrateFromBackend(function(n){ if(n>0 && HU_LAST_FETCH!==snapSeen) loadHoldupSnapshot(); });
   }
   rows=rows.filter(r=>String(r['Holdup Status']||'').toUpperCase()!=='DELIVERED'&&String(r['Holdup Status']||'').toUpperCase()!=='CLEAR');
   totalEl.textContent=rows.length;
@@ -4870,14 +4884,19 @@ let HU_DRS_FILTER=null; // {name, vals[]} set by bar-chart click — FIX: old co
 let HU_MATRIX_FILTER=null; // {type, order, upd} set by clicking a cell in the JC-Type × Order-Status summary matrix (Ravi 08-Jul)
 let HU_LAST_CLICKED_ROW=-1; // for shift+click range selection
 
-/* ===== DAILY REVIEW STATUS (DRS) — the single consolidated status column ===== */
-const HU_DRS_OPTIONS=[
+/* ===== DAILY REVIEW STATUS (DRS) — the single consolidated status column =====
+   SOURCE (Ravi 26-Jul-2026): MD_HoldupReasons ("Reason" column, in sheet order).
+   The list below is now only a FALLBACK, used if the master is empty or the phone
+   is offline on first open — the screen must never lose its dropdown. Whatever
+   rows are in MD_HoldupReasons is exactly what the WM will see. Add, remove or
+   re-order there; nothing needs changing in the app. */
+let HU_DRS_OPTIONS=[
   'Not Allocated','Work In Progress','Major Work - Parts Available','Major Work - Pending for Parts','Minor Job - Pending for Parts',
   'Warranty Approval','Insurance Approval','Additional Approval from Customer','Ready - Not Picked Up by Customer','Ready - DMS Billing Issue',
   'Vehicle Physically Delivered - JC Closure Pending','Shifted to Bodyshop / Service','Other Remarks'
 ];
 const HU_ETA_OPTIONS=['Today','Tomorrow','4-5 Days','Above 5 Days'];
-const HU_DRS_COLORS={
+let HU_DRS_COLORS={
   'Not Allocated':'#6b7280','Work In Progress':'#2563eb',
   'Major Work - Parts Available':'#dc2626','Major Work - Pending for Parts':'#b91c1c','Minor Job - Pending for Parts':'#ef4444',
   'Warranty Approval':'#7c3aed','Insurance Approval':'#4f46e5','Additional Approval from Customer':'#0891b2',
@@ -4918,17 +4937,30 @@ function huComputeHomeCounts(onReady){
       appr:active.filter(r=>huIsApprovalStatus(String(r['Holdup Status']||''))).length
     };
   }
-  let hasLocal=false; try{ hasLocal=(JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]')||[]).length>0; }catch(e){}
-  if(!hasLocal && !HU_HYDRATE_TRIED){
-    huHydrateFromBackend(function(){ onReady(tally()); });
-  } else {
-    onReady(tally());
-  }
+  /* Count from the same backend row set the Holdup screen uses, never from a
+     stale local copy. (Ravi 26-Jul-2026) The shared fetch guard means this does
+     not add a second backend call when Home loads its panels together. */
+  huHydrateFromBackend(function(){ onReady(tally()); });
 }
 function huIsPartStatus(s){ s=String(s||''); return s.toLowerCase().includes('part')||s.toLowerCase().includes('pna')||['PENDING_PARTS','PARTS_ORDERED','PARTS_RECEIVED'].includes(s); }
 function huIsApprovalStatus(s){ s=String(s||''); return s.toLowerCase().includes('approval')||s.toLowerCase().includes('warranty')||['INSURANCE_PENDING','CUSTOMER_PENDING'].includes(s); }
 function huIsReadyStatus(s){ s=String(s||''); return s.toLowerCase().includes('ready')||s.toLowerCase().includes('delivered')||['READY','CLEAR'].includes(s); }
 function huDrsColor(s){ s=huNormalizeDrs(s); return HU_DRS_COLORS[s]||'#6b7280'; }
+/* Builds the status <option> list for one vehicle. (Ravi 26-Jul-2026)
+   Important safety point: vehicles already carry statuses saved under the OLD
+   hardcoded list. If the master no longer contains that exact wording, the row
+   would render as blank and the WM would think the update was lost. So the
+   vehicle's own current status is always added at the top when it is not in the
+   master list, marked (existing), until he changes it to a standard one. */
+function huDrsOptionsHtml(cur){
+  cur=String(cur||'').trim();
+  let html='';
+  if(cur && !HU_DRS_OPTIONS.some(o=>String(o).trim().toLowerCase()===cur.toLowerCase())){
+    html+=`<option value="${cur}" selected>${cur} (existing)</option>`;
+  }
+  html+=HU_DRS_OPTIONS.map(o=>`<option value="${o}"${String(o).trim().toLowerCase()===cur.toLowerCase()?' selected':''}>${o}</option>`).join('');
+  return html;
+}
 
 /* ===== EXCEL-LIKE ROW SELECTION ===== */
 function huRowClick(event, rowIdx){
@@ -5053,21 +5085,61 @@ function huSendEmailManual(){
   document.getElementById('hu-contact-modal').style.display='none';
 }
 
-let HU_SA_MAP={}; // Supervisor ID (uppercase) -> real SA Name, from MD_Login's "SA Code" column
+let HU_SA_MAP={}; // Supervisor ID (uppercase) -> real SA Name. SOURCE: MD_SA_Master ONLY (Ravi 26-Jul-2026)
 function huBoot(){
-  // Load holdup reasons from MD_HoldupReasons — {type, reason} objects
+  /* MD_HoldupReasons is now the ONLY source of the standard reason list. (Ravi 26-Jul-2026)
+     It feeds two things:
+       1. HU_REASONS      — the separate "Reason" dropdown, filtered by Service Type.
+       2. HU_DRS_OPTIONS  — the Daily Review Status dropdown the WM uses on every row.
+                            This used to be a hardcoded list of 13 inside the app, which
+                            is why the sheet and the screen could disagree. Whatever rows
+                            are in the master, in sheet order, is what now shows.
+     Colour comes from the master's "Order Status" column, so a new reason is coloured
+     correctly the moment it is added — no code change needed.
+     If the master is empty or unreachable the built-in fallback list stays in place, so
+     the dropdown can never come up blank. */
   jget('master_table', {name:'HoldupReasons'}, function(res){
-    HU_REASONS=(res&&res.rows)?res.rows.map(function(r){
+    const mrows=(res&&res.rows)||[];
+    HU_REASONS=mrows.map(function(r){
       return {type:String(r['Service Type']||'').trim(), reason:String(r['Reason']||r[Object.keys(r).find(k=>k!=='_row')]||'').trim()};
-    }).filter(function(r){ return r.reason&&r.reason!==''; }):[];
+    }).filter(function(r){ return r.reason&&r.reason!==''; });
+
+    // Order Status -> colour. Anything unknown falls back to neutral grey.
+    const ORD_COLOR={
+      'ON HOLD':'#b91c1c','ORDER PENDING':'#dc2626','ORDER PLACED':'#ea580c',
+      'IN PROGRESS':'#2563eb','READY':'#16a34a','DELIVERED':'#166534','CLOSED':'#166534'
+    };
+    const opts=[], colors={}, seen={};
+    mrows.forEach(function(r){
+      const reason=String(r['Reason']||'').trim();
+      if(!reason) return;
+      const k=reason.toUpperCase();
+      if(seen[k]) return; seen[k]=true;
+      opts.push(reason);
+      const ord=String(r['Order Status']||'').trim().toUpperCase();
+      colors[reason]=ORD_COLOR[ord]||'#6b7280';
+    });
+    if(opts.length){
+      HU_DRS_OPTIONS=opts;
+      // Keep the old built-in colours as a base so any legacy status still saved on a
+      // vehicle keeps its colour; master values are layered on top.
+      HU_DRS_COLORS=Object.assign({}, HU_DRS_COLORS, colors);
+    }
+    huRender(); // re-render so the dropdown shows the master list straight away
   });
-  // Fix #5: build Supervisor ID -> SA Name map from MD_Login's "SA Code" column
-  // (one SA can have multiple Supervisor IDs, comma-separated, e.g. "SURA,SURAJFR1")
-  jget('master_table', {name:'Login'}, function(res){
+  /* Supervisor ID -> SA Name for the Holdup report. (Ravi 26-Jul-2026)
+     SOURCE IS MD_SA_Master ONLY. MD_Login is no longer read for this.
+     Reason: MD_Login's "SA Code" column is an incomplete copy. It was missing
+     10307PAT (Suryakant Patil), so those vehicles showed the raw code in the SA
+     column AND created a second advisor button, splitting one man's count in two.
+     MD_SA_Master is the real advisor register — code, name, emp no, location.
+     Rows with no SA Code are skipped. Inactive advisors are still mapped on
+     purpose, so old job cards keep showing a name instead of a bare code. */
+  jget('master_table', {name:'SA_Master'}, function(res){
     HU_SA_MAP={};
     ((res&&res.rows)||[]).forEach(function(r){
       const saCode=String(r['SA Code']||'').trim();
-      const name=String(r['Name']||'').trim();
+      const name=String(r['SA Name']||'').trim();
       if(!saCode||!name) return;
       saCode.split(',').forEach(function(code){
         code=code.trim().toUpperCase();
@@ -5093,14 +5165,13 @@ function huBoot(){
     // on every upload) and render. Works for SA, WM, GM, CEO, Parts, mobile — all.
     huHydrateFromBackend(function(n){ if(n>0){ huRender(); } });
   }
-  // Fix #10 (THE BIG ONE): status/reason/ETA/remarks updates were vanishing because
-  // re-entering this screen reloaded the ORIGINAL uploaded file from localStorage,
-  // silently discarding any inline edits — and other users never saw them at all since
-  // nothing ever re-read the backend's Holdup sheet (the actual source of truth for
-  // those fields). Fix: always merge the latest backend-saved status fields onto
-  // HU_DATA on every boot, for every user — this is what makes updates "stick" and
-  // become visible across logins/devices.
-  if(loadedLocal) huSyncStatusFromBackend();
+  /* Always re-read the row set from the backend Holdup sheet on every open, for
+     every user INCLUDING the person who uploaded. (Ravi 26-Jul-2026)
+     The old code only merged status fields onto this device's own stale copy of
+     the uploaded file, so the uploader's row list never changed again. Anything
+     shown from localStorage above is only there to avoid a blank screen for the
+     half second the fetch takes; the backend answer replaces it. */
+  huHydrateFromBackend(function(n){ if(n>0) huRender(); });
 }
 function huJcKey(jcNo, dealerCode){
   const jc=String(jcNo||'').trim().toUpperCase();
@@ -5112,12 +5183,36 @@ function huJcKey(jcNo, dealerCode){
    Backend columns (holdupHeaders in Apps Script) differ from the DMS-export column
    names the frontend uses (HU_COLS), so map them across. Persisted to localStorage
    so the Home snapshot / KPI cards (which read HU_STORE_KEY) also work. */
+/* ===== ONE SOURCE OF TRUTH FOR THE HOLDUP ROW SET (Ravi 26-Jul-2026) ========
+   Ravi's rule: the holdup list changes ONLY when the raw DMS file is uploaded
+   through Upload Holdup. Nothing in Gate Entry or Estimate may add, remove or
+   re-order a holdup row.
+   What was actually going wrong: the device that did the upload kept that Excel
+   file in its own localStorage and rendered from it forever after. Every OTHER
+   device hydrated the real row set from the backend Holdup sheet. Re-opening the
+   screen on the uploader's machine only patched Status/Reason/ETA onto its own
+   stale rows — it never re-read which rows exist. So two people looking at the
+   same day saw two different totals, and the uploader never saw rows from
+   anybody else's later upload. That is the fluctuation.
+   From now on the backend Holdup sheet is the only row set, for everyone.
+   localStorage is a display cache so the screen is not blank while the fetch
+   runs; it is never treated as the truth.
+   HU_FRESH_MS + HU_FETCH_WAITERS collapse the Home snapshot, the Home KPI tile
+   and the Holdup screen opening together into ONE backend call instead of three. */
 let HU_HYDRATE_TRIED=false;
-function huHydrateFromBackend(cb){
+let HU_LAST_FETCH=0, HU_FETCH_WAITERS=null;
+const HU_FRESH_MS=20000;
+function huHydrateFromBackend(cb, force){
+  // Already fetched a moment ago — reuse it, don't hit the backend again.
+  if(!force && HU_DATA.length && (Date.now()-HU_LAST_FETCH)<HU_FRESH_MS){ if(cb) cb(HU_DATA.length); return; }
+  // A fetch is already in flight — join it instead of starting a second one.
+  if(HU_FETCH_WAITERS){ if(cb) HU_FETCH_WAITERS.push(cb); return; }
+  HU_FETCH_WAITERS=cb?[cb]:[];
   jget('holdup_summary', {}, function(res){
     HU_HYDRATE_TRIED=true;
     const rows=(res&&res.rows)||[];
-    if(!rows.length){ if(cb) cb(0); return; }
+    const waiters=HU_FETCH_WAITERS||[]; HU_FETCH_WAITERS=null;
+    if(!rows.length){ waiters.forEach(function(f){ try{ f(0); }catch(e){} }); return; }
     HU_DATA=rows.map(function(r){
       const o={};
       o[HU_COLS.reg]=String(r['Reg No']||'');
@@ -5144,8 +5239,9 @@ function huHydrateFromBackend(cb){
       o['Status History']=String(r['Status History']||'[]');
       return o;
     });
+    HU_LAST_FETCH=Date.now();
     try{ localStorage.setItem(HU_STORE_KEY, JSON.stringify(HU_DATA)); }catch(e){}
-    if(cb) cb(HU_DATA.length);
+    waiters.forEach(function(f){ try{ f(HU_DATA.length); }catch(e){} });
   });
 }
 function huSyncStatusFromBackend(){
@@ -5363,6 +5459,11 @@ function huVerifyUpload(expectedCount, uploadDate, attempt){
       huShowInfo('✓ Loaded '+expectedCount+' rows · Confirmed saved to server ('+gotCount+' rows on backend) · '+matched+' matched to gate entries · '+uploadDate,'ok');
       clearMasterCache();
       huRender();
+      /* The uploader must end up on exactly the same row set as everyone else.
+         Until now this screen kept the locally parsed Excel rows, which is how the
+         uploading machine drifted away from every other device. Force one read of
+         the backend Holdup sheet — the row set the server actually stored. */
+      huHydrateFromBackend(function(n){ if(n>0) huRender(); }, true);
     } else if(attempt<3){
       setTimeout(()=>huVerifyUpload(expectedCount, uploadDate, attempt+1), 3000);
     } else {
@@ -5530,7 +5631,7 @@ function huRender(){
       const saName=HU_SA_MAP[String(r[HU_COLS.supervisor]||'').trim().toUpperCase()]||String(r[HU_COLS.supervisor]||'').trim();
       let histCount=0; try{ histCount=JSON.parse(r['Status History']||'[]').length; }catch(e){}
       // Build DRS select with correct option selected
-      const drsOptsHtml=HU_DRS_OPTIONS.map(o=>`<option value="${o}"${o===curHS?' selected':''}>${o}</option>`).join('');
+      const drsOptsHtml=huDrsOptionsHtml(curHS);
       // ETA options
       const etaOpts=HU_ETA_OPTIONS.map(o=>`<option value="${o}"${o===curEta?' selected':''}>${o}</option>`).join('');
       // DRS color badge for read-only view
@@ -7509,7 +7610,7 @@ function huMobSheetOpen(i){
   const curHS=huNormalizeDrs(r['Holdup Status']||''), curEta=r['Parts ETA']||'', curRem=r['Remarks']||'';
   document.getElementById('hum-sheet-title').textContent='Quick Update';
   document.getElementById('hum-sheet-veh').innerHTML=reg+' · '+(r[HU_COLS.model]||'')+' <span style="color:'+(r.__days>5?'#dc2626':'#d97706')+';font-weight:800">'+(r.__days>=0?r.__days+'d':'')+'</span>';
-  document.getElementById('hum-status').innerHTML='<option value="">Select status…</option>'+HU_DRS_OPTIONS.map(o=>`<option value="${o}"${o===curHS?' selected':''}>${o}</option>`).join('');
+  document.getElementById('hum-status').innerHTML='<option value="">Select status…</option>'+huDrsOptionsHtml(curHS);
   document.getElementById('hum-eta').innerHTML='<option value="">ETA…</option>'+HU_ETA_OPTIONS.map(o=>`<option value="${o}"${o===curEta?' selected':''}>${o}</option>`).join('');
   document.getElementById('hum-remarks').value=curRem;
   document.getElementById('hum-sheet').style.display='flex';
