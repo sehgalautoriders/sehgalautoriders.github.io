@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set48-2026.07.26-s30';
+window.HERO_BUILD = 'set49-2026.07.26-s31';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9158,13 +9158,39 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   const VIN_LEN = 17;
   window.geNormVin = function(v){
     return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'')
-      .replace(/O/g,'0').replace(/Q/g,'0').replace(/I/g,'1');
+      .replace(/[OQ]/g,'0').replace(/I/g,'1');
   };
   window.geValidVin = function(v){
     const n = geNormVin(v);
     return n.length===VIN_LEN && /^[A-HJ-NPR-Z0-9]{17}$/.test(n);
   };
-  window.geIsHeroVin = function(v){ return /^MBL/.test(geNormVin(v)); };
+  window.geIsHeroVin = function(v){ return /^MBL/.test(String(v||'').toUpperCase()); };
+
+  /* Pull a chassis number OUT of whatever the reader returns, instead of assuming
+     the whole reply is the number. THIS was the weak link: when the model replied
+     "Chassis No. MBLJFW600PGD02518" — which it does more often on a second read of
+     the same document — stripping punctuation produced a 26-character string, the
+     length test failed, and the app said "could not read". The number was right
+     there in the reply. (Ravi 26-Jul-2026)
+
+     Two safe repairs are applied first. An ISO VIN never contains I, O or Q, so an
+     O can only be a zero and an I can only be a one. And MBL is fixed for every
+     Hero vehicle, so MB1 / M8L are corrected back to MBL. */
+  window.geExtractVin = function(raw){
+    let t = String(raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'')
+              .replace(/[OQ]/g,'0').replace(/I/g,'1');
+    t = t.replace(/M8L/g,'MBL').replace(/MB1/g,'MBL');
+    var m = t.match(/MBL[A-HJ-NPR-Z0-9]{14}/);        // Hero: anchored, most reliable
+    if(m) return m[0];
+    /* No MBL anchor. Accept ONLY a reply that is nothing but the number.
+       Sliding a 17-character window along longer text looked clever and was
+       dangerous: "Engine No. JFW6EGHHF12345" yielded a plausible-looking 17
+       characters, and because the server also matches on the last 6, a false
+       VIN can attach the wrong customer to the vehicle. A miss is recoverable;
+       a wrong match is not. (Ravi 26-Jul-2026) */
+    if(t.length===VIN_LEN && /^[A-HJ-NPR-Z0-9]{13}[0-9]{4}$/.test(t)) return t;
+    return '';
+  };
 
   const GE_ID = { busy:false, plate:'', done:false };
   window.GE_ID = GE_ID;
@@ -9191,6 +9217,7 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
       let x=t.trim().replace(/^```json\s*/i,'').replace(/```$/,'');
       const a=x.indexOf('{'), b=x.lastIndexOf('}'); if(a>=0) x=x.slice(a,b+1);
       const o=JSON.parse(x);
+      if(field==='*') return o;                    // caller wants the whole object
       return String(o[field]||'').trim();
     }catch(e){ return ''; }
   }
@@ -9205,20 +9232,27 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     'Ignore any other text. If you genuinely cannot read it, return an empty string. '+
     'Return ONLY JSON: {"registration_number":""}';
 
+  /* Both prompts also ask for every character the reader can see. If the chassis
+     field comes back empty or wrapped in a label, geExtractVin still finds the
+     number inside all_text. One call, two chances. */
   const VIN_PROMPT_RC =
     'This is an Indian vehicle Registration Certificate (RC), or a photo of one. '+
-    'Find the CHASSIS NUMBER — it may be labelled "Chassis No.", "Chassis Number" or "VIN". '+
-    'Do NOT return the Engine number, the registration number, or any other field. '+
-    'A chassis number is exactly 17 characters, letters and digits only, and never '+
-    'contains the letters I, O or Q. Hero MotoCorp chassis numbers begin with MBL. '+
-    'Return ONLY JSON: {"chassis_number":""}';
+    'Find the CHASSIS NUMBER — it may be labelled "Chassis No.", "Chassis Number", '+
+    '"Ch. No." or "VIN". Do NOT return the Engine number, the registration number, '+
+    'or any other field. A chassis number is exactly 17 characters, letters and '+
+    'digits only, and never contains the letters I, O or Q. Hero MotoCorp chassis '+
+    'numbers begin with MBL. Give the bare number with no label and no spaces. '+
+    'Also copy out every alphanumeric code you can see anywhere on the document. '+
+    'Return ONLY JSON: {"chassis_number":"","all_text":""}';
 
   const VIN_PROMPT_FRAME =
-    'This photo shows a chassis/VIN number stamped or printed on a motorcycle or '+
-    'scooter frame, usually near the steering head below the handlebar. '+
-    'Read the full number exactly. It is exactly 17 characters, letters and digits '+
-    'only, never contains I, O or Q, and on a Hero vehicle begins with MBL. '+
-    'Return ONLY JSON: {"chassis_number":""}';
+    'This photo shows a chassis/VIN number stamped, etched or printed on a '+
+    'motorcycle or scooter frame, usually near the steering head below the '+
+    'handlebar, or on a sticker. Read the full number exactly. It is exactly 17 '+
+    'characters, letters and digits only, never contains I, O or Q, and on a Hero '+
+    'vehicle begins with MBL. Give the bare number with no label and no spaces. '+
+    'Also copy out every character you can see in the photo. '+
+    'Return ONLY JSON: {"chassis_number":"","all_text":""}';
 
   /* ------------------------------------------------------------------ STAGE 1-2
      Read the plate. Front first, back as the second attempt. */
@@ -9253,8 +9287,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
         return;
       }
       GE_ID.plate=plate;
-      if(typeof GE_AI_RESULT!=='undefined' && GE_AI_RESULT) GE_AI_RESULT.registration_number=plate;
-      else { try{ window.GE_AI_RESULT={registration_number:plate}; }catch(e){} }
+      try{ if(GE_AI_RESULT) GE_AI_RESULT.registration_number=plate;
+           else GE_AI_RESULT={registration_number:plate}; }catch(e){}
       const regEl=el('ge-reg'); if(regEl) regEl.value=plate;
       try{ GE_LAST_REG_LOOKED=plate; }catch(e){}
       status('🔎 Plate read from the '+from+' photo: <b>'+plate+'</b> · checking records…','info');
@@ -9302,55 +9336,156 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     const i=el('ge-vin-input'), h=el('ge-vin-hint'); if(!i||!h) return;
     const n=geNormVin(i.value);
     if(!n){ h.textContent=''; return; }
-    if(n.length<VIN_LEN){ h.style.color='#92400e'; h.textContent=n.length+' of 17 characters'; return; }
-    if(!geValidVin(n)){ h.style.color='#b91c1c'; h.textContent='That is not a valid chassis number.'; return; }
-    h.style.color=geIsHeroVin(n)?'#059669':'#92400e';
-    h.textContent=geIsHeroVin(n)?('✓ '+n):('✓ '+n+' — note: Hero chassis numbers normally start with MBL');
+    if(n.length>=VIN_LEN){
+      const v=geExtractVin(n)||n.slice(0,VIN_LEN);
+      h.style.color=geIsHeroVin(v)?'#059669':'#92400e';
+      h.textContent=geIsHeroVin(v)?('✓ '+v):('✓ '+v+' — note: Hero chassis numbers normally start with MBL');
+      return;
+    }
+    // The server matches on the last 6 characters too, so a partial read is still
+    // worth searching — better than telling the guard to walk back to the bike.
+    h.style.color='#92400e';
+    h.textContent = n.length>=6
+      ? (n.length+' of 17 — enough to search on the last 6 characters')
+      : (n.length+' of 17 characters');
   };
 
   window.geVinSubmit = function(){
     const i=el('ge-vin-input'), h=el('ge-vin-hint'); if(!i) return;
     const n=geNormVin(i.value);
-    if(!geValidVin(n)){ if(h){ h.style.color='#b91c1c';
-      h.textContent='Please enter all 17 characters of the chassis number.'; } return; }
-    i.value=n;
-    if(h){ h.style.color='#92400e'; h.textContent='Checking records…'; }
-    geIdLookup(n, true);                                   // STAGE 5
+    if(n.length<6){ if(h){ h.style.color='#b91c1c';
+      h.textContent='Type at least the last 6 characters of the chassis number.'; } return; }
+    const full=(n.length>=VIN_LEN)?(geExtractVin(n)||n.slice(0,VIN_LEN)):n;
+    i.value=full;
+    if(h){ h.style.color='#92400e';
+      h.textContent = full.length>=VIN_LEN ? 'Checking records…' : 'Checking records on the last 6 characters…'; }
+    geIdLookup(full, true);                                // STAGE 5
   };
 
   window.geVinFromPhoto = function(ev, kind){
     const f=ev && ev.target && ev.target.files && ev.target.files[0]; if(!f) return;
+    try{ ev.target.value=''; }catch(e){}          // cleared NOW so the same file can be re-picked
     const h=el('ge-vin-hint');
     if(h){ h.style.color='#92400e'; h.textContent='Reading the chassis number from the photo…'; }
     const rd=new FileReader();
     rd.onload=function(e2){
       const img=new Image();
       img.onload=async function(){
-        const maxW=1100; let w=img.width,h2=img.height;      // RC text is small: keep it sharp
-        if(w>maxW){ h2=Math.round(h2*maxW/w); w=maxW; }
-        const c=document.createElement('canvas'); c.width=w; c.height=h2;
-        c.getContext('2d').drawImage(img,0,0,w,h2);
-        const raw=await askGemini(c.toDataURL('image/jpeg',0.75),
-                     kind==='rc'?VIN_PROMPT_RC:VIN_PROMPT_FRAME, 'chassis_number');
-        const n=geNormVin(raw);
+        // RC text is small and dense. 1100px was losing characters on a second,
+        // slightly-further-away photo of the same document — which is exactly the
+        // "worked once, then never again" behaviour. Kept large and sharp.
+        const maxW=1500; let w=img.width, hh=img.height;
+        if(w>maxW){ hh=Math.round(hh*maxW/w); w=maxW; }
+        const c=document.createElement('canvas'); c.width=w; c.height=hh;
+        const cx=c.getContext('2d'); cx.drawImage(img,0,0,w,hh);
+        const obj=await askGemini(c.toDataURL('image/jpeg',0.85),
+                     kind==='rc'?VIN_PROMPT_RC:VIN_PROMPT_FRAME, '*');
         const hint=el('ge-vin-hint');
-        if(!geValidVin(n)){
-          if(hint){ hint.style.color='#b91c1c';
-            hint.textContent = n ? ('Read "'+n+'" — that is not a full 17-character chassis number. Please type it.')
-                                 : 'Could not read the chassis number from that photo. Please type it.'; }
+        const field=obj?String(obj.chassis_number||''):'';
+        const bulk =obj?String(obj.all_text||''):'';
+        // Try the dedicated field, then everything the reader could see.
+        let n=geExtractVin(field);
+        if(!n) n=geExtractVin(bulk);
+        if(n){
+          const inp=el('ge-vin-input'); if(inp) inp.value=n;
+          geVinInput();
+          geIdLookup(n, true);                                // STAGE 5
           return;
         }
-        const inp=el('ge-vin-input'); if(inp) inp.value=n;
-        geVinInput();
-        geIdLookup(n, true);                                // STAGE 5
+        // Nothing usable. Show the guard what was actually read rather than a
+        // blank refusal — usually one or two characters need correcting by hand.
+        const seen=(field||bulk||'').replace(/\s+/g,' ').trim().slice(0,70);
+        if(hint){
+          hint.style.color='#b91c1c';
+          hint.innerHTML = seen
+            ? ('Read: <b>'+seen.replace(/</g,'&lt;')+'</b> — not a full chassis number. Type or correct it above.')
+            : 'Nothing readable in that photo. Move closer, avoid glare, and try again — or type it.';
+        }
       };
       img.src=e2.target.result;
     };
     rd.readAsDataURL(f);
-    try{ ev.target.value=''; }catch(e){}
   };
 
   window.geVinSkipAsNew = function(){ geVinHide(); geIdGenuinelyNew(); };
+
+  /* ============================ FRESH FORM ON EVERY ENTRY =====================
+     Ravi 26-Jul-2026: the form only reset after a SUCCESSFUL SAVE. Press Back
+     halfway through a vehicle, come in again, and the previous customer's name,
+     mobile and photos were still sitting there — ready to be saved against the
+     next bike. That is a wrong-data risk, not just an untidy screen.
+
+     It now clears on entry. The wiped form is held in memory for the session so
+     one tap puts it back, in case Back was pressed by accident mid-entry. */
+  const GE_TEXT_IDS=['ge-name','ge-mob','ge-alt','ge-reg','ge-km','ge-other'];
+  let GE_DRAFT=null;
+
+  function geSnapshot(){
+    const d={f:{}, photos:Object.assign({}, (GE_PHOTOS||{})),
+             purpose:GE_PURPOSE||'', svc:GE_SVC_TYPE||''};
+    GE_TEXT_IDS.concat(['ge-model']).forEach(function(id){
+      const e=el(id); if(e) d.f[id]=e.value||'';
+    });
+    const has = d.f['ge-reg'] || d.f['ge-name'] || d.f['ge-mob'] || d.photos.front;
+    return has ? d : null;
+  }
+
+  window.geRestoreDraft = function(){
+    if(!GE_DRAFT) return;
+    Object.keys(GE_DRAFT.f).forEach(function(id){ const e=el(id); if(e) e.value=GE_DRAFT.f[id]; });
+    try{
+      Object.keys(GE_DRAFT.photos).forEach(function(k){ GE_PHOTOS[k]=GE_DRAFT.photos[k]; });
+      GE_PURPOSE=GE_DRAFT.purpose; GE_SVC_TYPE=GE_DRAFT.svc;
+      geSyncPurposeUI(); geRenderPhotoGrid(); geApplyPhotoGate(); geRevealDetails();
+    }catch(e){}
+    const b=el('ge-restore-bar'); if(b) b.style.display='none';
+    GE_DRAFT=null;
+  };
+
+  window.geFreshForm = function(){
+    GE_DRAFT = geSnapshot();
+    GE_TEXT_IDS.forEach(function(id){ const e=el(id); if(e) e.value=''; });
+    const mo=el('ge-model'); if(mo) mo.value='';
+    try{
+      document.querySelectorAll('#ge-purpose-grid .pill').forEach(x=>x.classList.remove('sel'));
+      document.querySelectorAll('#ge-svc-grid .pill').forEach(x=>x.classList.remove('sel'));
+      GE_PURPOSE=''; GE_SVC_TYPE=''; geSyncPurposeUI();
+      GE_PHOTOS={front:'',back:'',right:'',left:'',odo:'',dicky:''};
+      GE_AI_RESULT=null; GE_AI_AUTORAN=false;
+      geRenderPhotoGrid(); geApplyPhotoGate();
+      GE_LAST_REG_LOOKED=''; geRegStatus('',''); geCloseModelModal();
+    }catch(e){}
+    GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false;
+    geVinHide();
+    const vi=el('ge-vin-input'); if(vi) vi.value='';
+    const vh=el('ge-vin-hint'); if(vh) vh.textContent='';
+    ['ge-details-block','ge-ai-card','ge-ai-status','ge-okban'].forEach(function(id){
+      const e=el(id); if(e){ e.style.display='none'; if(id!=='ge-details-block') e.innerHTML=''; }
+    });
+    // Offer the wiped entry back, once, only if there was something in it.
+    let bar=el('ge-restore-bar');
+    if(GE_DRAFT){
+      if(!bar){
+        bar=document.createElement('div'); bar.id='ge-restore-bar';
+        bar.style.cssText='margin:8px 0;padding:9px 11px;border:1px dashed #93c5fd;background:#eff6ff;'
+          +'border-radius:8px;font-size:12px;color:#1e40af;display:flex;justify-content:space-between;'
+          +'align-items:center;gap:8px';
+        const host=el('ge-form-view')||document.body;
+        host.insertBefore(bar, host.firstChild);
+      }
+      bar.innerHTML='<span>An unsaved entry'+(GE_DRAFT.f['ge-reg']?(' for <b>'+String(GE_DRAFT.f['ge-reg']).replace(/</g,'&lt;')+'</b>'):'')+' was cleared.</span>'
+        +'<button type="button" class="btn sm ghost" style="margin:0;white-space:nowrap" onclick="geRestoreDraft()">↩ Restore</button>';
+      bar.style.display='flex';
+    } else if(bar){ bar.style.display='none'; }
+  };
+
+  /* Entering the Gate Entry module always lands on a clean form. */
+  const OLD_GE_AFTER_CHECK = window.geAfterCheck;
+  window.geAfterCheck = function(){
+    const r = OLD_GE_AFTER_CHECK ? OLD_GE_AFTER_CHECK.apply(this, arguments) : undefined;
+    try{ geFreshForm(); }catch(e){}
+    return r;
+  };
 
   /* ------------------------------------------------------------------- STAGE 6
      Only here — after plate AND chassis have both failed — is this a new vehicle,
@@ -9366,7 +9501,7 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
         +'<div style="font-size:12px;line-height:1.6">🔖 '+(plate||'plate not read')+'</div>'; }
     try{ geRevealDetails(); }catch(e){}
     geDetectModelAI().then(function(md){
-      if(md && typeof GE_AI_RESULT!=='undefined' && GE_AI_RESULT) GE_AI_RESULT.model=md.model||'';
+      try{ if(GE_AI_RESULT) GE_AI_RESULT.model=md.model||''; }catch(e){}
       status('🆕 New vehicle — please confirm the model.','warn');
       geAskModel(plate, (md&&md.model)||'', (md&&md.confidence_percent)||null, true);
     });
