@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set49-2026.07.26-s31';
+window.HERO_BUILD = 'set50-2026.07.26-s32';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9192,19 +9192,148 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     return '';
   };
 
+  /* Pull a registration number out of an OCR text block. Vision returns the whole
+     screen, so the number arrives surrounded by unrelated words — and a greedy
+     match happily ate the P from "Paragraph" and produced 23BH0293DP. Matching is
+     therefore done line by line, with a check that no letter or digit touches
+     either end of the match. Consecutive lines are also joined, because a plate is
+     often read as two lines (MH14 / LM9637). */
+  function findBounded(str, source){
+    const rx=new RegExp(source,'g'); let m;
+    while((m=rx.exec(str))!==null){
+      const a=m.index, b=a+m[0].length;
+      const before = a>0 ? str.charAt(a-1) : '';
+      const after  = b<str.length ? str.charAt(b) : '';
+      if(!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return m[0];
+      rx.lastIndex = a+1;
+    }
+    return '';
+  }
+  window.geExtractPlate = function(text){
+    const lines=String(text||'').toUpperCase().split(/[\n\r]+/)
+                  .map(function(x){ return x.replace(/[^A-Z0-9]/g,''); })
+                  .filter(Boolean);
+    const cands=lines.slice();
+    for(let i=0;i+1<lines.length;i++) cands.push(lines[i]+lines[i+1]);
+    const pats=[ '[0-9]{2}BH[0-9]{4}[A-Z]{2}',      // BH series, two-letter suffix
+                 '[0-9]{2}BH[0-9]{4}[A-Z]',         // BH series, one-letter suffix
+                 '[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}' ];
+    for(let p=0;p<pats.length;p++){
+      for(let c=0;c<cands.length;c++){
+        const hit=findBounded(cands[c], pats[p]);
+        if(hit && raviValidReg(hit)) return geNormPlate(hit);
+      }
+    }
+    return '';
+  };
+
   const GE_ID = { busy:false, plate:'', done:false };
   window.GE_ID = GE_ID;
 
   function el(id){ return document.getElementById(id); }
   function status(msg,kind){ try{ geAiStatus(msg,kind); }catch(e){} }
 
+  /* ======================= READING TEXT OUT OF A PHOTO =======================
+     Ravi 26-Jul-2026. Google Lens reads MBLJFW600PGD02518 off the same screen in
+     a fraction of a second while this app said "nothing readable". Three real
+     reasons, all fixed here.
+
+     1. THE IMAGE WAS BEING CRUSHED TWICE. geVinFromPhoto carefully built a
+        1500px / q0.85 canvas — and then askGemini handed it to geCompressForAi,
+        which knocked it back to 1000px / q0.70. A 17-character code photographed
+        off a laptop screen does not survive that. My own mistake, one line after
+        the fix I wrote for it.
+
+     2. WRONG TOOL. Gemini is a reasoning model being asked to do OCR. Lens uses
+        a dedicated text engine. Cloud Vision TEXT_DETECTION is that same class of
+        engine and takes the very same API key, so it is now tried FIRST for any
+        pure "read these characters" job. Gemini stays as the fallback.
+
+     3. ROTATION. The photo of the screen is stored rotated — in the Lens capture
+        the code runs vertically down the screen. Canvas drawing does not always
+        apply the EXIF orientation, so the model was being handed sideways text.
+        Orientation is now honoured, and if the first read yields nothing usable
+        the image is rotated and read again.
+     ========================================================================== */
+
+  /* Load to a canvas at high resolution with EXIF orientation applied. */
+  async function loadUpright(src, maxW){
+    maxW = maxW || 1600;
+    let bmp=null;
+    try{
+      if(typeof createImageBitmap==='function'){
+        const blob = (src instanceof Blob) ? src : await (await fetch(src)).blob();
+        bmp = await createImageBitmap(blob, {imageOrientation:'from-image'});
+      }
+    }catch(e){ bmp=null; }
+    if(!bmp){
+      bmp = await new Promise(function(res,rej){
+        const i=new Image(); i.onload=function(){ res(i); }; i.onerror=rej;
+        i.src=(src instanceof Blob)?URL.createObjectURL(src):src;
+      });
+    }
+    let w=bmp.width, h=bmp.height;
+    if(w>maxW){ h=Math.round(h*maxW/w); w=maxW; }
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(bmp,0,0,w,h);
+    return c;
+  }
+
+  function rotateCanvas(src, deg){
+    const rad=deg*Math.PI/180, swap=(deg===90||deg===270);
+    const c=document.createElement('canvas');
+    c.width  = swap?src.height:src.width;
+    c.height = swap?src.width :src.height;
+    const x=c.getContext('2d');
+    x.translate(c.width/2, c.height/2); x.rotate(rad);
+    x.drawImage(src, -src.width/2, -src.height/2);
+    return c;
+  }
+
+  /* Cloud Vision TEXT_DETECTION — the same engine class Lens uses. Returns the
+     full text block, or '' if the API is not enabled on this key (in which case
+     the caller quietly falls back to Gemini). */
+  async function visionText(canvas){
+    const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
+    if(!key) return '';
+    try{
+      const b64=canvas.toDataURL('image/jpeg',0.92).split(',')[1];
+      const r=await fetch('https://vision.googleapis.com/v1/images:annotate?key='+encodeURIComponent(key),{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({requests:[{image:{content:b64},
+          features:[{type:'TEXT_DETECTION'}], imageContext:{languageHints:['en']}}]})});
+      if(!r.ok) return '';
+      const j=await r.json();
+      const a=(j.responses||[])[0]||{};
+      if(a.error) return '';
+      return String((a.fullTextAnnotation&&a.fullTextAnnotation.text)
+                 || (((a.textAnnotations||[])[0]||{}).description) || '');
+    }catch(e){ return ''; }
+  }
+
+  /* Read text from a photo, trying three orientations. `accept` decides when we
+     have what we came for, so we stop as soon as a valid VIN or plate appears. */
+  window.geOcrRead = async function(src, accept){
+    const base=await loadUpright(src, 1600);
+    const tries=[base, rotateCanvas(base,90), rotateCanvas(base,270)];
+    let best='';
+    for(let i=0;i<tries.length;i++){
+      const t=await visionText(tries[i]);
+      if(t && !best) best=t;
+      if(t && accept && accept(t)) return {text:t, engine:'vision', rotated:i>0};
+      if(t && !accept) return {text:t, engine:'vision', rotated:i>0};
+    }
+    return {text:best, engine:best?'vision':'', rotated:false};
+  };
+
   /* ---------------------------------------------------------------- one call,
-     one image, one question. Used for the plate and for the chassis number. */
-  async function askGemini(dataUrl, prompt, field){
+     one image, one question. Used for the plate and for the chassis number.
+     `raw` skips the second compression pass. */
+  async function askGemini(dataUrl, prompt, field, raw){
     const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
     if(!key || !dataUrl) return '';
     try{
-      const b64=await geCompressForAi(dataUrl);
+      const b64 = raw ? String(dataUrl).split(',')[1] : await geCompressForAi(dataUrl);
       const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
       const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
                   generationConfig:{temperature:0,response_mime_type:'application/json'}};
@@ -9262,14 +9391,23 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     GE_ID.busy=true;
     try{
       let plate='', from='';
+      // Dedicated OCR first (same engine class as Lens), AI only if that misses.
+      const readPlate=async function(dataUrl){
+        try{
+          const r=await geOcrRead(dataUrl, function(t){ return !!geExtractPlate(t); });
+          const p=geExtractPlate(r.text);
+          if(p) return p;
+        }catch(e){}
+        return geNormPlate(await askGemini(dataUrl, PLATE_PROMPT, 'registration_number'));
+      };
       if(GE_PHOTOS.front){
         status('⏳ Reading the number plate from the front photo…','info');
-        plate=geNormPlate(await askGemini(GE_PHOTOS.front, PLATE_PROMPT, 'registration_number'));
+        plate=await readPlate(GE_PHOTOS.front);
         from='front';
       }
       if(!raviValidReg(plate) && GE_PHOTOS.back){
         status('⏳ Front plate not clear — reading the back photo…','info');
-        const p2=geNormPlate(await askGemini(GE_PHOTOS.back, PLATE_PROMPT, 'registration_number'));
+        const p2=await readPlate(GE_PHOTOS.back);
         if(raviValidReg(p2)){ plate=p2; from='back'; }
       }
       if(!raviValidReg(plate)){
@@ -9366,45 +9504,45 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     const f=ev && ev.target && ev.target.files && ev.target.files[0]; if(!f) return;
     try{ ev.target.value=''; }catch(e){}          // cleared NOW so the same file can be re-picked
     const h=el('ge-vin-hint');
-    if(h){ h.style.color='#92400e'; h.textContent='Reading the chassis number from the photo…'; }
-    const rd=new FileReader();
-    rd.onload=function(e2){
-      const img=new Image();
-      img.onload=async function(){
-        // RC text is small and dense. 1100px was losing characters on a second,
-        // slightly-further-away photo of the same document — which is exactly the
-        // "worked once, then never again" behaviour. Kept large and sharp.
-        const maxW=1500; let w=img.width, hh=img.height;
-        if(w>maxW){ hh=Math.round(hh*maxW/w); w=maxW; }
-        const c=document.createElement('canvas'); c.width=w; c.height=hh;
-        const cx=c.getContext('2d'); cx.drawImage(img,0,0,w,hh);
-        const obj=await askGemini(c.toDataURL('image/jpeg',0.85),
-                     kind==='rc'?VIN_PROMPT_RC:VIN_PROMPT_FRAME, '*');
-        const hint=el('ge-vin-hint');
-        const field=obj?String(obj.chassis_number||''):'';
-        const bulk =obj?String(obj.all_text||''):'';
-        // Try the dedicated field, then everything the reader could see.
-        let n=geExtractVin(field);
-        if(!n) n=geExtractVin(bulk);
-        if(n){
-          const inp=el('ge-vin-input'); if(inp) inp.value=n;
-          geVinInput();
-          geIdLookup(n, true);                                // STAGE 5
-          return;
-        }
-        // Nothing usable. Show the guard what was actually read rather than a
-        // blank refusal — usually one or two characters need correcting by hand.
-        const seen=(field||bulk||'').replace(/\s+/g,' ').trim().slice(0,70);
-        if(hint){
-          hint.style.color='#b91c1c';
-          hint.innerHTML = seen
-            ? ('Read: <b>'+seen.replace(/</g,'&lt;')+'</b> — not a full chassis number. Type or correct it above.')
-            : 'Nothing readable in that photo. Move closer, avoid glare, and try again — or type it.';
-        }
-      };
-      img.src=e2.target.result;
-    };
-    rd.readAsDataURL(f);
+    if(h){ h.style.color='#92400e'; h.textContent='Reading the chassis number…'; }
+    (async function(){
+      const hint=el('ge-vin-hint');
+      let n='', how='';
+      try{
+        // 1. Dedicated OCR on the ORIGINAL file — full resolution, upright,
+        //    and re-read rotated if the first pass gives nothing usable.
+        const r=await geOcrRead(f, function(t){ return !!geExtractVin(t); });
+        if(r.text){ n=geExtractVin(r.text); how=r.rotated?'scan (rotated)':'scan'; }
+      }catch(e){}
+      if(!n){
+        // 2. Fallback: Gemini, sent uncompressed this time.
+        try{
+          const c=await loadUpright(f, 1600);
+          const obj=await askGemini(c.toDataURL('image/jpeg',0.92),
+                       kind==='rc'?VIN_PROMPT_RC:VIN_PROMPT_FRAME, '*', true);
+          const field=obj?String(obj.chassis_number||''):'';
+          const bulk =obj?String(obj.all_text||''):'';
+          n=geExtractVin(field)||geExtractVin(bulk);
+          if(n) how='AI';
+          if(!n && (field||bulk)) window.__geLastRead=(field||bulk);
+        }catch(e){}
+      }
+      if(n){
+        const inp=el('ge-vin-input'); if(inp) inp.value=n;
+        geVinInput();
+        if(hint){ hint.style.color='#059669'; hint.textContent='✓ '+n+' — read by '+how+'. Checking records…'; }
+        geIdLookup(n, true);                                // STAGE 5
+        return;
+      }
+      const seen=String(window.__geLastRead||'').replace(/\s+/g,' ').trim().slice(0,70);
+      window.__geLastRead='';
+      if(hint){
+        hint.style.color='#b91c1c';
+        hint.innerHTML = seen
+          ? ('Read: <b>'+seen.replace(/</g,'&lt;')+'</b> — not a full chassis number. Correct it above.')
+          : 'Nothing readable. Fill the frame with just the number, avoid glare, then try again — or type it.';
+      }
+    })();
   };
 
   window.geVinSkipAsNew = function(){ geVinHide(); geIdGenuinelyNew(); };
@@ -9543,6 +9681,189 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   window.geRemovePhoto = function(side){
     if(!side){ GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false; geVinHide(); }
     return OLD_REMOVE ? OLD_REMOVE.apply(this, arguments) : undefined;
+  };
+
+})();
+</script>
+
+<script>
+/* ============================================================================
+   s32 — Ravi 26-Jul-2026.  Three separate faults, none of them related.
+   ============================================================================ */
+(function(){
+
+  /* ---------------------------------------------------------------- BACK KEY
+     The trap sent every back press to goHome(). With a window open that moved
+     the screen UNDERNEATH the window, the window stayed put, and the next press
+     left the app. Back now closes the topmost thing that is open, and only
+     falls through to Home when nothing is open. */
+  const OVERLAYS = ['ravi-kpi-modal','ge-model-modal','ravi-doc-modal','preview-modal','hu-cm-modal'];
+
+  function topOpenOverlay(){
+    for(let i=0;i<OVERLAYS.length;i++){
+      const e=document.getElementById(OVERLAYS[i]);
+      if(e && e.style.display && e.style.display!=='none') return e;
+    }
+    // any other .modal left visible
+    const all=document.querySelectorAll('.modal');
+    for(let i=0;i<all.length;i++){
+      if(all[i].style.display && all[i].style.display!=='none') return all[i];
+    }
+    return null;
+  }
+
+  window.heroBackStep = function(){
+    const ov=topOpenOverlay();
+    if(ov){
+      if(ov.id==='ravi-kpi-modal' && typeof raviCloseKpiModal==='function') raviCloseKpiModal();
+      else if(ov.id==='ge-model-modal' && typeof geCloseModelModal==='function') geCloseModelModal();
+      else ov.style.display='none';
+      return true;                       // handled — do not move the screen behind it
+    }
+    const vin=document.getElementById('ge-vin-panel');
+    if(vin && vin.style.display!=='none'){ vin.style.display='none'; return true; }
+    const home=document.getElementById('view-home');
+    if(home && home.style.display==='none'){ if(typeof goHome==='function') goHome(); return true; }
+    return false;
+  };
+
+  window.addEventListener('popstate', function(){
+    try{ history.pushState({app:true},'',location.href); }catch(e){}
+    if(window.USER) heroBackStep();
+  });
+
+  /* ------------------------------------------------------- GATE ENTRIES TODAY
+     The "Gate Entries Today" tile was wired to raviOpenGateHistory(), which
+     loads 45 days. The number on the tile said today; the list underneath it
+     said everything. Same data, so this filters it rather than adding a call. */
+  window.raviOpenGateToday = function(){
+    const m={modal:document.getElementById('ravi-kpi-modal'),
+             body:document.getElementById('ravi-kpi-body'),
+             title:document.getElementById('ravi-kpi-title')};
+    if(!m.modal) return;
+    m.title.textContent="Gate Entries — Today";
+    if(typeof heroViewPaint==='function') heroViewPaint(m.body,'gate_today','<div class="hint">Loading…</div>');
+    else m.body.innerHTML='<div class="hint">Loading…</div>';
+    m.modal.style.display='block';
+    jget('gate_history', {days:2}, function(res){
+      if(!res || res.ok===false){
+        if(typeof heroSoftPlaceholder==='function') heroSoftPlaceholder(m.body,'<div class="hint">Could not load.</div>');
+        return;
+      }
+      const key=new Date().toISOString().slice(0,10);
+      const isToday=function(g){
+        if(g.dateKey) return String(g.dateKey).slice(0,10)===key;
+        const t=new Date(g.time); return !isNaN(t.getTime()) && t.toISOString().slice(0,10)===key;
+      };
+      const all=(res.entries||[]).filter(isToday);
+      const rows=(typeof raviRowsAllowedForUser==='function')?raviRowsAllowedForUser(all,'ws'):all;
+      const more='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="raviOpenGateHistory()">📅 All gate entries — full history</button>';
+      if(!rows.length){ m.body.innerHTML=more+'<div class="hint">No gate entries yet today.</div>'; return; }
+      m.body.innerHTML=more+rows.map(function(g,i){
+        const t=new Date(g.time);
+        const hhmm=isNaN(t.getTime())?'':t.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+        return '<div class="ctlitem"><div><div class="big">'+(i+1)+'. '+raviEsc(g.reg||'—')+' · '+raviEsc(g.model||'')+'</div>'
+          +'<div class="small">'+raviEsc(g.name||'')+' · '+raviEsc(g.purpose||'')+' · '+raviEsc(g.location||'')+'</div></div>'
+          +'<div><span class="badge done">'+raviEsc(g.token||hhmm)+'</span></div></div>';
+      }).join('');
+      if(typeof heroViewSave==='function') heroViewSave(m.body,'gate_today');
+    });
+  };
+
+  /* Re-point the tile without touching how tiles are built. */
+  const OLD_RENDER_TILES = window.renderHomeTiles;
+  window.renderHomeTiles = function(){
+    const r = OLD_RENDER_TILES ? OLD_RENDER_TILES.apply(this, arguments) : undefined;
+    try{
+      document.querySelectorAll('[onclick*="raviOpenGateHistory()"]').forEach(function(node){
+        const txt=(node.textContent||'');
+        if(/Gate Entries Today/i.test(txt)) node.setAttribute('onclick','raviOpenGateToday()');
+      });
+    }catch(e){}
+    return r;
+  };
+
+  /* ------------------------------------------------------------ UPDATE STATUS
+     "When did it update? When will it update?" was unanswerable, because nothing
+     was ever recorded and the check only ran on a cold open. Now: the moment of
+     update is stamped, it is shown in plain words, and there is a button that
+     checks on demand instead of leaving people to guess. */
+  const UPD_AT='hero_updated_at', UPD_CHK='hero_last_checked';
+
+  try{
+    const seenBuild=localStorage.getItem('hero_seen_build');
+    if(seenBuild!==window.HERO_BUILD){
+      localStorage.setItem('hero_seen_build', window.HERO_BUILD||'');
+      localStorage.setItem(UPD_AT, String(Date.now()));
+    }
+  }catch(e){}
+
+  window.heroAgoText = function(ms){
+    if(!ms) return 'unknown';
+    const s=Math.max(0,Math.round((Date.now()-ms)/1000));
+    if(s<90) return 'just now';
+    const m=Math.round(s/60); if(m<60) return m+' min ago';
+    const h=Math.round(m/60); if(h<24) return h+' hour'+(h===1?'':'s')+' ago';
+    const d=Math.round(h/24); return d+' day'+(d===1?'':'s')+' ago';
+  };
+
+  window.heroUpdateInfo = function(){
+    let at=0, ck=0;
+    try{ at=parseInt(localStorage.getItem(UPD_AT)||'0',10)||0;
+         ck=parseInt(localStorage.getItem(UPD_CHK)||'0',10)||0; }catch(e){}
+    return {build:window.HERO_BUILD||'?', at:at, checked:ck};
+  };
+
+  window.heroCheckUpdateNow = function(btn){
+    const label=btn&&btn.textContent;
+    if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
+    try{ localStorage.setItem(UPD_CHK, String(Date.now())); }catch(e){}
+    const finish=function(found){
+      if(btn){ btn.disabled=false; btn.textContent=label||'Check for update'; }
+      if(!found) alert('You are on the latest version.\n\n'+window.HERO_BUILD
+        +'\nInstalled '+heroAgoText(heroUpdateInfo().at)
+        +'\n\nThe app also checks by itself every time it is opened, and every 30 minutes while it stays open.');
+    };
+    if(navigator.serviceWorker && navigator.serviceWorker.getRegistration){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        if(!reg) return finish(false);
+        reg.update().then(function(){
+          setTimeout(function(){ finish(!!(reg.installing||reg.waiting)); }, 1800);
+        }).catch(function(){ finish(false); });
+      }).catch(function(){ finish(false); });
+    } else finish(false);
+  };
+
+  /* Check every 30 minutes while the app stays open, and whenever it is brought
+     back to the front — so a phone left running overnight is not stranded. */
+  function quietCheck(){
+    try{
+      localStorage.setItem(UPD_CHK, String(Date.now()));
+      if(navigator.serviceWorker && navigator.serviceWorker.getRegistration)
+        navigator.serviceWorker.getRegistration().then(function(r){ if(r) r.update(); });
+    }catch(e){}
+  }
+  setInterval(quietCheck, 30*60*1000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) quietCheck(); });
+
+  /* Show it where the version already lives. */
+  function paintVerBadge(){
+    const el=document.getElementById('ver-badge'); if(!el) return;
+    const i=heroUpdateInfo();
+    el.title='Build '+i.build+' · installed '+heroAgoText(i.at)
+            +' · last checked '+heroAgoText(i.checked)+' · tap to check now';
+  }
+  setTimeout(paintVerBadge, 1200);
+  setInterval(paintVerBadge, 60000);
+
+  window.heroShowUpdateStatus = function(){
+    const i=heroUpdateInfo();
+    alert('App version\n\n'+i.build
+      +'\n\nInstalled on this phone : '+heroAgoText(i.at)
+      +'\nLast checked for update : '+heroAgoText(i.checked)
+      +'\n\nIt checks on every open, every 30 minutes while open, and whenever you '
+      +'switch back to it. When a new version is found it installs by itself and '
+      +'tells you when it is done.');
   };
 
 })();
