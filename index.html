@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set50-2026.07.26-s32';
+window.HERO_BUILD = 'set51-2026.07.26-s33';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1195,7 +1195,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       <div class="offlineban" id="ge-offlineban">No internet connection. Entries cannot be saved offline — please reconnect.</div>
       <div class="missing" id="ge-missingban" style="display:none"></div>
       <div class="card">
-        <div class="card-h">Gate Entry <button class="navbtn" id="ge-cfgbtn" onclick="geOpenSetup(true)">⚙ Configure</button><button class="navbtn" id="ge-aikeybtn" onclick="geSetGeminiKey()" style="display:none" title="Set the app-wide Gemini API key (CEO only)">🔑 App AI Key</button></div>
+        <div class="card-h">Gate Entry <button class="navbtn" id="ge-cfgbtn" onclick="geOpenSetup(true)">⚙ Configure</button><button class="navbtn" id="ge-aikeybtn" onclick="geSetGeminiKey()" style="display:none" title="Set the app-wide Gemini API key (CEO only)">🔑 App AI Key</button><button class="navbtn" id="ge-viskeybtn" onclick="geSetVisionKey()" style="display:none" title="Set the app-wide Cloud Vision OCR key (CEO only)">🔎 Vision OCR Key</button></div>
         <div class="card-b">
           <div class="fld"><label>Location *</label><select id="ge-loc"></select></div>
 
@@ -2915,6 +2915,7 @@ function geCheckAndLoad(){
 function geAfterCheck(){
   document.getElementById('ge-cfgbtn').style.display = isAdmin() ? 'inline-block' : 'none';
   const aikey=document.getElementById('ge-aikeybtn'); if(aikey) aikey.style.display = isAdmin() ? 'inline-block' : 'none';
+  const viskey=document.getElementById('ge-viskeybtn'); if(viskey) viskey.style.display = isAdmin() ? 'inline-block' : 'none';
   if(GE_MISSING.length>0){
     if(isAdmin()) geOpenSetup(false);
     else {
@@ -3154,6 +3155,7 @@ function loadAppSettings(cb){
       if(res && res.settings){
         APP_SETTINGS=res.settings;
         if(APP_SETTINGS.GEMINI_API_KEY){ try{ localStorage.setItem('app_gemini_key', APP_SETTINGS.GEMINI_API_KEY); }catch(e){} }
+        if(APP_SETTINGS.VISION_API_KEY){ try{ localStorage.setItem('app_vision_key', APP_SETTINGS.VISION_API_KEY); }catch(e){} }
       }
       if(cb) cb();
     });
@@ -3172,6 +3174,33 @@ function geSetGeminiKey(){
   jpost({type:'set_app_setting', key:'GEMINI_API_KEY', value:key, by:(USER&&USER.personName)||''})
     .then(()=>{ geAiStatus(key?'✅ App API key saved — now active on every device.':'Key cleared.', key?'ok':'warn'); })
     .catch(()=>{ geAiStatus('⚠️ Saved on this device but server save failed — check connection and retry.','error'); });
+}
+/* Cloud Vision uses its OWN key (Ravi 26-Jul-2026). The Gemini key from AI Studio
+   is bound to a service account, and that key type is not accepted by Vision's
+   plain API-key path — so the two cannot share one key. Kept separate also means
+   a Vision quota problem can never take Gemini down with it. Falls back to the
+   Gemini key if no Vision key has been set, so nothing breaks before you set it. */
+function geVisionKey(){
+  return String(APP_SETTINGS.VISION_API_KEY || localStorage.getItem('app_vision_key') || '').trim()
+      || geGeminiKey();
+}
+function geHasOwnVisionKey(){
+  return !!String(APP_SETTINGS.VISION_API_KEY || localStorage.getItem('app_vision_key') || '').trim();
+}
+function geSetVisionKey(){
+  if(!isAdmin()){ alert('Only the CEO / superadmin can set the app keys.'); return; }
+  const cur=String(APP_SETTINGS.VISION_API_KEY || localStorage.getItem('app_vision_key') || '');
+  const v=prompt('Enter the Cloud Vision API key (reads number plates and chassis numbers).\n\n'
+    +'This must be a PLAIN API key — created WITHOUT a service account — and restricted to\n'
+    +'Cloud Vision API only. Leave blank to fall back to the Gemini key.\n\n'
+    +'Stored on the server — entered once, used on every device.', cur);
+  if(v===null) return;
+  const key=v.trim();
+  APP_SETTINGS.VISION_API_KEY=key;
+  try{ localStorage.setItem('app_vision_key', key); }catch(e){}
+  jpost({type:'set_app_setting', key:'VISION_API_KEY', value:key, by:(USER&&USER.personName)||''})
+    .then(()=>{ geAiStatus(key?'✅ Vision OCR key saved — active on every device.':'Vision key cleared — falling back to the AI key.', key?'ok':'warn'); })
+    .catch(()=>{ geAiStatus('⚠️ Saved on this device but the server save failed — check connection and retry.','error'); });
 }
 function geAiStatus(msg,kind){
   const el=document.getElementById('ge-ai-status'); if(!el) return;
@@ -9294,7 +9323,7 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      full text block, or '' if the API is not enabled on this key (in which case
      the caller quietly falls back to Gemini). */
   async function visionText(canvas){
-    const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
+    const key=(typeof geVisionKey==='function')?geVisionKey():'';
     if(!key) return '';
     try{
       const b64=canvas.toDataURL('image/jpeg',0.92).split(',')[1];
