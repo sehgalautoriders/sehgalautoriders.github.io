@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set45-2026.07.26-s27';
+window.HERO_BUILD = 'set46-2026.07.26-s28';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1937,6 +1937,7 @@ function heroCheckMasterStamps(force){
    the sync stays off and lookups fall through to the server exactly as today. */
 const CUST_DB='hero_cust_v1', CUST_STORE='cust';
 const CUST_STAMP_KEY='hero_cust_stamp', CUST_COUNT_KEY='hero_cust_count';
+const CUST_RETRY_KEY='hero_cust_retry_after';
 let __custDbP=null;
 
 function custNormReg(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
@@ -2075,29 +2076,14 @@ function heroCustSync(force, onDone){
   }, 10000);
 }
 
+/* Silent by design (Ravi 26-Jul-2026). The counter phone is often facing a
+   customer, so nothing about internal data syncing is drawn on screen. The
+   object shape is kept identical so heroCustSync needs no change; progress
+   goes to the console only, where it is available for debugging. */
 function custProgressBar(total){
-  let el=document.getElementById('hero-custbar');
-  if(!el){
-    el=document.createElement('div'); el.id='hero-custbar';
-    el.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99997;background:#0f172a;color:#fff;'
-      +'padding:10px 14px;font:600 12px Inter,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-    el.innerHTML='<div id="hero-custtxt">Preparing customer list…</div>'
-      +'<div style="height:4px;background:#1e293b;border-radius:99px;margin-top:7px;overflow:hidden">'
-      +'<div id="hero-custfill" style="height:4px;width:0%;background:linear-gradient(90deg,#2563eb,#60a5fa);transition:width .25s"></div></div>';
-    document.body.appendChild(el);
-  }
-  const txt=document.getElementById('hero-custtxt'), fill=document.getElementById('hero-custfill');
   return {
-    set:function(n){
-      const pct=total?Math.min(100,Math.round(n*100/total)):0;
-      if(fill) fill.style.width=pct+'%';
-      if(txt) txt.textContent='Saving customers to this phone — '+n.toLocaleString('en-IN')+' of '+total.toLocaleString('en-IN')+' ('+pct+'%)';
-    },
-    done:function(msg){
-      if(fill) fill.style.width='100%';
-      if(txt) txt.textContent=msg;
-      setTimeout(function(){ if(el&&el.parentNode) el.parentNode.removeChild(el); }, 3500);
-    }
+    set:function(n){ try{ console.log('[cust] '+n+' / '+total); }catch(e){} },
+    done:function(msg){ try{ console.log('[cust] '+msg); }catch(e){} }
   };
 }
 
@@ -2108,28 +2094,37 @@ function custProgressBar(total){
 function heroCustOffer(){
   try{
     if(!USER) return;
-    if(localStorage.getItem(CUST_STAMP_KEY)) { heroCustSync(false); return; } // already have it: quiet stamp check only
-    if(localStorage.getItem('hero_cust_declined')==='1') return;
+    if(CUST_SYNCING) return;
+
+    // Already on this phone → quiet stamp check only. Re-pulls just if the
+    // customer master actually changed.
+    if(localStorage.getItem(CUST_STAMP_KEY)) { heroCustSync(false); return; }
+
+    // goHome() runs on every Home navigation. Without this guard a failed sync
+    // is retried on each one, which is exactly what made the old banner
+    // reappear a second after it was dismissed.
+    if(window.__custTried) return;
+    window.__custTried=true;
+
+    // A previous attempt failed (almost always: Hotfix_Customers.gs not yet
+    // deployed, so 'customer_stamp' returns nothing). Back off rather than
+    // hammer the backend on every single open.
+    try{
+      const until=parseInt(localStorage.getItem(CUST_RETRY_KEY)||'0',10)||0;
+      if(until && Date.now()<until) return;
+    }catch(e){}
+
     const needs = (typeof isGuardUser==='function'&&isGuardUser())
                || (typeof isSAUser==='function'&&isSAUser())
                || (typeof isTopMgmtUser==='function'&&isTopMgmtUser());
     if(!needs) return;
-    if(document.getElementById('hero-custoffer')) return;
-    const b=document.createElement('div');
-    b.id='hero-custoffer';
-    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99996;background:#0f172a;color:#fff;'
-      +'padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;'
-      +'font:600 12px Inter,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-    b.innerHTML='<span style="line-height:1.45">Keep the customer list on this phone?<br>'
-      +'<span style="color:#94a3b8;font-weight:500">Instant search by number, chassis or mobile — even with no signal. About 10 MB, one time.</span></span>'
-      +'<span style="white-space:nowrap"><button id="hero-custno" style="background:none;border:0;color:#94a3b8;font:600 12px Inter,sans-serif;padding:8px 10px">Not now</button>'
-      +'<button id="hero-custyes" style="background:#2563eb;border:0;color:#fff;border-radius:8px;font:700 12px Inter,sans-serif;padding:9px 16px">Download</button></span>';
-    document.body.appendChild(b);
-    document.getElementById('hero-custno').onclick=function(){
-      try{ localStorage.setItem('hero_cust_declined','1'); }catch(e){}
-      b.remove();
-    };
-    document.getElementById('hero-custyes').onclick=function(){ b.remove(); heroCustSync(true); };
+
+    // No prompt, no bar, no message. It downloads once in the background while
+    // the person carries on working. (Ravi 26-Jul-2026)
+    heroCustSync(true, function(ok){
+      if(ok){ try{ localStorage.removeItem(CUST_RETRY_KEY); }catch(e){} return; }
+      try{ localStorage.setItem(CUST_RETRY_KEY, String(Date.now()+6*60*60*1000)); }catch(e){}
+    });
   }catch(e){}
 }
 
