@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set38-2026.07.26-s20';
+window.HERO_BUILD = 'set39-2026.07.26-s21';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2308,7 +2308,7 @@ function loadHoldupSnapshot(){
   if(typeof huHydrateFromBackend==='function'){
     huHydrateFromBackend(function(n){ if(n>0 && HU_LAST_FETCH!==snapSeen) loadHoldupSnapshot(); });
   }
-  rows=rows.filter(r=>String(r['Holdup Status']||'').toUpperCase()!=='DELIVERED'&&String(r['Holdup Status']||'').toUpperCase()!=='CLEAR');
+  rows=huActiveRows(rows);
   totalEl.textContent=rows.length;
   const buckets=[
     ['Warranty Approval', r=>String(r['Holdup Status']||'').toLowerCase().includes('warranty'),'red'],
@@ -2353,13 +2353,20 @@ function loadPriorityPanel(){
     const ests=(res.estimates||[]).filter(e=>wsAllowed(e.ws)).length;
     huComputeHomeCounts(function(c){
       const hu=c.hu, parts=c.parts;
+      /* Every row is now tappable. (Ravi 26-Jul-2026) This whole panel showed five
+         numbers and none of them opened anything — you could see a problem but not
+         reach it. Two labels were also wrong and have been corrected:
+           "Estimates pending for approval" counted gate-done-estimate-NOT-YET-MADE,
+              which is a different thing entirely — now "Estimates not yet prepared".
+           "Estimates to be delivered" counted every estimate made today — now
+              "Estimates prepared today", which is what the number actually is. */
       box.innerHTML=[
-        {label:'Holdup cases pending update', sub:'Needs immediate attention', n:hu, cls:hu>0?'red':'green'},
-        {label:'Estimates pending for approval', sub:'Awaiting manager review', n:pending, cls:pending>0?'orange':'green'},
-        {label:'Parts requests pending issue', sub:'Affecting workshop progress', n:parts, cls:parts>0?'blue':'green'},
-        {label:'Vehicles in workshop', sub:'In progress today', n:entries, cls:'blue'},
-        {label:'Estimates to be delivered', sub:'Due for customer delivery', n:ests, cls:'green'}
-      ].map(p=>`<div class="priority-item"><div><div class="pi-label">${p.label}</div><div class="pi-sub">${p.sub}</div></div><div class="ops-pill ${p.cls}">${p.n}</div></div>`).join('');
+        {label:'Holdup cases pending update', sub:'Needs immediate attention', n:hu, cls:hu>0?'red':'green', go:"openModule('holdup')"},
+        {label:'Estimates not yet prepared', sub:'Gate entry done, estimate pending', n:pending, cls:pending>0?'orange':'green', go:"openModule('control')"},
+        {label:'Parts requests pending issue', sub:'Affecting workshop progress', n:parts, cls:parts>0?'blue':'green', go:"raviOpenHoldupBucket('parts')"},
+        {label:'Vehicles in workshop', sub:'Gate entries today', n:entries, cls:'blue', go:"raviOpenGateHistory()"},
+        {label:'Estimates prepared today', sub:'Saved today across the workshop', n:ests, cls:'green', go:"openModule('control')"}
+      ].map(p=>`<div class="priority-item" style="cursor:pointer" onclick="${p.go}" title="Tap to open"><div><div class="pi-label">${p.label}</div><div class="pi-sub">${p.sub}</div></div><div class="ops-pill ${p.cls}">${p.n}</div></div>`).join('');
     });
   });
 }
@@ -5025,6 +5032,7 @@ let HU_DATA=[], HU_DATA_ENRICHED=[], HU_REASONS=[], HU_IS_PARTS_PERSON=false; //
 let HU_SELECTED=new Set(); // row indices currently checked for bulk ops
 let HU_SA_FILTER='ALL'; // advisor slicer active filter
 let HU_DRS_FILTER=null; // {name, vals[]} set by bar-chart click — FIX: old code set hu-f-status (Order Status) which never matched
+let HU_MATRIX_ORDERCOLS=[];
 let HU_MATRIX_FILTER=null; // {type, order, upd} set by clicking a cell in the JC-Type × Order-Status summary matrix (Ravi 08-Jul)
 let HU_LAST_CLICKED_ROW=-1; // for shift+click range selection
 
@@ -5062,23 +5070,11 @@ function huNormalizeDrs(s){ s=String(s||'').trim(); if(!s) return ''; return HU_
    local data is absent so the KPI can't render off an empty/stale store. */
 function huComputeHomeCounts(onReady){
   function tally(){
-    let rows=[]; try{ rows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){ rows=[]; }
-    const seen={}, active=[];
-    rows.forEach(function(r){
-      const st=String(r['Holdup Status']||'').toUpperCase();
-      if(st==='DELIVERED'||st==='CLEAR') return;
-      const ws=HU_CODE_TO_WS[String(r[HU_COLS.code]||'').trim()]||r[HU_COLS.code]||'';
-      if(!wsAllowed(ws)) return;
-      const jc=String(r[HU_COLS.jcNo]||'').trim().toUpperCase();
-      const dc=String(r[HU_COLS.code]||'').trim().toUpperCase();
-      const key=jc?(jc+'|'+dc):('REG:'+String(r[HU_COLS.reg]||'').trim().toUpperCase());
-      if(!key||seen[key]) return; seen[key]=true;
-      active.push(r);
-    });
+    const active=huActiveFromStore();
     return {
       hu:active.length,
-      parts:active.filter(r=>huIsPartStatus(String(r['Holdup Status']||'')+' '+String(r['Holdup Reason']||''))).length,
-      appr:active.filter(r=>huIsApprovalStatus(String(r['Holdup Status']||''))).length
+      parts:active.filter(r=>huIsPartStatus(huStatusText(r))).length,
+      appr:active.filter(r=>huIsApprovalStatus(huStatusText(r))).length
     };
   }
   /* Count from the same backend row set the Holdup screen uses, never from a
@@ -5086,7 +5082,56 @@ function huComputeHomeCounts(onReady){
      not add a second backend call when Home loads its panels together. */
   huHydrateFromBackend(function(){ onReady(tally()); });
 }
-function huIsPartStatus(s){ s=String(s||''); return s.toLowerCase().includes('part')||s.toLowerCase().includes('pna')||['PENDING_PARTS','PARTS_ORDERED','PARTS_RECEIVED'].includes(s); }
+/* ===== ONE SHARED COUNTING RULE FOR EVERY SUMMARY (Ravi 26-Jul-2026) =========
+   Before this, five panels each counted holdup their own way:
+     Home KPI tile, Home priority panel, Home snapshot, SA dashboard, Holdup screen.
+   Some deduped, some did not. Some applied the workshop filter, some did not. Some
+   read Status only, others Status + Reason. That is why no two summaries on the
+   same screen ever agreed. Everything now calls huActiveRows / huIsPartStatus below. */
+function huActiveRows(rows, opts){
+  opts=opts||{};
+  const seen={}, out=[];
+  (rows||[]).forEach(function(r){
+    const st=String(r['Holdup Status']||'').toUpperCase();
+    if(!opts.includeClosed && (st==='DELIVERED'||st==='CLEAR')) return;
+    if(!opts.skipWs){
+      const ws=HU_CODE_TO_WS[String(r[HU_COLS.code]||'').trim()]||r[HU_COLS.code]||'';
+      if(!wsAllowed(ws)) return;
+    }
+    // Same vehicle can hold two genuinely separate open job cards (Service + Bodyshop)
+    // at two dealer codes, so the key must be JC Number + Dealer Code, never Reg alone.
+    const jc=String(r[HU_COLS.jcNo]||'').trim().toUpperCase();
+    const dc=String(r[HU_COLS.code]||'').trim().toUpperCase();
+    const key=jc?(jc+'|'+dc):('REG:'+String(r[HU_COLS.reg]||'').trim().toUpperCase()+'|'+dc);
+    if(!key||seen[key]) return; seen[key]=true;
+    out.push(r);
+  });
+  return out;
+}
+/* Reads the local cache through the shared rule. Callers that need it fresh should
+   call huHydrateFromBackend first — every summary panel now does. */
+function huActiveFromStore(){
+  let rows=[]; try{ rows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){ rows=[]; }
+  return huActiveRows(rows);
+}
+/* Status + Reason together, always. A vehicle whose Status is blank but whose Reason
+   says "part not available" is a parts case, and was being missed. */
+function huStatusText(r){ return String((r&&r['Holdup Status'])||'')+' '+String((r&&r['Holdup Reason'])||''); }
+
+/* ARITHMETIC FIX (Ravi 26-Jul-2026): the old test matched any text containing "part",
+   so "Major Work - Parts Available" and "Parts Received" — vehicles whose parts have
+   ALREADY ARRIVED — were being counted as Parts Pending. That inflated the parts
+   figure on every screen. Available/received/fitted are now explicitly excluded. */
+function huIsPartStatus(s){
+  s=String(s||''); const t=s.toLowerCase();
+  if(!(t.includes('part')||t.includes('pna'))) return ['PENDING_PARTS','PARTS_ORDERED'].includes(s);
+  // Check the negatives FIRST. "part not available-first order under processing" is the
+  // commonest genuine parts case and it contains the word "available" inside "not
+  // available" — testing for "available" before this line wrongly cleared it.
+  if(t.includes('not available')||t.includes('unavailable')||t.includes('not received')) return true;
+  if(t.includes('available')||t.includes('received')||t.includes('fitted')||t.includes('issued')) return false;
+  return true;
+}
 function huIsApprovalStatus(s){ s=String(s||''); return s.toLowerCase().includes('approval')||s.toLowerCase().includes('warranty')||['INSURANCE_PENDING','CUSTOMER_PENDING'].includes(s); }
 function huIsReadyStatus(s){ s=String(s||''); return s.toLowerCase().includes('ready')||s.toLowerCase().includes('delivered')||['READY','CLEAR'].includes(s); }
 function huDrsColor(s){ s=huNormalizeDrs(s); return HU_DRS_COLORS[s]||'#6b7280'; }
@@ -5635,7 +5680,15 @@ function huShowInfo(msg,type){
 function huVal(id){ return (document.getElementById(id)||{}).value||''; }
 
 function huRender(){
-  if(!HU_DATA.length) return;
+  if(!HU_DATA.length){
+    /* ARITHMETIC FIX (Ravi 26-Jul-2026): this used to just return, leaving the
+       PREVIOUS summary numbers on screen with an empty table under them. So after a
+       filter wiped everything out, the chips still showed yesterday's counts. */
+    const k=document.getElementById('hu-kpi-row'); if(k) k.innerHTML='';
+    const w=document.getElementById('hu-table-wrap');
+    if(w) w.innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)"><div style="font-size:32px;margin-bottom:8px">📄</div><div style="font-weight:700">No holdup data yet</div><div style="font-size:12px;margin-top:4px">Upload today\'s Holdup file to load vehicles.</div></div>';
+    return;
+  }
   // Parts login: no filter bar — the table is already auto-restricted to parts-pending
   // vehicles (HU_IS_PARTS_PERSON), so dealer/type/SA/status filters are just noise.
   document.getElementById('hu-filters').style.display = HU_IS_PARTS_PERSON ? 'none' : 'flex';
@@ -5729,8 +5782,24 @@ function huRender(){
   if(HU_MATRIX_FILTER){
     rows=rows.filter(r=>{
       if(HU_MATRIX_FILTER.type && String(r[HU_COLS.type]||'').trim()!==HU_MATRIX_FILTER.type) return false;
-      if(HU_MATRIX_FILTER.order && String(r[HU_COLS.status]||'').trim()!==HU_MATRIX_FILTER.order) return false;
+      if(HU_MATRIX_FILTER.order){
+        const o=String(r[HU_COLS.status]||'').trim();
+        if(HU_MATRIX_FILTER.order==='__OTHER__'){
+          // "Other" = everything outside the six Order Status columns actually shown.
+          // This cell used to be plain text with no tap at all, so the vehicles hidden
+          // inside it were unreachable from the summary.
+          if((HU_MATRIX_ORDERCOLS||[]).includes(o||'(Blank)')) return false;
+        } else if(o!==HU_MATRIX_FILTER.order) return false;
+      }
       if(HU_MATRIX_FILTER.upd){ const u=huUpdatedToday(r); if(HU_MATRIX_FILTER.upd==='YES'&&!u) return false; if(HU_MATRIX_FILTER.upd==='NO'&&u) return false; }
+      // Chip drill-down. Uses the SAME test the chip count uses, so the number on the
+      // chip and the number of rows you land on can never disagree.
+      if(HU_MATRIX_FILTER.grp){
+        const t=huStatusText(r);
+        if(HU_MATRIX_FILTER.grp==='PARTS' && !huIsPartStatus(t)) return false;
+        if(HU_MATRIX_FILTER.grp==='APPR'  && !huIsApprovalStatus(t)) return false;
+        if(HU_MATRIX_FILTER.grp==='READY' && !huIsReadyStatus(t)) return false;
+      }
       return true;
     });
   }
@@ -5848,9 +5917,9 @@ function huRenderSummary(rows){
   HU_SUMMARY_ROWS=rows;
   HU_MATRIX_CELLS=[];
   const total=rows.length;
-  const parts=rows.filter(r=>huIsPartStatus(r['Holdup Status']||'')).length;
-  const appr=rows.filter(r=>huIsApprovalStatus(r['Holdup Status']||'')).length;
-  const ready=rows.filter(r=>huIsReadyStatus(r['Holdup Status']||'')).length;
+  const parts=rows.filter(r=>huIsPartStatus(huStatusText(r))).length;
+  const appr=rows.filter(r=>huIsApprovalStatus(huStatusText(r))).length;
+  const ready=rows.filter(r=>huIsReadyStatus(huStatusText(r))).length;
   const updToday=rows.filter(huUpdatedToday).length;
   const notUpd=total-updToday;
 
@@ -5863,17 +5932,19 @@ function huRenderSummary(rows){
   const orderCounts={};
   rows.forEach(r=>{ const o=String(r[HU_COLS.status]||'').trim()||'(Blank)'; orderCounts[o]=(orderCounts[o]||0)+1; });
   const orderCols=Object.entries(orderCounts).sort((a,b)=>b[1]-a[1]).map(e=>e[0]).slice(0,6);
+  HU_MATRIX_ORDERCOLS=orderCols; // remembered so the 'Other' cell can filter to everything NOT shown
   const hasOther=Object.keys(orderCounts).length>orderCols.length;
 
   const types=Object.entries(typeMap).sort((a,b)=>b[1].length-a[1].length);
-  const chipsActive=(u)=>HU_MATRIX_FILTER&&!HU_MATRIX_FILTER.type&&!HU_MATRIX_FILTER.order&&HU_MATRIX_FILTER.upd===u;
+  const chipsActive=(u)=>HU_MATRIX_FILTER&&!HU_MATRIX_FILTER.type&&!HU_MATRIX_FILTER.order&&!HU_MATRIX_FILTER.grp&&HU_MATRIX_FILTER.upd===u;
+  const grpActive=(g)=>HU_MATRIX_FILTER&&HU_MATRIX_FILTER.grp===g;
 
   let html=`<div class="hu-sum-wrap">
     <div class="hu-sum-chips">
       <span class="hu-chip total${HU_MATRIX_FILTER?'':' active'}" onclick="HU_MATRIX_FILTER=null;huRender()">🚗 Total <b>${total}</b></span>
-      <span class="hu-chip" style="--cc:#7e22ce">🔧 Parts Pending <b>${parts}</b></span>
-      <span class="hu-chip" style="--cc:#4f46e5">🛡 Approval <b>${appr}</b></span>
-      <span class="hu-chip" style="--cc:#166534">🟢 Ready / Not Delivered <b>${ready}</b></span>
+      <span class="hu-chip clickable${grpActive('PARTS')?' active':''}" style="--cc:#7e22ce" onclick="huMatrixToggleGrp('PARTS')">🔧 Parts Pending <b>${parts}</b></span>
+      <span class="hu-chip clickable${grpActive('APPR')?' active':''}" style="--cc:#4f46e5" onclick="huMatrixToggleGrp('APPR')">🛡 Approval <b>${appr}</b></span>
+      <span class="hu-chip clickable${grpActive('READY')?' active':''}" style="--cc:#166534" onclick="huMatrixToggleGrp('READY')">🟢 Ready / Not Delivered <b>${ready}</b></span>
       <span class="hu-chip clickable${chipsActive('YES')?' active':''}" style="--cc:#0e7490" onclick="huMatrixToggleUpd('YES')">✏️ Updated Today <b>${updToday}</b></span>
       <span class="hu-chip clickable${chipsActive('NO')?' active':''}" style="--cc:#b91c1c" onclick="huMatrixToggleUpd('NO')">⏳ Not Updated <b>${notUpd}</b></span>
       ${HU_MATRIX_FILTER?`<span class="hu-chip clear" onclick="HU_MATRIX_FILTER=null;huRender()">✕ Clear drill-down</span>`:''}
@@ -5889,7 +5960,7 @@ function huRenderSummary(rows){
     html+=`<tr><td class="hu-mx-type">${t}</td>`
       +huMatrixCell(list.length,typeRaw,'','','font-weight:800')
       +orderCols.map(o=>huMatrixCell(byOrder[o]||0,typeRaw,o==='(Blank)'?'':o,'')).join('')
-      +(hasOther?`<td class="hu-mx-cell zero">${other||'·'}</td>`:'')
+      +(hasOther?huMatrixCell(other,typeRaw,'__OTHER__',''):'')
       +huMatrixCell(u,typeRaw,'','YES','color:#0e7490')
       +huMatrixCell(list.length-u,typeRaw,'','NO','color:#b91c1c')
       +`</tr>`;
@@ -5900,7 +5971,7 @@ function huRenderSummary(rows){
   html+=`<tr class="hu-mx-total"><td class="hu-mx-type">ALL</td>`
     +huMatrixCell(total,'','','','font-weight:800')
     +orderCols.map(o=>huMatrixCell(totByOrder[o]||0,'',o==='(Blank)'?'':o,'')).join('')
-    +(hasOther?`<td class="hu-mx-cell zero">${totOther||'·'}</td>`:'')
+    +(hasOther?huMatrixCell(totOther,'','__OTHER__',''):'')
     +huMatrixCell(updToday,'','','YES','color:#0e7490')
     +huMatrixCell(notUpd,'','','NO','color:#b91c1c')
     +`</tr></tbody></table></div></div>`;
@@ -5908,7 +5979,15 @@ function huRenderSummary(rows){
 }
 function huMatrixToggleUpd(v){
   const same=HU_MATRIX_FILTER&&!HU_MATRIX_FILTER.type&&!HU_MATRIX_FILTER.order&&HU_MATRIX_FILTER.upd===v;
-  HU_MATRIX_FILTER=same?null:{type:'',order:'',upd:v};
+  HU_MATRIX_FILTER=same?null:{type:'',order:'',upd:v};  huRender();
+}
+/* Drill-down for the Parts Pending / Approval / Ready chips. (Ravi 26-Jul-2026)
+   These three showed a number but did nothing when tapped — three dead taps sitting
+   next to three live ones, which is exactly why the summary felt broken. Tapping now
+   filters the table to those vehicles; tapping the same chip again clears it. */
+function huMatrixToggleGrp(g){
+  const same=HU_MATRIX_FILTER&&HU_MATRIX_FILTER.grp===g;
+  HU_MATRIX_FILTER=same?null:{type:'',order:'',upd:'',grp:g};
   huRender();
 }
 
@@ -6666,30 +6745,22 @@ function showEstimatePreview(est, reg, name, mob){
       window.RAVI_TODAY_EST_CACHE=est; // today's estimates, already correctly filtered — reused by the instant 'My Estimates Today' tap (Ravi 21-Jul)
       // v11.1 stability fix: dedupe by JC+Dealer and drop delivered/clear so the count
       // can't fluctuate (75/90/123) between loads from stale or duplicated local rows.
-      let huRows=[]; try{ huRows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){}
-      (function(){
-        const seen={}, keep=[];
-        huRows.forEach(function(r){
-          const s=String(r['Holdup Status']||'').toUpperCase();
-          if(s==='DELIVERED'||s==='CLEAR') return;
-          const jc=String(r[HU_COLS.jcNo]||'').trim().toUpperCase();
-          const dc=String(r[HU_COLS.code]||'').trim().toUpperCase();
-          const key=jc?(jc+'|'+dc):('REG:'+String(r[HU_COLS.reg]||'').trim().toUpperCase());
-          if(!key||seen[key]) return; seen[key]=true; keep.push(r);
-        });
-        huRows=keep;
-      })();
+      /* Counted through the ONE shared rule (huActiveRows), same as the priority
+         panel, the snapshot and the Holdup screen. This block used to carry its own
+         private copy of the dedupe/workshop logic, which is why the Home tile and
+         the Holdup screen could show different numbers on the same phone. */
+      let huRows=huActiveFromStore();
       if(isSAUser()) huRows=huRows.filter(raviAssignedToMe);
-      else huRows=huRows.filter(function(r){ const ws=HU_CODE_TO_WS[String(r[HU_COLS.code]||'').trim()]||r[HU_COLS.code]||''; return wsAllowed(ws); });
-      const hu=huRows.length, appr=huRows.filter(r=>huIsApprovalStatus(String(r['Holdup Status']||''))).length;
+      const hu=huRows.length, appr=huRows.filter(r=>huIsApprovalStatus(huStatusText(r))).length;
       const billing = estTotal>=100000 ? (Math.round(estTotal/10000)/10)+' L' : inr(estTotal);
       let cards;
       if(typeof isPartsPerson==='function' && isPartsPerson() && !isTopMgmtUser()){
         // Parts login: only what a parts executive acts on. No gate/estimate-value/
         // approval totals — those belong to WM/GM/CEO views.
-        let huRows=[]; try{ huRows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){}
-        huRows=huRows.filter(r=>String(r['Holdup Status']||'').toUpperCase()!=='DELIVERED'&&String(r['Holdup Status']||'').toUpperCase()!=='CLEAR');
-        const partsPending=huRows.filter(r=>huIsPartStatus(String(r['Holdup Status']||'')+' '+String(r['Holdup Reason']||''))).length;
+        // Same shared rule as every other panel — this branch previously skipped the
+        // dedupe and the workshop filter entirely, so a parts executive saw a higher
+        // parts figure on Home than on the Parts Desk he then opened.
+        const partsPending=huActiveFromStore().filter(r=>huIsPartStatus(huStatusText(r))).length;
         cards=[
           {ic:'📦',n:partsPending,t:'Parts Pending Vehicles',sub:'Tap to open Parts Desk',color:'#0891b2',click:"openModule('partsdesk')"},
           {ic:'🧾',n:est.length,t:"Today's Estimates",sub:'Tap to see parts to issue',color:'#16a34a',click:"raviOpenPartsEstimates()"},
@@ -6736,8 +6807,9 @@ function showEstimatePreview(est, reg, name, mob){
     });
     const box2=document.getElementById('sa-myholdup'); if(!box2) return;
     try{
-      const data=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]');
-      const mineHu=data.filter(raviAssignedToMe).filter(r=>String(r['Holdup Status']||'').toUpperCase()!=='DELIVERED'&&String(r['Holdup Status']||'').toUpperCase()!=='CLEAR');
+      // Shared rule, so this list length matches the "My Holdup Cases" tile above it.
+      // It used to skip the dedupe, so the tile said one number and the list another.
+      const mineHu=huActiveFromStore().filter(raviAssignedToMe);
       if(!mineHu.length){ box2.innerHTML='<div class="hint">No holdup vehicles currently assigned to you.</div>'; return; }
       box2.innerHTML=mineHu.slice(0,10).map((r,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(r[HU_COLS.reg]||r['Reg No']||huGetVin(r)||'')} · ${raviEsc(r[HU_COLS.model]||r['Model']||'')}</div>
         <div class="small">${raviEsc(huNormalizeDrs(r['Holdup Status']||'')||'Not updated')} · ETA: ${raviEsc(r['Parts ETA']||'—')}</div></div>
