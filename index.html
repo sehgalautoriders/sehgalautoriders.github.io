@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set47-2026.07.26-s29';
+window.HERO_BUILD = 'set48-2026.07.26-s30';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1218,6 +1218,32 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
           <!-- Identified-vehicle card (name/mobile/model/VIN) appears here once known -->
           <div id="ge-ai-card" style="display:none;margin-top:4px;border:2px solid #ddd6fe;border-radius:10px;padding:10px;background:#faf5ff"></div>
+
+          <!-- VIN / chassis fallback (Ravi 26-Jul-2026). Shown only when the plate was
+               read but the vehicle is not in records, or the plate cannot be read at all. -->
+          <div id="ge-vin-panel" style="display:none;margin-top:10px;border:2px solid #fbbf24;border-radius:10px;padding:12px;background:#fffbeb">
+            <div style="font-weight:800;font-size:14px;margin-bottom:2px">🔎 Not in our records — let's check by chassis number</div>
+            <div id="ge-vin-sub" style="font-size:12px;color:#78350f;line-height:1.5;margin-bottom:8px"></div>
+            <label style="font-size:11px;font-weight:700;letter-spacing:.4px;color:#78350f">CHASSIS / VIN NUMBER (17 characters)</label>
+            <input id="ge-vin-input" type="text" autocomplete="off" spellcheck="false"
+                   placeholder="MBL..............."
+                   style="width:100%;box-sizing:border-box;margin-top:4px;padding:11px 12px;border:1px solid #fbbf24;border-radius:8px;font:700 15px 'Roboto Mono',monospace;letter-spacing:1px;text-transform:uppercase"
+                   oninput="geVinInput()">
+            <div id="ge-vin-hint" style="font-size:11px;margin-top:4px;min-height:14px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button type="button" class="btn sm" style="background:#b45309" onclick="geVinSubmit()">Find this vehicle</button>
+              <label class="btn sm ghost" style="margin:0;cursor:pointer">📷 Scan RC copy
+                <input type="file" accept="image/*" capture="environment" style="display:none" onchange="geVinFromPhoto(event,'rc')"></label>
+              <label class="btn sm ghost" style="margin:0;cursor:pointer">📷 Scan chassis on bike
+                <input type="file" accept="image/*" capture="environment" style="display:none" onchange="geVinFromPhoto(event,'frame')"></label>
+            </div>
+            <div style="font-size:11px;color:#78350f;margin-top:9px;line-height:1.55;border-top:1px dashed #fbbf24;padding-top:7px">
+              <b>Where to find it:</b> on the <b>RC copy</b> it is printed as <b>Chassis No.</b> (not Engine No.).
+              On the bike it is stamped on the frame near the <b>steering head</b>, below the handlebar.
+              It is always <b>17 characters</b> and Hero vehicles always start with <b>MBL</b>.
+            </div>
+            <button type="button" class="btn sm ghost" style="margin-top:9px" onclick="geVinSkipAsNew()">Skip — this is a new vehicle</button>
+          </div>
 
           <!-- STEP 2: Everything below is hidden until a vehicle is identified or marked new -->
           <div id="ge-details-block" style="display:none">
@@ -9096,6 +9122,294 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     }
     if(OLD_RAVI_OPEN_SA_KPI) return OLD_RAVI_OPEN_SA_KPI(kind);
   };
+})();
+</script>
+
+<script>
+/* ============================================================================
+   STAGED VEHICLE IDENTIFICATION  —  Ravi 26-Jul-2026  (build set48)
+   ----------------------------------------------------------------------------
+   Replaces the old "wait for front + odometer, then one combined AI call".
+
+   Why the old one kept saying the front was unreadable: the plate read and the
+   odometer read were bundled into ONE request carrying two images. The model had
+   to attribute two pictures to two different questions, and when it hesitated it
+   returned an empty registration_number — which the app reported as "front plate
+   unclear" and then re-tried on the back. The front photo was usually fine.
+
+   Each photo now answers exactly one question, in its own call.
+
+   THE PATH
+     1  front photo captured  -> read the plate straight away, alone. No waiting.
+     2  plate not readable    -> try the back photo. Not taken yet -> ask for it.
+     3  plate readable        -> look up records immediately
+     4  not in records        -> ask for the chassis / VIN number
+                                 (typed, or scanned off the RC copy or the frame)
+     5  VIN                   -> look up again by chassis
+     6  still nothing         -> genuinely a new vehicle; only now spend AI on
+                                 identifying the model
+   ============================================================================ */
+(function(){
+
+  /* ---- VIN shape, measured from 1,570 real Hero VINs in Ravi's own service
+     tracker: 17 characters, always MBL..., letters+digits only, and never the
+     letters I, O or Q (ISO forbids them). That last rule is what makes OCR
+     self-correcting: an O can only ever be a zero, an I can only be a one. */
+  const VIN_LEN = 17;
+  window.geNormVin = function(v){
+    return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'')
+      .replace(/O/g,'0').replace(/Q/g,'0').replace(/I/g,'1');
+  };
+  window.geValidVin = function(v){
+    const n = geNormVin(v);
+    return n.length===VIN_LEN && /^[A-HJ-NPR-Z0-9]{17}$/.test(n);
+  };
+  window.geIsHeroVin = function(v){ return /^MBL/.test(geNormVin(v)); };
+
+  const GE_ID = { busy:false, plate:'', done:false };
+  window.GE_ID = GE_ID;
+
+  function el(id){ return document.getElementById(id); }
+  function status(msg,kind){ try{ geAiStatus(msg,kind); }catch(e){} }
+
+  /* ---------------------------------------------------------------- one call,
+     one image, one question. Used for the plate and for the chassis number. */
+  async function askGemini(dataUrl, prompt, field){
+    const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
+    if(!key || !dataUrl) return '';
+    try{
+      const b64=await geCompressForAi(dataUrl);
+      const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
+      const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
+                  generationConfig:{temperature:0,response_mime_type:'application/json'}};
+      let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(r.status===429){ await new Promise(s=>setTimeout(s,3500));
+        r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+      if(!r.ok) return '';
+      const j=await r.json();
+      const t=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+      let x=t.trim().replace(/^```json\s*/i,'').replace(/```$/,'');
+      const a=x.indexOf('{'), b=x.lastIndexOf('}'); if(a>=0) x=x.slice(a,b+1);
+      const o=JSON.parse(x);
+      return String(o[field]||'').trim();
+    }catch(e){ return ''; }
+  }
+
+  /* The prompt names BH-series explicitly. Ravi's own 23BH0293D is a Bharat-series
+     plate, and a prompt that only shows "MH14AB1234" as the example biases the
+     model against the newer format. */
+  const PLATE_PROMPT =
+    'This photo shows an Indian two-wheeler number plate, or a picture/screen showing one. '+
+    'Read the registration number exactly as printed. Indian formats include '+
+    'state series like MH14AB1234 / MH12AB1234, and Bharat series like 23BH0293D. '+
+    'Ignore any other text. If you genuinely cannot read it, return an empty string. '+
+    'Return ONLY JSON: {"registration_number":""}';
+
+  const VIN_PROMPT_RC =
+    'This is an Indian vehicle Registration Certificate (RC), or a photo of one. '+
+    'Find the CHASSIS NUMBER — it may be labelled "Chassis No.", "Chassis Number" or "VIN". '+
+    'Do NOT return the Engine number, the registration number, or any other field. '+
+    'A chassis number is exactly 17 characters, letters and digits only, and never '+
+    'contains the letters I, O or Q. Hero MotoCorp chassis numbers begin with MBL. '+
+    'Return ONLY JSON: {"chassis_number":""}';
+
+  const VIN_PROMPT_FRAME =
+    'This photo shows a chassis/VIN number stamped or printed on a motorcycle or '+
+    'scooter frame, usually near the steering head below the handlebar. '+
+    'Read the full number exactly. It is exactly 17 characters, letters and digits '+
+    'only, never contains I, O or Q, and on a Hero vehicle begins with MBL. '+
+    'Return ONLY JSON: {"chassis_number":""}';
+
+  /* ------------------------------------------------------------------ STAGE 1-2
+     Read the plate. Front first, back as the second attempt. */
+  window.geIdentify = async function(trigger){
+    if(GE_ID.busy || GE_ID.done) return;
+    if(!GE_PHOTOS.front && !GE_PHOTOS.back) return;
+    GE_ID.busy=true;
+    try{
+      let plate='', from='';
+      if(GE_PHOTOS.front){
+        status('⏳ Reading the number plate from the front photo…','info');
+        plate=geNormPlate(await askGemini(GE_PHOTOS.front, PLATE_PROMPT, 'registration_number'));
+        from='front';
+      }
+      if(!raviValidReg(plate) && GE_PHOTOS.back){
+        status('⏳ Front plate not clear — reading the back photo…','info');
+        const p2=geNormPlate(await askGemini(GE_PHOTOS.back, PLATE_PROMPT, 'registration_number'));
+        if(raviValidReg(p2)){ plate=p2; from='back'; }
+      }
+      if(!raviValidReg(plate)){
+        GE_ID.busy=false;
+        if(!GE_PHOTOS.back){
+          // STAGE 2 — ask for the rear plate rather than giving up.
+          status('📷 The number plate could not be read from the front photo. '+
+                 'Please take the <b>back number plate</b> photo — we will read it from there.','warn');
+          try{ geRevealDetails(); }catch(e){}
+          return;
+        }
+        status('⚠ The plate could not be read from either photo. Please type the reg number below, '+
+               'or use the chassis number.','warn');
+        try{ geRevealDetails(); geVinShow('The number plate could not be read from the photos.'); }catch(e){}
+        return;
+      }
+      GE_ID.plate=plate;
+      if(typeof GE_AI_RESULT!=='undefined' && GE_AI_RESULT) GE_AI_RESULT.registration_number=plate;
+      else { try{ window.GE_AI_RESULT={registration_number:plate}; }catch(e){} }
+      const regEl=el('ge-reg'); if(regEl) regEl.value=plate;
+      try{ GE_LAST_REG_LOOKED=plate; }catch(e){}
+      status('🔎 Plate read from the '+from+' photo: <b>'+plate+'</b> · checking records…','info');
+      GE_ID.busy=false;
+      geIdLookup(plate);                                   // STAGE 3
+    }catch(e){ GE_ID.busy=false; status('⚠ '+String(e.message||e),'error'); }
+  };
+
+  /* ------------------------------------------------------------------- STAGE 3
+     Records lookup on whatever we have — a plate or a chassis number. */
+  window.geIdLookup = function(query, viaVin){
+    heroCustLookup(query, function(res){
+      if(res && res.found && res.vehicle){
+        GE_ID.done=true;
+        geVinHide();
+        geFillFromVehicle(res.vehicle, res.fuzzy);
+        status('✅ Vehicle found — details filled. Please verify with the customer.'+
+               (res.fuzzy?' <b>(close match — check the number)</b>':''),'ok');
+        return;
+      }
+      if(!res || res.found===null || res.found===undefined){
+        // Lookup could not run. Never call this a new vehicle. (see s29)
+        status('⚠ Records could not be checked just now. Please enter the details by hand.','warn');
+        try{ geRevealDetails(); }catch(e){}
+        return;
+      }
+      // STAGE 4 / 6 — genuinely not in records.
+      try{ geRevealDetails(); }catch(e){}
+      if(viaVin) return geIdGenuinelyNew();                // chassis already tried
+      geVinShow('Registration <b>'+String(query).replace(/</g,'&lt;')+'</b> is not in our records.');
+      status('🔎 Not found by number plate — checking by chassis number.','warn');
+    });
+  };
+
+  /* ------------------------------------------------------------------- STAGE 4 */
+  window.geVinShow = function(subHtml){
+    const p=el('ge-vin-panel'); if(!p) return;
+    const s=el('ge-vin-sub'); if(s) s.innerHTML=(subHtml||'')+' Ask the customer for the chassis number, or scan it.';
+    p.style.display='block';
+    p.scrollIntoView({behavior:'smooth',block:'nearest'});
+  };
+  window.geVinHide = function(){ const p=el('ge-vin-panel'); if(p) p.style.display='none'; };
+
+  window.geVinInput = function(){
+    const i=el('ge-vin-input'), h=el('ge-vin-hint'); if(!i||!h) return;
+    const n=geNormVin(i.value);
+    if(!n){ h.textContent=''; return; }
+    if(n.length<VIN_LEN){ h.style.color='#92400e'; h.textContent=n.length+' of 17 characters'; return; }
+    if(!geValidVin(n)){ h.style.color='#b91c1c'; h.textContent='That is not a valid chassis number.'; return; }
+    h.style.color=geIsHeroVin(n)?'#059669':'#92400e';
+    h.textContent=geIsHeroVin(n)?('✓ '+n):('✓ '+n+' — note: Hero chassis numbers normally start with MBL');
+  };
+
+  window.geVinSubmit = function(){
+    const i=el('ge-vin-input'), h=el('ge-vin-hint'); if(!i) return;
+    const n=geNormVin(i.value);
+    if(!geValidVin(n)){ if(h){ h.style.color='#b91c1c';
+      h.textContent='Please enter all 17 characters of the chassis number.'; } return; }
+    i.value=n;
+    if(h){ h.style.color='#92400e'; h.textContent='Checking records…'; }
+    geIdLookup(n, true);                                   // STAGE 5
+  };
+
+  window.geVinFromPhoto = function(ev, kind){
+    const f=ev && ev.target && ev.target.files && ev.target.files[0]; if(!f) return;
+    const h=el('ge-vin-hint');
+    if(h){ h.style.color='#92400e'; h.textContent='Reading the chassis number from the photo…'; }
+    const rd=new FileReader();
+    rd.onload=function(e2){
+      const img=new Image();
+      img.onload=async function(){
+        const maxW=1100; let w=img.width,h2=img.height;      // RC text is small: keep it sharp
+        if(w>maxW){ h2=Math.round(h2*maxW/w); w=maxW; }
+        const c=document.createElement('canvas'); c.width=w; c.height=h2;
+        c.getContext('2d').drawImage(img,0,0,w,h2);
+        const raw=await askGemini(c.toDataURL('image/jpeg',0.75),
+                     kind==='rc'?VIN_PROMPT_RC:VIN_PROMPT_FRAME, 'chassis_number');
+        const n=geNormVin(raw);
+        const hint=el('ge-vin-hint');
+        if(!geValidVin(n)){
+          if(hint){ hint.style.color='#b91c1c';
+            hint.textContent = n ? ('Read "'+n+'" — that is not a full 17-character chassis number. Please type it.')
+                                 : 'Could not read the chassis number from that photo. Please type it.'; }
+          return;
+        }
+        const inp=el('ge-vin-input'); if(inp) inp.value=n;
+        geVinInput();
+        geIdLookup(n, true);                                // STAGE 5
+      };
+      img.src=e2.target.result;
+    };
+    rd.readAsDataURL(f);
+    try{ ev.target.value=''; }catch(e){}
+  };
+
+  window.geVinSkipAsNew = function(){ geVinHide(); geIdGenuinelyNew(); };
+
+  /* ------------------------------------------------------------------- STAGE 6
+     Only here — after plate AND chassis have both failed — is this a new vehicle,
+     and only here do we spend an AI call identifying the model. */
+  window.geIdGenuinelyNew = function(){
+    GE_ID.done=true;
+    geVinHide();
+    const plate=GE_ID.plate||geNormPlate((el('ge-reg')||{}).value||'');
+    status('🆕 Not in records by plate or chassis — new vehicle. Identifying the model…','warn');
+    const card=el('ge-ai-card');
+    if(card){ card.style.display='block';
+      card.innerHTML='<div style="font-weight:800;font-size:13px;margin-bottom:4px">🆕 New / unregistered vehicle</div>'
+        +'<div style="font-size:12px;line-height:1.6">🔖 '+(plate||'plate not read')+'</div>'; }
+    try{ geRevealDetails(); }catch(e){}
+    geDetectModelAI().then(function(md){
+      if(md && typeof GE_AI_RESULT!=='undefined' && GE_AI_RESULT) GE_AI_RESULT.model=md.model||'';
+      status('🆕 New vehicle — please confirm the model.','warn');
+      geAskModel(plate, (md&&md.model)||'', (md&&md.confidence_percent)||null, true);
+    });
+  };
+
+  /* ------------------------------------------------- odometer, on its own call */
+  window.geReadOdo = async function(){
+    if(!GE_PHOTOS.odo) return;
+    const kmEl=el('ge-km'); if(kmEl && String(kmEl.value||'').trim()) return;   // guard already typed it
+    const raw=await askGemini(GE_PHOTOS.odo,
+      'Read the TOTAL odometer reading from this two-wheeler instrument cluster. '+
+      'Take the main large number only. Ignore the trip meter, clock, speed, fuel bars and gear. '+
+      'If it cannot be read, return 0. Return ONLY JSON: {"odometer_km":0}', 'odometer_km');
+    const km=Math.round(Number(String(raw).replace(/[^0-9]/g,''))||0);
+    if(km>0 && km<400000 && kmEl && !String(kmEl.value||'').trim()) kmEl.value=km;
+  };
+
+  /* ------------------------------------------------------------------ WIRING
+     The plate read now starts the instant the FRONT photo exists — it no longer
+     waits for the odometer. The odometer is read separately when that photo is
+     taken. Same number of images sent as before; the guard just stops waiting. */
+  const OLD_ON_PHOTO = window.geOnPhotoChange;
+  window.geOnPhotoChange = function(e, side){
+    const r = OLD_ON_PHOTO ? OLD_ON_PHOTO.apply(this, arguments) : undefined;
+    setTimeout(function(){
+      try{
+        if((side==='front'||side==='back') && !GE_ID.done) geIdentify(side);
+        if(side==='odo') geReadOdo();
+      }catch(err){}
+    }, 350);   // let the capture finish compressing into GE_PHOTOS first
+    return r;
+  };
+
+  /* The purple button becomes a manual re-run of the same path. */
+  window.geRecognise = function(){ GE_ID.done=false; GE_ID.busy=false; geIdentify('button'); geReadOdo(); };
+
+  /* Clearing the photos resets the identification state too. */
+  const OLD_REMOVE = window.geRemovePhoto;
+  window.geRemovePhoto = function(side){
+    if(!side){ GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false; geVinHide(); }
+    return OLD_REMOVE ? OLD_REMOVE.apply(this, arguments) : undefined;
+  };
+
 })();
 </script>
 
