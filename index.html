@@ -17,30 +17,84 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set36-2026.07.26-s18';
+window.HERO_BUILD = 'set37-2026.07.26-s19';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var ok = (location.protocol === 'https:') || location.hostname === 'localhost';
   if (!ok) return;
 
+  /* ── UPDATE FLOW (Ravi 26-Jul-2026) ─────────────────────────────────────────
+     Fair complaint: tapping Update did nothing visible. The bar kept saying
+     "New version ready" while the swap happened silently, so on a slow phone it
+     felt dead and people tapped it two or three times.
+     Now: tap Update -> bar turns blue, buttons disable, "Updating…" with a moving
+     bar -> app reloads itself -> a green line confirms which build it landed on,
+     so you never again have to guess whether a deploy actually reached the phone.
+     One honest note on the design: this is an INDETERMINATE bar, not a percentage.
+     By the time the Update button appears, the new build is already fully
+     downloaded and installed in the background — there is nothing left to measure.
+     A percentage here would be an invented number, so it is not shown. */
+  var HERO_UPD_CSS = '@keyframes heroUpdSlide{0%{left:-40%}100%{left:100%}}';
+
+  function heroInjectCss(){
+    if (document.getElementById('hero-upd-css')) return;
+    var s = document.createElement('style');
+    s.id = 'hero-upd-css'; s.textContent = HERO_UPD_CSS;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  /* Confirmation after the reload: shows once, then clears itself. */
+  function heroShowUpdatedToast(){
+    var from;
+    try { from = localStorage.getItem('hero_updating_from'); } catch (e) { return; }
+    if (!from) return;
+    try { localStorage.removeItem('hero_updating_from'); } catch (e) {}
+    if (from === window.HERO_BUILD) return; // nothing actually changed
+    var t = document.createElement('div');
+    t.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#14532d;'
+      + 'color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;'
+      + 'gap:10px;font:600 13px Inter,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
+    t.innerHTML = '<span>✓ Updated · now on ' + window.HERO_BUILD + '</span>'
+      + '<button style="background:none;border:0;color:#bbf7d0;font:700 13px Inter,sans-serif;padding:8px 10px">OK</button>';
+    t.querySelector('button').onclick = function () { t.remove(); };
+    document.body.appendChild(t);
+    setTimeout(function () { if (t.parentNode) t.remove(); }, 6000);
+  }
+
   function showUpdateBar(reg) {
     if (document.getElementById('hero-updatebar')) return;
+    heroInjectCss();
     var b = document.createElement('div');
     b.id = 'hero-updatebar';
     b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#15181c;'
       + 'color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;'
       + 'gap:10px;font:600 13px Inter,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-    b.innerHTML = '<span>New version ready</span>'
-      + '<span><button id="hero-updatelater" style="background:none;border:0;color:#9aa0a8;'
+    b.innerHTML = '<span id="hero-updatetext">New version ready</span>'
+      + '<span id="hero-updatebtns"><button id="hero-updatelater" style="background:none;border:0;color:#9aa0a8;'
       + 'font:600 13px Inter,sans-serif;padding:8px 10px">Later</button>'
       + '<button id="hero-updatenow" style="background:#c0392b;border:0;color:#fff;border-radius:8px;'
       + 'font:700 13px Inter,sans-serif;padding:9px 16px">Update</button></span>';
     document.body.appendChild(b);
     document.getElementById('hero-updatelater').onclick = function () { b.remove(); };
     document.getElementById('hero-updatenow').onclick = function () {
+      // 1. Tell the user immediately that the tap registered.
+      b.style.background = '#1d4ed8';
+      document.getElementById('hero-updatetext').textContent = 'Updating… please wait';
+      var btns = document.getElementById('hero-updatebtns');
+      if (btns) btns.innerHTML = '<span style="color:#bfdbfe;font:600 12px Inter,sans-serif">Do not close the app</span>';
+      // 2. Moving bar so the screen is visibly alive while the worker swaps over.
+      var track = document.createElement('div');
+      track.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.25);overflow:hidden';
+      track.innerHTML = '<div style="position:absolute;top:0;height:3px;width:40%;background:#fff;animation:heroUpdSlide 1.1s linear infinite"></div>';
+      b.style.position = 'fixed'; b.appendChild(track);
+      // 3. Remember where we came from, so the reloaded page can confirm the landing.
+      try { localStorage.setItem('hero_updating_from', window.HERO_BUILD || ''); } catch (e) {}
       var w = reg.waiting;
       if (w) { w.postMessage('HERO_SKIP_WAITING'); } else { location.reload(); }
+      // 4. Safety net: if the worker never hands over (rare, but it happens on some
+      //    Android browsers), reload anyway rather than spinning forever.
+      setTimeout(function () { if (!reloading) { reloading = true; location.reload(); } }, 6000);
     };
   }
 
@@ -50,6 +104,7 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
   });
 
   window.addEventListener('load', function () {
+    heroShowUpdatedToast(); // confirm the landing if we just came back from an update
     navigator.serviceWorker.register('./sw.js').then(function (reg) {
       /* AUTO-APPLY ON OPEN (20-Jul): if a new build was already downloaded in a
          previous session and is sitting ready, apply it NOW, at app open — a safe
@@ -59,7 +114,13 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
          kept running the OLD cached code and new fixes appeared to do nothing.
          Updates that finish downloading WHILE the app is open still show the bar
          below, so a gate entry or estimate in progress is never interrupted. */
-      if (reg.waiting && navigator.serviceWorker.controller) { reg.waiting.postMessage('HERO_SKIP_WAITING'); }
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        // Record where we are coming from so the reload can confirm the new build,
+        // exactly as the manual Update button does. Silent updates were the worst
+        // case before — the app changed under you with nothing said either way.
+        try { localStorage.setItem('hero_updating_from', window.HERO_BUILD || ''); } catch (e) {}
+        reg.waiting.postMessage('HERO_SKIP_WAITING');
+      }
       reg.addEventListener('updatefound', function () {
         var nw = reg.installing;
         if (!nw) return;
