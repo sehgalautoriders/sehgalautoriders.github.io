@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set52-2026.07.26-s34';
+window.HERO_BUILD = 'set53-2026.07.27-s35';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10407,5 +10407,466 @@ function rtAddPart(pn, btn){
 })();
 </script>
 <!-- ===================== END REPAIR TREE / REVENUE BUILDER ================= -->
+
+<!-- ==========================================================================
+     ESTIMATE ACCURACY & UI  —  Ravi 27-Jul-2026  (build set53 / s35)
+
+     Answers items 1, 3, 6, 7, 8 from the 27-Jul list. Items 2, 4, 5 are data
+     questions answered in chat, not code.
+
+     Wholly additive. Overrides four existing functions by re-assignment at the
+     end of the file (last-definition-wins), touches no markup above this block.
+     Remove the block and the module reverts exactly to s34 behaviour.
+     ========================================================================== */
+<style>
+  /* ---- 3 & 7: checkpoint card + labour picker, styled like the fluid build ---- */
+  #rt-strip{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:#fff;
+            padding:13px 14px 12px;display:none;box-shadow:0 8px 22px rgba(23,32,44,.05)}
+  #rt-strip .rt-top{display:flex;align-items:flex-start;gap:10px}
+  #rt-strip .rt-cap{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8b95a3}
+  #rt-strip .rt-pl{font-size:12px;color:var(--steel);margin-top:3px}
+  #rt-strip .rt-pl b{color:var(--ink)}
+  #rt-strip .rt-ratio{margin-left:auto;text-align:right;line-height:1}
+  #rt-strip .rt-ratio strong{font-size:23px;font-weight:850;letter-spacing:-.02em;display:block}
+  #rt-strip .rt-ratio small{font-size:10px;color:#8b95a3;font-weight:700;letter-spacing:.05em}
+  #rt-bar{position:relative;height:9px;border-radius:99px;background:#eef1f5;margin:11px 0 0;overflow:hidden}
+  #rt-fill{position:absolute;inset:0 auto 0 0;border-radius:99px;transition:width .3s ease,background .3s ease}
+  #rt-strip .rt-mk{position:absolute;top:0;width:2px;height:9px;background:#fff;opacity:.9}
+  #rt-ticks{display:flex;margin-top:5px;font-size:9.5px;font-weight:750;color:#98a2b1;letter-spacing:.03em}
+  #rt-ticks span{flex:1;text-align:right}
+  #rt-ticks span:first-child{text-align:left}
+  #rt-next{font-size:11.5px;color:var(--steel);margin-top:9px}
+  #rt-next b{color:var(--ink)}
+  #rt-actions{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+  .rt-btn{flex:1;min-width:132px;border:1px solid var(--line);background:#fff;border-radius:10px;
+          padding:10px;font-size:12.5px;font-weight:750;color:var(--ink);cursor:pointer;text-align:center}
+  .rt-btn:active{transform:translateY(1px)}
+  .rt-btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  /* ---- 1: odometer scan ---- */
+  .es-km-wrap{display:flex;gap:7px;align-items:stretch}
+  .es-km-wrap input{flex:1;min-width:0}
+  #es-km-scan{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:9px;
+              padding:0 13px;font-size:12.5px;font-weight:750;cursor:pointer;white-space:nowrap}
+  #es-km-hint{font-size:11px;margin-top:3px;display:none}
+
+  /* ---- 6: model locked when it came from records ---- */
+  #es-model.es-locked{background:#f5f7fa;color:#455065;font-weight:700}
+  #es-model-src{font-size:11px;margin-top:3px;display:none}
+  #es-model-src a{font-weight:700}
+
+  /* ---- 8: part list grouping ---- */
+  #es-add-pname optgroup{font-style:normal;font-weight:800;color:#8b95a3;font-size:11px}
+</style>
+<script>
+"use strict";
+
+/* =========================================================================
+   ITEM 1 — ODOMETER SCAN IN THE ESTIMATE
+   Reuses window.geOcrRead (already live since s32: Cloud Vision TEXT_DETECTION,
+   three orientations, Gemini fallback). No new API, no new key.
+   An odometer is the only number on a dash cluster with 4-7 digits, so the
+   accept() test is deliberately narrow — trip meters are 3-4 digits with a
+   decimal and are rejected.
+   ========================================================================= */
+function esKmCandidates(text){
+  var out=[];
+  String(text||'').split(/[\s\n]+/).forEach(function(tok){
+    /* A dash cluster also shows the clock. "06:45" stripped of punctuation
+       becomes "0645" and reads as a plausible 645 km. Reject anything that was
+       punctuated as a time, and anything with a leading zero — no odometer
+       displays one. */
+    if(/[:]/.test(tok)) return;
+    var t=tok.replace(/[^0-9.]/g,'');
+    if(!t || t.indexOf('.')>-1) return;          /* trip meters carry a decimal */
+    if(/^0/.test(t)) return;                     /* clocks and codes, not odometers */
+    if(!/^\d{4,7}$/.test(t)) return;             /* odometers are 4-7 digits    */
+    var n=+t;
+    if(n<1000 || n>999999) return;
+    out.push(n);
+  });
+  return out;
+}
+function esKmHint(msg, kind){
+  var el=document.getElementById('es-km-hint'); if(!el) return;
+  el.style.display=msg?'block':'none';
+  el.style.color = kind==='ok' ? 'var(--ok)' : (kind==='warn' ? '#b45309' : 'var(--steel)');
+  el.innerHTML=msg||'';
+}
+function esEnsureKmScan(){
+  var km=document.getElementById('es-km');
+  if(!km || document.getElementById('es-km-scan')) return;
+  var fld=km.parentNode;
+  var wrap=document.createElement('div'); wrap.className='es-km-wrap';
+  km.parentNode.insertBefore(wrap, km); wrap.appendChild(km);
+  var b=document.createElement('button');
+  b.type='button'; b.id='es-km-scan'; b.textContent='\uD83D\uDCF7 Scan';
+  b.onclick=esScanKm;
+  wrap.appendChild(b);
+  var h=document.createElement('div'); h.id='es-km-hint';
+  fld.appendChild(h);
+  var f=document.createElement('input');
+  f.type='file'; f.accept='image/*'; f.capture='environment';
+  f.id='es-km-file'; f.style.display='none';
+  f.addEventListener('change', esOnKmPhoto);
+  fld.appendChild(f);
+}
+function esScanKm(){
+  if(typeof window.geOcrRead!=='function'){
+    esKmHint('Photo reading is not available in this build \u2014 type the reading.','warn'); return;
+  }
+  var f=document.getElementById('es-km-file'); if(f){ f.value=''; f.click(); }
+}
+function esOnKmPhoto(e){
+  var file=e.target.files && e.target.files[0]; if(!file) return;
+  esKmHint('\u23F3 Reading the odometer\u2026','');
+  var fr=new FileReader();
+  fr.onload=function(){
+    window.geOcrRead(fr.result, function(t){ return esKmCandidates(t).length>0; })
+      .then(function(r){
+        var cands=esKmCandidates(r && r.text);
+        if(!cands.length){
+          esKmHint('Could not read the meter \u2014 type the reading. '
+                  +(r&&r.text?('Photo showed: '+String(r.text).replace(/\s+/g,' ').slice(0,60)):''),'warn');
+          return;
+        }
+        /* Highest plausible number is the odometer; trip meters read lower. */
+        var km=Math.max.apply(null,cands);
+        var el=document.getElementById('es-km');
+        var prev=+String(el.value||'').replace(/[^0-9]/g,'')||0;
+        el.value=km;
+        try{ esUpdateLive(); }catch(err){}
+        var extra = (cands.length>1) ? (' Other numbers seen: '+cands.filter(function(x){return x!==km;}).join(', ')+'.') : '';
+        esKmHint('\u2705 Read <b>'+km.toLocaleString('en-IN')+' km</b>'
+                +(r.engine==='vision'?' by scan':' by AI')
+                +'. Confirm against the meter before generating.'+extra
+                +(prev&&prev!==km?(' <b>Replaced '+prev.toLocaleString('en-IN')+'.</b>'):''), 'ok');
+      })
+      .catch(function(){ esKmHint('Reading failed \u2014 type the odometer.','warn'); });
+  };
+  fr.readAsDataURL(file);
+}
+
+/* =========================================================================
+   ITEM 6 — MODEL IS LOCKED WHEN IT CAME FROM RECORDS
+   DMS-derived (customer master) beats gate/AI. Locked = read-only select with
+   a visible source line. Unlocked whenever the record has no model, or the
+   value came from the gate. WM/GM/CEO can always unlock in one tap; an SA
+   cannot silently overwrite a DMS model.
+   ========================================================================= */
+var ES_MODEL_SRC={src:'', model:''};
+function esModelSrcLine(){
+  var el=document.getElementById('es-model-src'); if(!el) return;
+  var sel=document.getElementById('es-model');
+  if(ES_MODEL_SRC.src==='records'){
+    sel.classList.add('es-locked'); sel.setAttribute('data-locked','1');
+    el.style.display='block'; el.style.color='#047857';
+    el.innerHTML='\uD83D\uDD12 From DMS records \u2014 not editable.'
+      + (esCanUnlockModel() ? ' <a href="#" onclick="esUnlockModel();return false">Unlock</a>' : '');
+  } else if(ES_MODEL_SRC.src==='gate'){
+    sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+    el.style.display='block'; el.style.color='#b45309';
+    el.innerHTML='\u26A0\uFE0F Recorded at the gate, not found in records \u2014 confirm against the vehicle.';
+  } else {
+    sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+    el.style.display='none'; el.innerHTML='';
+  }
+}
+function esCanUnlockModel(){
+  try{
+    var lv=String((USER&&(USER.level||USER.Level))||'').toLowerCase();
+    var rl=String((USER&&(USER.role||USER.Role))||'').toUpperCase();
+    return lv==='admin'||lv==='superadmin'||rl==='WM'||rl==='GM'||rl==='CEO';
+  }catch(e){ return false; }
+}
+function esUnlockModel(){
+  if(!esCanUnlockModel()){ alert('Only the WM, GM or CEO can change a model that came from DMS records.'); return; }
+  ES_MODEL_SRC.src='unlocked';
+  var el=document.getElementById('es-model-src');
+  if(el){ el.style.display='block'; el.style.color='#b45309';
+          el.innerHTML='\uD83D\uDD13 Unlocked \u2014 a change here overrides the DMS record.'; }
+  var sel=document.getElementById('es-model');
+  sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+}
+/* A <select> has no readonly attribute, so the lock is enforced on the event. */
+(function(){
+  var sel=document.getElementById('es-model');
+  if(!sel) return;
+  sel.addEventListener('mousedown', function(e){
+    if(this.getAttribute('data-locked')==='1'){ e.preventDefault(); this.blur();
+      alert('This model came from DMS records and cannot be changed here.'
+           +(esCanUnlockModel()?'\n\nUse Unlock below the field if the record is genuinely wrong.':'')); }
+  });
+  sel.addEventListener('keydown', function(e){
+    if(this.getAttribute('data-locked')==='1'){ e.preventDefault(); }
+  });
+})();
+
+/* =========================================================================
+   ITEM 8 — A PART WITH NO MODEL LIST NO LONGER PRETENDS TO FIT EVERY MODEL
+   Root cause: esPartMatchesModel() ended with `if(!item.models) return true`.
+   10,914 of 16,075 parts (67.9%) carry no model evidence, so every one of them
+   appeared on every vehicle. That is why a Vida VVCI diagnostic tool showed up
+   on a Passion Pro: the list was ~96% parts that were never proven to fit.
+   They are NOT hidden — an unlisted part is often still the right part — but
+   they are now in a separate, clearly-labelled group below the fitting ones.
+   ========================================================================= */
+function esRenderPartDropdown(){
+  var cat=(typeof val==='function')?val('es-add-pcat'):'';
+  var sub=(typeof val==='function')?val('es-add-psub'):'';
+  var nm=document.getElementById('es-add-pname');
+  var amt=document.getElementById('es-add-pamt');
+  if(!nm) return;
+  if(!cat || !sub){ nm.innerHTML='<option value="">Select sub-category first\u2026</option>'; if(amt) amt.value=''; return; }
+
+  var all=((ES_PART_INDEX.cats[cat]||{})[sub]||[]);
+  var seen={};
+  all=all.filter(function(x){ var k=x.pn+'|'+x.l; if(seen[k]) return false; seen[k]=1; return true; });
+  all.sort(function(a,b){ return a.l>b.l?1:-1; });
+
+  var model=(typeof esCurrentModelUP==='function')?esCurrentModelUP():'';
+  var fit=[], other=[];
+  all.forEach(function(p){
+    if(esPartFitsModel(p)) fit.push(p); else other.push(p);
+  });
+
+  /* nm._items must stay index-aligned with the option values, across both groups */
+  var items=fit.concat(other);
+  nm._items=items;
+
+  function opt(p,i,warn){
+    var pr=p.price>0?(' \u2014 '+inr(p.price)):' \u2014 \u20B9 type';
+    return '<option value="'+i+'" data-price="'+p.price+'">'
+      +(warn?'\u26A0 ':'')+p.l+(p.pn?(' ['+p.pn+']'):'')+pr+'</option>';
+  }
+  var html='<option value="">Select part\u2026</option>';
+  if(fit.length){
+    html+='<optgroup label="Fits '+(model||'this model')+' \u2014 '+fit.length+'">';
+    fit.forEach(function(p,i){ html+=opt(p,i,false); });
+    html+='</optgroup>';
+  }
+  if(other.length){
+    html+='<optgroup label="Not listed for '+(model||'this model')+' \u2014 '+other.length+' (check before adding)">';
+    other.forEach(function(p,i){ html+=opt(p,fit.length+i,true); });
+    html+='</optgroup>';
+  }
+  if(!items.length) html='<option value="">No parts in this sub-category</option>';
+  nm.innerHTML=html;
+
+  nm.onchange=function(){
+    var it=(nm._items||[])[+nm.value];
+    if(!it){ if(amt){ amt.value=''; amt.readOnly=false; } esPartFitHint(''); return; }
+    if(amt){ amt.value = it.price>0 ? it.price : ''; amt.readOnly=false; }
+    esPartFitHint(esPartFitsModel(it) ? '' :
+      '\u26A0\uFE0F <b>'+String(it.l).replace(/</g,'&lt;')+'</b> is not on record as fitting '
+      +(model||'this model')+'. Check the part before adding it to the estimate.');
+  };
+  if(amt) amt.value='';
+  esPartFitHint('');
+}
+/* Same rule the old esPartMatchesModel used, minus the "no models = fits all"
+   line. Kept as a separate name so the original stays intact for Show-all. */
+function esPartFitsModel(item){
+  if(!item || !item.models) return false;
+  var m=(typeof heroOilKey==='function')?heroOilKey(esCurrentModelUP()):esCurrentModelUP();
+  if(!m) return true;
+  return String(item.models).split('|').some(function(x){
+    return ((typeof heroOilKey==='function')?heroOilKey(x):String(x).toUpperCase())===m;
+  });
+}
+function esPartFitHint(html){
+  var id='es-part-fit-hint', el=document.getElementById(id);
+  var anchor=document.getElementById('es-add-pname');
+  if(!anchor) return;
+  if(!el){
+    el=document.createElement('div'); el.id=id;
+    el.style.cssText='font-size:11px;color:#b45309;margin-top:4px;display:none;'
+                    +'background:#fff7ed;border:1px solid #fdba74;border-radius:7px;padding:6px 8px';
+    var host=anchor.parentNode; host.parentNode.insertBefore(el, host.nextSibling);
+  }
+  el.innerHTML=html||''; el.style.display=html?'block':'none';
+}
+
+/* =========================================================================
+   ITEMS 3 & 7 — CHECKPOINT CARD, AND A LABOUR PICKER THAT CAN BE USED
+   The native <select> listed ~700 codes alphabetically with no search, so
+   "ARM ASSY COMP KICK STARTER" sat above anything useful and finding a code
+   meant scrolling. It is replaced by a searchable list that shows THIS model's
+   own rates, biggest first, with the DMS code visible.
+   ========================================================================= */
+function rtRenderStrip(){
+  if(!rtEnsureStrip()) return;
+  var strip=document.getElementById('rt-strip');
+  var c=null; try{ c=esComputeCurrent(); }catch(e){}
+  if(!c){ strip.style.display='none'; return; }
+  strip.style.display='block';
+  var parts=(+c.parts||0)+(+c.oil||0), lab=(+c.labour||0);
+  var ratio = lab>0 ? parts/lab : Infinity;
+  var col = ratio<=1 ? '#16a34a' : (ratio<=1.5 ? '#65a30d' : (ratio<=2 ? '#d97706' : '#dc2626'));
+
+  var pl=document.getElementById('rt-pl');
+  if(pl) pl.innerHTML='Parts <b>'+rtMoney(parts)+'</b> &nbsp;\u00B7&nbsp; Labour <b>'+rtMoney(lab)+'</b>';
+  var rv=document.getElementById('rt-rv');
+  if(rv){
+    rv.innerHTML= lab>0
+      ? '<strong style="color:'+col+'">'+(Math.round(ratio*10)/10)+' : 1</strong><small>PARTS : LABOUR</small>'
+      : '<strong style="color:#dc2626">\u2014</strong><small>NO LABOUR YET</small>';
+  }
+  var f=document.getElementById('rt-fill');
+  if(f){ f.style.width=rtPct(ratio)+'%'; f.style.background=col; }
+
+  var nx=document.getElementById('rt-next'), tgt=null;
+  for(var i=0;i<RT_MARKS.length;i++){ if(ratio>RT_MARKS[i].r){ tgt=RT_MARKS[i]; break; } }
+  if(nx){
+    nx.innerHTML = !tgt
+      ? '\u2705 At or beyond <b>1 : 1</b> \u2014 labour is carrying its share.'
+      : 'Next checkpoint <b>'+tgt.t+'</b> \u2014 <b>'+rtMoney(Math.max(0, parts/tgt.r - lab))+'</b> more labour';
+  }
+}
+function rtEnsureStrip(){
+  if(document.getElementById('rt-strip')) return true;
+  var live=document.querySelector('#es-form-view .live'); if(!live) return false;
+  var d=document.createElement('div'); d.id='rt-strip';
+  d.innerHTML=
+     '<div class="rt-top"><div><div class="rt-cap">Parts to labour</div>'
+    +'<div class="rt-pl" id="rt-pl"></div></div>'
+    +'<div class="rt-ratio" id="rt-rv"></div></div>'
+    +'<div id="rt-bar"><div id="rt-fill"></div>'
+    +'<div class="rt-mk" style="left:33.3%"></div><div class="rt-mk" style="left:66.6%"></div></div>'
+    +'<div id="rt-ticks"><span>2:1</span><span>1.5:1</span><span>1:1</span></div>'
+    +'<div id="rt-next"></div>'
+    +'<div id="rt-actions">'
+    +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'\')">\uFF0B Add work by complaint</button>'
+    +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')">Suggested labour</button>'
+    +'<button type="button" class="rt-btn" onclick="esOpenLabPicker()">\u2315 Search labour</button>'
+    +'</div>';
+  live.parentNode.insertBefore(d, live.nextSibling);
+  return true;
+}
+
+/* --- searchable labour picker over THIS model's own rate list --------------- */
+function esOpenLabPicker(){
+  if(typeof rtEnsurePanel==='function') rtEnsurePanel();
+  var p=document.getElementById('rt-panel');
+  if(!p){ alert('Picker unavailable in this build.'); return; }
+  p.style.display='flex';
+  var s=document.getElementById('rt-search');
+  if(s){ s.value=''; s.placeholder='Search labour name or DMS code\u2026';
+         s.oninput=function(){ esDrawLabPicker(this.value.trim()); }; }
+  var crumb=document.getElementById('rt-crumb');
+  if(crumb) crumb.innerHTML='<b>'+String(esCurrentModelUP()||'model not set')+'</b> &nbsp;\u203A&nbsp; Labour master';
+  esDrawLabPicker('');
+}
+function esDrawLabPicker(q){
+  var body=document.getElementById('rt-body'); if(!body) return;
+  var opts=(typeof esPriceLabourOptions==='function')?esPriceLabourOptions():[];
+  if(!opts.length){
+    body.innerHTML='<div class="rt-empty">This model\u2019s labour list has not loaded. Select the model, then try again.</div>';
+    return;
+  }
+  var Q=String(q||'').toUpperCase();
+  var list=opts.filter(function(v){
+    if(!Q) return true;
+    return String(v.l).toUpperCase().indexOf(Q)>-1 || String(v.code).indexOf(Q)>-1;
+  });
+  /* Highest value first: the SA is looking for genuine work worth quoting, and
+     the alphabetical order buried it. Zero-rate rows sink to the bottom. */
+  list.sort(function(a,b){ return (b.p||0)-(a.p||0); });
+  var shown=list.slice(0,120);
+  var h='<div class="rt-sec">'+(Q?('Matching \u201C'+rtEsc(q)+'\u201D \u2014 '+list.length):('Labour for this model \u2014 '+list.length))+'</div>';
+  if(!shown.length) return void(body.innerHTML=h+'<div class="rt-empty">Nothing matches.</div>');
+  h+=shown.map(function(v){
+    var on=(ES_ADDLAB||[]).some(function(x){ return String(x.code||'')===String(v.code); });
+    return '<div class="rt-row"><i class="rt-dot '+(v.p>0?'rt-g':'rt-r')+'"></i>'
+      +'<div class="rt-main"><div class="rt-name">'+rtEsc(v.l)+'</div>'
+      +'<div class="rt-meta"><span class="rt-code">'+rtEsc(v.code)+'</span>'
+      +(v.p>0?'':' \u00B7 no rate on record')+'</div></div>'
+      +'<div class="rt-amt">'+(v.p>0?rtMoney(v.p):'\u2014')+'</div>'
+      +'<button type="button" class="rt-add'+(on?' done':'')+'" '
+      +'onclick="esPickLab('+JSON.stringify(String(v.code)).replace(/"/g,'&quot;')+',this)">'
+      +(on?'\u2713':'\uFF0B')+'</button></div>';
+  }).join('');
+  if(list.length>shown.length) h+='<div class="rt-empty">'+(list.length-shown.length)+' more \u2014 keep typing to narrow.</div>';
+  body.innerHTML=h;
+}
+function esPickLab(code, btn){
+  var opts=esPriceLabourOptions();
+  var v=opts.filter(function(x){ return String(x.code)===String(code); })[0];
+  if(!v) return;
+  if((ES_ADDLAB||[]).some(function(x){ return String(x.code||'')===String(code); })){ alert('Already on this estimate.'); return; }
+  var p=v.p;
+  if(!(p>0)){
+    var t=prompt('No rate on record for '+v.l+'. Type the amount:','');
+    p=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(p>0)) return;
+  }
+  ES_ADDLAB.push({l:v.l, p:p, code:String(v.code), _fromPicker:true});
+  if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
+  try{ esDrawChips(); }catch(e){}
+  try{ rtRenderStrip(); }catch(e){}
+}
+
+/* =========================================================================
+   WIRING — wrap, never replace
+   ========================================================================= */
+(function(){
+  /* model source is decided on gate pick; the customer-master answer wins */
+  var OLD_PICK=window.esOnGatePick;
+  if(typeof OLD_PICK==='function'){
+    window.esOnGatePick=function(g){
+      ES_MODEL_SRC={src:'', model:''};
+      var r=OLD_PICK.apply(this, arguments);
+      try{
+        esEnsureKmScan();
+        ES_MODEL_SRC={src:(g&&g.model)?'gate':'', model:(g&&g.model)||''};
+        esModelSrcLine();
+        if(g && g.reg && typeof heroCustLookup==='function'){
+          heroCustLookup(g.reg, function(res){
+            var v=(res&&res.found&&res.vehicle)||null;
+            var dm=v ? String(v['Model']||v['MODEL']||'').trim() : '';
+            if(!dm) return;                       /* no record model -> stays editable */
+            var sel=document.getElementById('es-model'), hit='';
+            for(var i=0;i<sel.options.length;i++){
+              var o=sel.options[i]; if(!o.value) continue;
+              if(o.value.toUpperCase()===dm.toUpperCase()){ hit=o.value; break; }
+              if(typeof heroOilKey==='function' && heroOilKey(o.value)===heroOilKey(dm)){ hit=o.value; }
+            }
+            if(!hit) return;                      /* record model not in the list -> editable */
+            if(sel.value!==hit){ sel.value=hit; sel.dispatchEvent(new Event('change')); }
+            ES_MODEL_SRC={src:'records', model:hit};
+            esModelSrcLine();
+          });
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  /* a fresh estimate clears the lock, the scan hint and the fit warning */
+  var OLD_NEW=window.esNewEstimate;
+  if(typeof OLD_NEW==='function'){
+    window.esNewEstimate=function(){
+      var r=OLD_NEW.apply(this, arguments);
+      try{
+        ES_MODEL_SRC={src:'', model:''};
+        var sel=document.getElementById('es-model');
+        if(sel){ sel.classList.remove('es-locked'); sel.removeAttribute('data-locked'); }
+        var s=document.getElementById('es-model-src'); if(s) s.style.display='none';
+        esKmHint(''); esPartFitHint('');
+      }catch(e){}
+      return r;
+    };
+  }
+  var OLD_BOOT=window.esBoot;
+  if(typeof OLD_BOOT==='function'){
+    window.esBoot=function(){
+      var r=OLD_BOOT.apply(this, arguments);
+      setTimeout(function(){ try{ esEnsureKmScan(); }catch(e){} }, 450);
+      return r;
+    };
+  }
+  try{ esEnsureKmScan(); }catch(e){}
+})();
+</script>
+<!-- ================= END ESTIMATE ACCURACY & UI (s35) ====================== -->
 
 </body></html>
