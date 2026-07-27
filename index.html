@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set55-2026.07.27-s37';
+window.HERO_BUILD = 'set56-2026.07.27-s38';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5936,6 +5936,15 @@ function huHydrateFromBackend(cb, force){
       o[HU_COLS.status]=String(r['Order Status']||'');
       o[HU_COLS.pendingDays]=String(r['Pending Days']||'');
       o[HU_COLS.supervisor]=String(r['Supervisor ID']||'');
+      /* THE "MY HOLDUP: 0" BUG (Ravi 27-Jul-2026).
+         The uploaded file carries an "SA" column with the advisor's NAME —
+         "Sharad Kotwal" against Supervisor ID SHA23490. Hydration dropped it, so
+         raviAssignedToMe() only had the raw code to work with, and matched a man
+         to his vehicles solely through HU_SA_MAP (MD_SA_Master). Any advisor
+         whose code is absent from that 16-row register showed 0 of his own
+         vehicles while the workshop total stayed correct. Carrying the name
+         through makes the match work on either the code OR the name. */
+      o['SA']=String(r['SA']||r['SA Name']||r['Advisor']||'');
       o[HU_COLS.date]=String(r['JC Date']||'');
       o[HU_COLS.code]=String(r['Dealer Code']||'');
       o['Entry ID']=String(r['Entry ID']||'');
@@ -11291,13 +11300,70 @@ function huRowVisible(row){
   return true;
 }
 
-/* Replaces the old HU_CODE_TO_WS lookups without touching huRender itself. */
-window.HU_CODE_TO_WS = new Proxy({}, {
-  get: function(t, k){ var l=locForCode(String(k)); return l.length?l[0]:undefined; }
-});
-window.HU_CODE_MAP = new Proxy({}, {
-  get: function(t, k){ return displayForCode(String(k)); }
-});
+/* ---------------------------------------------------------------------------
+   WHY THIS IS A MUTATION AND NOT AN ASSIGNMENT
+   HU_CODE_TO_WS and HU_CODE_MAP are declared with `const` at the top level of a
+   classic script. A top-level `const` does NOT become a property of `window`, so
+   `window.HU_CODE_TO_WS = ...` creates a second, unrelated property and the code
+   at line ~6262 keeps reading the original. That is exactly what happened in the
+   first version of this block: the scoping fix looked applied and did nothing.
+   `const` forbids re-binding, not mutation — so the objects are edited in place
+   and every existing reader picks the change up with no other edit.
+   --------------------------------------------------------------------------- */
+function locSyncLegacyMaps(){
+  try{
+    if(typeof HU_CODE_TO_WS!=='object' || !HU_CODE_TO_WS) return;
+    var r=locResolveForUser();
+    r.codes.forEach(function(code){
+      var locs=locForCode(code);
+      if(!locs.length){
+        /* unknown code: give it the user's own location so the row stays visible */
+        HU_CODE_TO_WS[code]= r.mine.length ? r.mine[0] : 'CHINCHWAD';
+      } else {
+        var hit='';
+        for(var i=0;i<locs.length && !hit;i++)
+          for(var j=0;j<r.mine.length;j++)
+            if(r.mine[j]===locs[i]){ hit=locs[i]; break; }
+        HU_CODE_TO_WS[code]= hit || locs[0];
+      }
+      var n=displayForCode(code);
+      if(typeof HU_CODE_MAP==='object' && HU_CODE_MAP && n) HU_CODE_MAP[code]=n;
+    });
+  }catch(e){}
+}
+/* run once on load with the fallbacks, and again whenever MD_Location arrives */
+setTimeout(locSyncLegacyMaps, 1200);
+
+/* A dealer code that serves more than one location cannot be expressed in a
+   one-value-per-code map, and huRender's filter does an exact compare against
+   that single value.
+
+   The first attempt overrode sameWsJs() to match a and b whenever some code
+   listed both. That made CHAKAN equal to CHINCHWAD for every row, because 10307
+   serves both — a worse fault than the one being fixed, caught in simulation.
+
+   The correct answer needs no override at all: resolve the map PER USER. For
+   each code, store whichever of its locations this user is entitled to. The
+   existing exact-match test is then right for everybody, and sameWsJs keeps its
+   original meaning. */
+function locResolveForUser(){
+  var allowed=(typeof allowedWsList==='function')?allowedWsList():null;
+  var mine=(allowed||[]).map(locNorm);
+  var codes={};
+  Object.keys(LOC_CODE_LOC).forEach(function(k){ codes[k]=1; });
+  ['10307','23490','17057'].forEach(function(k){ codes[k]=1; });
+  try{ if(typeof HU_CODE_TO_WS==='object') Object.keys(HU_CODE_TO_WS).forEach(function(k){ codes[k]=1; }); }catch(e){}
+  /* any dealer code present in the loaded rows but unknown to the map — it must
+     be SHOWN, never hidden silently; hiding is what produced the 157 count */
+  try{
+    if(typeof HU_DATA!=='undefined' && HU_DATA && HU_DATA.length && typeof HU_COLS==='object'){
+      HU_DATA.forEach(function(r){
+        var c=String(r[HU_COLS.code]||'').trim(); if(c) codes[c]=1;
+      });
+    }
+  }catch(e){}
+  return {codes:Object.keys(codes), mine:mine};
+}
 </script>
 <!-- =================== END DEALER SCOPING (s37) ============================ -->
 
