@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set56-2026.07.27-s38';
+window.HERO_BUILD = 'set57-2026.07.27-s39';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10950,32 +10950,31 @@ function heroWipeAndReload(){
   setTimeout(go, 4000);            /* never leave it hanging */
 }
 function heroUpdateNow(){
-  heroUpdSay('Checking\u2026', true);
-  /* Flush anything queued offline first — a reload must never lose a gate entry. */
-  var check=function(){
-    fetch('./sw.js?ts='+Date.now(), {cache:'no-store'})
-      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
-      .then(function(t){
-        var m=/HERO_BUILD\s*=\s*['"]([^'"]+)['"]/.exec(t||'');
-        var remote=m?m[1]:'';
-        var local=window.HERO_BUILD||'';
-        if(!remote){ heroUpdSay('\u26A0 Could not read version', false); return; }
-        if(remote===local){
-          heroUpdSay('\u2713 Already latest \u00B7 '+local, false);
-          setTimeout(function(){ heroUpdSay('\u27F3 Update now', false); }, 4000);
-          return;
-        }
-        heroUpdSay('New build '+remote+' \u2014 installing\u2026', true);
-        setTimeout(heroWipeAndReload, 500);
-      })
-      .catch(function(e){
-        heroUpdSay('\u26A0 '+String(e.message||'offline'), false);
-        setTimeout(function(){ heroUpdSay('\u27F3 Update now', false); }, 4000);
-      });
+  /* WHY THERE IS NO VERSION CHECK HERE ANY MORE (Ravi 27-Jul-2026)
+     The first version fetched ./sw.js, read its HERO_BUILD and compared. It could
+     never work. sw.js's own fetch handler intercepts EVERY same-origin request and
+     answers from SHELL_CACHE using { ignoreSearch: true } — so the cache-busting
+     ?ts= was ignored and the worker handed back the OLD sw.js it had stored. The
+     button therefore read its own running build every single time and reported
+     "already latest" whatever was on GitHub. It was structurally incapable of
+     saying anything else.
+     A browser bypasses the service worker for sw.js only when IT fetches the file
+     for registration — not when page JavaScript calls fetch() for it.
+     So: no comparison. The button now just reinstalls, unconditionally. If you are
+     already current it costs three seconds; if you are not, you get the new build.
+     The green "App updated · now on <build>" bar after the reload is what tells you
+     which one you landed on — and that bar cannot lie, because it is written by the
+     code that is actually running. */
+  if(!confirm('Reinstall the app from GitHub now?\n\nAny unsent work is saved first. Takes about three seconds.')) return;
+  heroUpdSay('Saving pending work\u2026', true);
+  var go=function(){
+    heroUpdSay('Reinstalling\u2026', true);
+    try{ localStorage.setItem('hero_updating_from', window.HERO_BUILD||''); }catch(e){}
+    setTimeout(heroWipeAndReload, 300);
   };
   if(typeof window.flushQueue==='function'){
-    try{ Promise.resolve(window.flushQueue()).then(check, check); }catch(e){ check(); }
-  } else check();
+    try{ Promise.resolve(window.flushQueue()).then(go, go); }catch(e){ go(); }
+  } else go();
 }
 function heroMountUpdBtn(){
   if(document.getElementById('hero-upd-now')) { 
@@ -10984,7 +10983,7 @@ function heroMountUpdBtn(){
   }
   var b=document.createElement('button');
   b.id='hero-upd-now'; b.type='button';
-  b.textContent='\u27F3 Update now';
+  b.textContent='\u27F3 Update \u00B7 '+String(window.HERO_BUILD||'').replace(/^set/,'');
   b.onclick=heroUpdateNow;
   b.title='Checks GitHub for a newer build and installs it immediately';
   document.body.appendChild(b);
