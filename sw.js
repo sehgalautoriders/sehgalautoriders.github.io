@@ -26,7 +26,7 @@
      what tells the phones a new version exists and shows the update bar.
    ========================================================================== */
 
-const HERO_BUILD = 'set54-2026.07.27-s36';
+const HERO_BUILD = 'set55-2026.07.27-s37';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
 /* Throttle for the background shell refresh — see the fetch handler. */
 let LAST_SHELL_REFRESH = 0;

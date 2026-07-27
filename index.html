@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set54-2026.07.27-s36';
+window.HERO_BUILD = 'set55-2026.07.27-s37';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -11181,5 +11181,124 @@ function rtSuggestHtml(){
 }
 </script>
 <!-- ============ END UPDATE NOW / DIAGNOSTICS / PITCH ENGINE (s36) ========== -->
+
+<!-- ==========================================================================
+     DEALER SCOPING FROM MD_Location   —  Ravi 27-Jul-2026  (set55 / s37)
+
+     The dealer code is a CHANNEL, not a place. All three codes sit in Chinchwad:
+        23490  Hero mainstream, up to 125cc      Chinchwad
+        17057  Premia, above 125cc               Chinchwad (same premises)
+        10307  PDI only                          Chinchwad, also serves Chakan
+     Chakan is a separate location and is not loaded yet.
+
+     The old hardcoded map called 17057 "PREMIA" as if it were a location, so a
+     Chinchwad SA could not see 22 Premia job cards standing in his own workshop,
+     while being shown 3 PDI cases that are not his work at all. Both are fixed
+     here, and the map now comes from MD_Location so a new dealer is a sheet edit.
+
+     MD_Location columns expected (extra columns are ignored):
+        Dealer Code | Display Name | Location | Channel | Active
+     e.g.  23490 | Sehgal Auto (23490) | CHINCHWAD | HERO   | YES
+           17057 | Premia (17057)      | CHINCHWAD | PREMIA | YES
+           10307 | Sehgal PDI (10307)  | CHINCHWAD | PDI    | YES
+           10307 | Sehgal PDI (10307)  | CHAKAN    | PDI    | YES
+     A code may appear on more than one row when it serves more than one location.
+     ========================================================================== */
+<script>
+"use strict";
+
+/* Loaded from MD_Location; the hardcoded objects survive only as the first-open
+   offline fallback, exactly like MD_HoldupReasons. */
+var LOC_ROWS=[], LOC_READY=false;
+var LOC_CODE_LOC={}, LOC_CODE_NAME={}, LOC_CODE_CHANNEL={};
+
+function locNorm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+
+function locApply(rows){
+  var L={}, N={}, C={}, n=0;
+  (rows||[]).forEach(function(r){
+    var code=String(r['Dealer Code']||r['Code']||'').trim().replace(/\.0+$/,'');
+    if(!code) return;
+    var act=String(r['Active']||'YES').trim().toUpperCase();
+    if(act==='NO'||act==='N'||act==='0') return;
+    var loc=locNorm(r['Location']||r['WS Name']||'');
+    var ch =String(r['Channel']||'').trim().toUpperCase();
+    var nm =String(r['Display Name']||r['Dealer Name']||'').trim();
+    if(loc){ (L[code]=L[code]||[]).push(loc); }
+    if(nm) N[code]=nm;
+    if(ch) C[code]=ch;
+    n++;
+  });
+  if(!n) return false;
+  LOC_CODE_LOC=L; LOC_CODE_NAME=N; LOC_CODE_CHANNEL=C; LOC_READY=true;
+  return true;
+}
+function locBoot(){
+  if(typeof jget!=='function') return;
+  jget('master_table',{name:'Location'},function(res){
+    var rows=(res&&res.rows)||[];
+    if(locApply(rows)){
+      try{ if(typeof huRender==='function' && typeof HU_DATA!=='undefined' && HU_DATA.length) huRender(); }catch(e){}
+    }
+    /* if the tab is empty the fallbacks below stay in force — never blank the screen */
+  });
+}
+setTimeout(locBoot, 900);
+
+/* --- the two lookups the app uses ---------------------------------------- */
+/* Locations a dealer code physically operates from. One code can serve two. */
+function locForCode(code){
+  code=String(code||'').trim().replace(/\.0+$/,'');
+  if(LOC_READY && LOC_CODE_LOC[code]) return LOC_CODE_LOC[code];
+  var fb={'10307':['CHINCHWAD','CHAKAN'],'23490':['CHINCHWAD'],'17057':['CHINCHWAD']};
+  return fb[code]||[];
+}
+function channelForCode(code){
+  code=String(code||'').trim().replace(/\.0+$/,'');
+  if(LOC_READY && LOC_CODE_CHANNEL[code]) return LOC_CODE_CHANNEL[code];
+  return ({'10307':'PDI','23490':'HERO','17057':'PREMIA'})[code]||'';
+}
+function displayForCode(code){
+  code=String(code||'').trim().replace(/\.0+$/,'');
+  if(LOC_READY && LOC_CODE_NAME[code]) return LOC_CODE_NAME[code];
+  return ({'10307':'Sehgal PDI (10307)','23490':'Sehgal Auto (23490)','17057':'Premia (17057)'})[code]||code;
+}
+
+/* Visibility is by LOCATION. A Chinchwad SA sees every code that operates from
+   Chinchwad — Hero and Premia both, because both bikes are on his floor. */
+function codeVisibleToUser(code){
+  var allowed=(typeof allowedWsList==='function')?allowedWsList():null;
+  if(allowed===null) return true;                       /* ALL */
+  var locs=locForCode(code);
+  if(!locs.length) return true;                         /* unknown code: show, never hide silently */
+  for(var i=0;i<locs.length;i++)
+    for(var j=0;j<allowed.length;j++)
+      if(locNorm(allowed[j])===locNorm(locs[i])) return true;
+  return false;
+}
+/* PDI is excluded for SAs by JOB CARD TYPE, not by dealer code — the exclusion is
+   about the kind of work, and tying it to 10307 breaks the day a PDI is opened
+   under another code. */
+function huRowVisible(row){
+  if(!row) return false;
+  var code=String(row['Code']||row['Dealer Code']||'').trim().replace(/\.0+$/,'');
+  if(code && !codeVisibleToUser(code)) return false;
+  var typ=String(row['Job Card Type']||'').trim().toUpperCase();
+  if(typ==='PDI'){
+    var isSA=(typeof isSAUser==='function') && isSAUser();
+    if(isSA) return false;
+  }
+  return true;
+}
+
+/* Replaces the old HU_CODE_TO_WS lookups without touching huRender itself. */
+window.HU_CODE_TO_WS = new Proxy({}, {
+  get: function(t, k){ var l=locForCode(String(k)); return l.length?l[0]:undefined; }
+});
+window.HU_CODE_MAP = new Proxy({}, {
+  get: function(t, k){ return displayForCode(String(k)); }
+});
+</script>
+<!-- =================== END DEALER SCOPING (s37) ============================ -->
 
 </body></html>
