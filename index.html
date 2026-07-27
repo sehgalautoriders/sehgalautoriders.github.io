@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set58-2026.07.27-s40';
+window.HERO_BUILD = 'set60-2026.07.27-s42';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -715,6 +715,19 @@ body { font-size:14px; }
 
 .hu-slicer{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
 .hu-slicer-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);margin-right:4px}
+/* Blocker chips (Stage vs Blockers model, 27-Jul-2026). Outline not fill, so a row
+   carrying three blockers still reads as one row and not as a block of colour. */
+.hu-blk-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+  line-height:1;padding:3px 7px;margin:1px 3px 1px 0;border:1.5px solid;border-radius:999px;
+  background:#fff;white-space:nowrap}
+.hu-blk-chip i{font-style:normal;cursor:pointer;opacity:.55;font-size:12px}
+.hu-blk-chip i:hover{opacity:1}
+.hu-blk-none{font-size:10px;color:var(--ok);font-weight:700}
+.hu-blk-add{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 7px;
+  border:1.5px dashed var(--line);border-radius:999px;color:var(--steel);background:#fff;cursor:pointer}
+.hu-blk-add:hover{border-color:var(--ink);color:var(--ink)}
+.hu-stage-pill{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.03em;
+  padding:3px 9px;border-radius:999px;color:#fff;white-space:nowrap}
 .hu-sl-btn{background:#fff;border:1.5px solid var(--line);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--ink);display:flex;align-items:center;gap:5px;transition:all .12s;white-space:nowrap}
 .hu-sl-btn:hover{border-color:var(--signal);color:var(--signal)}
 .hu-sl-btn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -5582,6 +5595,124 @@ let HU_DRS_COLORS={
 // Old-status → DRS display labels (so old saved values still render cleanly)
 const HU_OLD_TO_DRS={'PENDING_PARTS':'Major Work - Pending for Parts','PARTS_ORDERED':'Major Work - Pending for Parts','PARTS_RECEIVED':'Major Work - Parts Available','WIP':'Work In Progress','INSURANCE_PENDING':'Insurance Approval','CUSTOMER_PENDING':'Additional Approval from Customer','READY':'Ready - Not Picked Up by Customer','CLEAR':'Vehicle Physically Delivered - JC Closure Pending','UNREGISTERED':'Not Allocated','GATE_MATCHED':'Not Allocated','Warranty Approval Pending':'Warranty Approval','Insurance Approval Pending':'Insurance Approval','Additional Approval from Customer Pending':'Additional Approval from Customer','Ready - Not Picked by Customer':'Ready - Not Picked Up by Customer'};
 function huNormalizeDrs(s){ s=String(s||'').trim(); if(!s) return ''; return HU_DRS_OPTIONS.includes(s)?s:(HU_OLD_TO_DRS[s]||HU_OLD_TO_DRS[s.toUpperCase()]||s); }
+
+/* ===== STAGE vs BLOCKERS  (Ravi 27-Jul-2026, from the Holdup Redesign sheet) =====
+   THE PROBLEM WITH ONE LIST
+   HU_DRS_OPTIONS above mixes two different questions into a single dropdown:
+       WHERE is the vehicle in the workflow?   -> Work In Progress, Ready, Delivered
+       WHAT is holding it up?                  -> parts, warranty, insurance, customer
+   A real vehicle is very often BOTH at once: in progress, waiting on a part, AND
+   waiting for insurance approval. One dropdown forces the advisor to pick one and
+   throw the other two away. That is why the same vehicle reads differently to the
+   WM, the parts man and the SA — the screen never held the full truth.
+
+   THE MODEL
+       Stage    exactly one. Where it is. Moves forward, rarely backward.
+       Blockers zero or more. What is holding it. Cleared independently.
+   A vehicle with no blockers is genuinely moving. A vehicle with three is visibly
+   stuck for three reasons, and each can be cleared by a different person.
+
+   COMPATIBILITY — nothing existing breaks
+   'Holdup Status' keeps its current meaning and stays the stage. Blockers live in a
+   NEW field, 'Holdup Blockers', pipe separated. When that field is absent (every row
+   uploaded before today) the blockers are DERIVED from the legacy status, so an old
+   row still shows the right chips without a migration. Save writes both. */
+const HU_STAGES=[
+  'Not Allocated','Work In Progress','Ready for Delivery',
+  'Shifted to Bodyshop / Service','Delivered - JC Closure Pending','Closed'
+];
+const HU_STAGE_COLORS={
+  'Not Allocated':'#6b7280','Work In Progress':'#2563eb','Ready for Delivery':'#16a34a',
+  'Shifted to Bodyshop / Service':'#92400e','Delivered - JC Closure Pending':'#166534','Closed':'#166534'
+};
+const HU_BLOCKERS=[
+  'Parts Pending','Warranty Approval','Insurance Approval','Customer Approval',
+  'DMS Billing Issue','Manpower Shortage','Additional Work Identified','MSIL Claim Pending'
+];
+const HU_BLOCKER_COLORS={
+  'Parts Pending':'#ea580c','Warranty Approval':'#7c3aed','Insurance Approval':'#4f46e5',
+  'Customer Approval':'#0891b2','DMS Billing Issue':'#b91c1c','Manpower Shortage':'#a16207',
+  'Additional Work Identified':'#db2777','MSIL Claim Pending':'#0f766e'
+};
+/* Legacy single value -> {stage, blockers[]}. Every one of the 13 DRS options is
+   covered explicitly; anything unrecognised keeps the raw text as the stage so no
+   information is ever silently dropped. */
+const HU_LEGACY_SPLIT={
+  'Not Allocated':                                  {s:'Not Allocated',                 b:[]},
+  'Work In Progress':                               {s:'Work In Progress',              b:[]},
+  'Major Work - Parts Available':                   {s:'Work In Progress',              b:[]},
+  'Major Work - Pending for Parts':                 {s:'Work In Progress',              b:['Parts Pending']},
+  'Minor Job - Pending for Parts':                  {s:'Work In Progress',              b:['Parts Pending']},
+  'Warranty Approval':                              {s:'Work In Progress',              b:['Warranty Approval']},
+  'Insurance Approval':                             {s:'Work In Progress',              b:['Insurance Approval']},
+  'Additional Approval from Customer':              {s:'Work In Progress',              b:['Customer Approval']},
+  'Ready - Not Picked Up by Customer':              {s:'Ready for Delivery',            b:[]},
+  'Ready - DMS Billing Issue':                      {s:'Ready for Delivery',            b:['DMS Billing Issue']},
+  'Vehicle Physically Delivered - JC Closure Pending':{s:'Delivered - JC Closure Pending',b:[]},
+  'Shifted to Bodyshop / Service':                  {s:'Shifted to Bodyshop / Service', b:[]},
+  'Other Remarks':                                  {s:'Work In Progress',              b:[]}
+};
+function huSplitLegacy(status){
+  const s=huNormalizeDrs(status);
+  if(!s) return {stage:'Not Allocated', blockers:[]};
+  const hit=HU_LEGACY_SPLIT[s];
+  return hit ? {stage:hit.s, blockers:hit.b.slice()} : {stage:s, blockers:[]};
+}
+/* Read the stage of a row. Explicit field wins; otherwise derive from legacy. */
+function huGetStage(r){
+  const explicit=String((r&&r['Holdup Stage'])||'').trim();
+  if(explicit) return explicit;
+  return huSplitLegacy((r&&r['Holdup Status'])||'').stage;
+}
+/* Read the blockers of a row as an array. Explicit field wins. The legacy Reason
+   text is also scanned, because a parts case was often recorded only there. */
+function huGetBlockers(r){
+  const raw=String((r&&r['Holdup Blockers'])||'').trim();
+  if(raw) return raw.split('|').map(x=>x.trim()).filter(Boolean);
+  const out=huSplitLegacy((r&&r['Holdup Status'])||'').blockers;
+  const reason=String((r&&r['Holdup Reason'])||'');
+  if(reason && typeof huIsPartStatus==='function' && huIsPartStatus(reason)
+     && out.indexOf('Parts Pending')<0) out.push('Parts Pending');
+  return out;
+}
+function huBlockersToString(arr){ return (arr||[]).filter(Boolean).join('|'); }
+/* INVERSE of huSplitLegacy. Every save writes the new Stage/Blockers fields AND a
+   best-fit legacy 'Holdup Status', so every existing filter, KPI, colour rule and
+   backend report keeps working untouched while the new model is phased in. Without
+   this the two models would drift apart on the very first edit. */
+function huComposeLegacy(stage,blockers){
+  const b=blockers||[];
+  const has=x=>b.indexOf(x)>=0;
+  if(stage==='Not Allocated') return 'Not Allocated';
+  if(stage==='Shifted to Bodyshop / Service') return 'Shifted to Bodyshop / Service';
+  if(stage==='Delivered - JC Closure Pending'||stage==='Closed')
+    return 'Vehicle Physically Delivered - JC Closure Pending';
+  if(stage==='Ready for Delivery')
+    return has('DMS Billing Issue')?'Ready - DMS Billing Issue':'Ready - Not Picked Up by Customer';
+  /* Work In Progress — the blocker decides which legacy label best describes it.
+     Order matters: parts is the commonest and most operationally urgent. */
+  if(has('Parts Pending'))       return 'Major Work - Pending for Parts';
+  if(has('Warranty Approval'))   return 'Warranty Approval';
+  if(has('Insurance Approval'))  return 'Insurance Approval';
+  if(has('Customer Approval'))   return 'Additional Approval from Customer';
+  return 'Work In Progress';
+}
+/* Add or remove one blocker on a row, then persist through the normal update path. */
+function huToggleBlocker(rowIdx,blocker){
+  const r=(typeof HU_ROWS_CURRENT!=='undefined')?HU_ROWS_CURRENT[rowIdx]:null;
+  if(!r) return;
+  const cur=huGetBlockers(r);
+  const at=cur.indexOf(blocker);
+  if(at>=0) cur.splice(at,1); else cur.push(blocker);
+  huInlineUpdate(rowIdx,'blockers',huBlockersToString(cur));
+}
+/* Small coloured chip used in the table and the update panel. */
+function huBlockerChip(b,removable,rowIdx){
+  const c=HU_BLOCKER_COLORS[b]||'#6b7280';
+  return `<span class="hu-blk-chip" style="border-color:${c};color:${c}">${raviEsc?raviEsc(b):b}`
+    +(removable?`<i onclick="event.stopPropagation();huToggleBlocker(${rowIdx},'${String(b).replace(/'/g,"\\'")}')">&times;</i>`:'')
+    +`</span>`;
+}
 /* ===== SINGLE SOURCE OF TRUTH for the Home holdup KPI (v11.1 fix) =====
    The count was fluctuating (75 / 90 / 123) across loads because loadHomeStats /
    loadPriorityList each read whatever snapshot happened to be in localStorage at that
@@ -6248,12 +6379,24 @@ function huRender(){
   const slicerBox=document.getElementById('hu-slicer');
   if(slicerBox){
     slicerBox.style.display='flex';
+    /* ARITHMETIC FIX (Ravi 27-Jul-2026): the advisor counts were built from raw
+       HU_DATA with only a DELIVERED test. The table below applies TWO more rules the
+       buttons never applied — workshop scoping, and dropping the duplicate job card
+       when the same JC + dealer code appears twice. So every advisor button counted
+       vehicles belonging to other workshops and counted repeated job cards twice, and
+       the number on the button could never be reconciled with the rows on screen.
+       That is the "SA-wise holdup not shown properly" report.
+       Both the per-advisor counts and the All total now come from huActiveRows(),
+       which is the same rule the rest of the module already uses. Read the delivered
+       checkbox locally — the shared const is declared further down. */
+    const slDel=document.getElementById('hu-f-delivered')&&document.getElementById('hu-f-delivered').checked;
+    const sliceBase=huActiveRows(HU_DATA,{includeClosed:!!slDel});
     const saCounts={};
-    HU_DATA.filter(r=>String(r['Holdup Status']||'').toUpperCase()!=='DELIVERED').forEach(r=>{
+    sliceBase.forEach(r=>{
       const name=HU_SA_MAP[String(r[HU_COLS.supervisor]||'').trim().toUpperCase()]||String(r[HU_COLS.supervisor]||'').trim();
       if(name) saCounts[name]=(saCounts[name]||0)+1;
     });
-    const totalActive=HU_DATA.filter(r=>String(r['Holdup Status']||'').toUpperCase()!=='DELIVERED').length;
+    const totalActive=sliceBase.length;
     let html='<span class="hu-slicer-label">Advisor:</span>';
     html+=`<button class="hu-sl-btn${HU_SA_FILTER==='ALL'?' active':''}" onclick="huSetSaFilter('ALL')">All <span class="sl-count">${totalActive}</span></button>`;
     html+=Object.entries(saCounts).sort((a,b)=>b[1]-a[1]).map(([name,cnt])=>`<button class="hu-sl-btn${HU_SA_FILTER===name?' active':''}" onclick="huSetSaFilter('${name.replace(/'/g,"\\'")}')">${name} <span class="sl-count">${cnt}</span></button>`).join('');
@@ -6861,7 +7004,29 @@ function huInlineUpdate(rowIdx,field,value){
   // jcNo+dealerCode is the PRIMARY identifier sent — disambiguates the case where the
   // same vehicle has two job cards open at once (e.g. Service + Bodyshop)
   const payload={type:'update_holdup',reg,vin,jcNo,dealerCode,updatedBy:USER.personName};
-  if(field==='status'){ value=huNormalizeDrs(value); payload.holdupStatus=value; r['Holdup Status']=value; huSoftValidate(r, value); }
+  if(field==='status'){ value=huNormalizeDrs(value); payload.holdupStatus=value; r['Holdup Status']=value; huSoftValidate(r, value);
+    /* Keep the new model in step when the legacy dropdown is the one being used. */
+    const sp=huSplitLegacy(value);
+    r['Holdup Stage']=sp.stage; payload.holdupStage=sp.stage;
+    if(!String(r['Holdup Blockers']||'').trim()){
+      r['Holdup Blockers']=huBlockersToString(sp.blockers); payload.holdupBlockers=r['Holdup Blockers'];
+    }
+  }
+  /* NEW MODEL (27-Jul-2026): stage and blockers are edited separately. Each write
+     also refreshes the legacy 'Holdup Status' through huComposeLegacy so nothing
+     that still reads the old column can fall out of step. */
+  if(field==='stage'){
+    r['Holdup Stage']=value; payload.holdupStage=value;
+    const legacy=huComposeLegacy(value,huGetBlockers(r));
+    r['Holdup Status']=legacy; payload.holdupStatus=legacy;
+    huSoftValidate(r, legacy);
+  }
+  if(field==='blockers'){
+    r['Holdup Blockers']=value; payload.holdupBlockers=value;
+    const legacy=huComposeLegacy(huGetStage(r), value?value.split('|'):[]);
+    r['Holdup Status']=legacy; payload.holdupStatus=legacy;
+    huSoftValidate(r, legacy);
+  }
   if(field==='reason'){ payload.holdupReason=value; r['Holdup Reason']=value; }
   if(field==='eta'){ payload.partsEta=value; r['Parts ETA']=value; }
   if(field==='remarks'){ payload.remarks=value; r['Remarks']=value; }
@@ -7094,17 +7259,27 @@ function showEstimatePreview(est, reg, name, mob){
     if(/^\d+\.0+$/.test(s)) s=s.replace(/\.0+$/,'');   // 5004.0 -> 5004
     return s;
   };
+  /* NAME-MATCH FIX (Ravi 27-Jul-2026): raviEmpKey only trims the two ends. A name held
+     in MD_SA_Master as "SHARAD  KOTWAL" — two spaces, ordinary in a hand-kept sheet —
+     therefore never equalled the login's "SHARAD KOTWAL". mySaCodes came back empty,
+     no holdup row matched the advisor, and his own count and percentage both showed 0
+     on the SA home screen. The estimate matcher raviEstimateIsMine already collapses
+     inner spaces for exactly this reason (it had to be hardened once before); the
+     holdup matcher never got the same treatment. Both now use one rule.
+     Safe by construction: collapsing spaces can only ever make MORE things match, and
+     SA codes carry no internal spaces so they are untouched. */
+  window.raviNameKey = function(v){ return raviEmpKey(v).replace(/\s+/g,' '); };
   window.raviAssignedToMe = function(r){
     if(!USER || !r) return false;
     const candidates = [
       r['Supervisor ID'], r['SA'], r['SA Name'], r['Service Advisor'], r['Advisor'],
       r['Estimate SA'], r['Prepared By'], r['Updated By']
-    ].map(raviEmpKey).filter(Boolean);
-    const myEmp = raviEmpKey(USER.empno);
-    const myName = raviEmpKey(USER.personName);
+    ].map(raviNameKey).filter(Boolean);
+    const myEmp = raviNameKey(USER.empno);
+    const myName = raviNameKey(USER.personName);
     const mySaCodes = [];
     try{
-      Object.entries(HU_SA_MAP||{}).forEach(([code,name])=>{ if(raviEmpKey(name)===myName) mySaCodes.push(raviEmpKey(code)); });
+      Object.entries(HU_SA_MAP||{}).forEach(([code,name])=>{ if(raviNameKey(name)===myName) mySaCodes.push(raviNameKey(code)); });
     }catch(e){}
     return candidates.some(c => c===myEmp || c===myName || mySaCodes.includes(c));
   };

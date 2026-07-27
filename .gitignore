@@ -1,0 +1,9 @@
+# WHITELIST, not a blacklist.
+# Everything is ignored by default. Only the two PWA files are ever publishable.
+# This is deliberate: it makes it structurally impossible for a customer
+# spreadsheet, a .gs backend file or a credential to reach this public repo,
+# even by accident, even with "git add -A".
+*
+!.gitignore
+!index.html
+!sw.js
