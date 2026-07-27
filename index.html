@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set57-2026.07.27-s39';
+window.HERO_BUILD = 'set58-2026.07.27-s40';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -11365,5 +11365,161 @@ function locResolveForUser(){
 }
 </script>
 <!-- =================== END DEALER SCOPING (s37) ============================ -->
+
+<!-- ==========================================================================
+     HOLDUP FILTER FIX + DIAGNOSTIC   —  Ravi 27-Jul-2026  (set58 / s40)
+
+     WHAT WAS STILL WRONG AFTER s38
+     ------------------------------
+     1. locSyncLegacyMaps() ran ONCE, 1.2 s after page load — before login, and
+        never again. Any render that happened later used whatever the map held
+        at that moment, and nothing re-applied it per user.
+     2. huRowVisible() was written and never called. Grep found exactly one
+        occurrence: its own definition. The PDI rule therefore never ran.
+
+     Both are fixed at the single point every panel already funnels through:
+     huActiveRows(). The file's own comment says five panels used to count five
+     different ways and were consolidated into that one function — so wrapping it
+     fixes the Home tile, the Home snapshot, the SA dashboard and the Holdup
+     screen together, with no other edit.
+
+     And rather than reason about it again, huDiag() prints what is actually in
+     memory: rows received, codes present, what the map says for each, and
+     whether the SA name survived hydration.
+     ========================================================================== */
+<script>
+"use strict";
+
+/* --------------------------------------------------------------- the fix --- */
+(function(){
+  var ORIG = window.huActiveRows || (typeof huActiveRows==='function' ? huActiveRows : null);
+  if(typeof ORIG!=='function'){
+    try{ ORIG = huActiveRows; }catch(e){ return; }
+  }
+  if(typeof ORIG!=='function') return;
+
+  function patched(rows, opts){
+    /* resolve the code->location map for THIS user, on every count, so it can
+       never be stale and can never depend on when the page happened to load */
+    try{ if(typeof locSyncLegacyMaps==='function') locSyncLegacyMaps(); }catch(e){}
+
+    var out = ORIG.call(this, rows, opts) || [];
+
+    /* PDI is not the SA's work. Excluded by JOB CARD TYPE, never by dealer code:
+       tying it to 10307 breaks the day a PDI is opened under another code. */
+    try{
+      if(typeof isSAUser==='function' && isSAUser()){
+        out = out.filter(function(r){
+          return String(r[HU_COLS.type] || r['Job Card Type'] || '').trim().toUpperCase() !== 'PDI';
+        });
+      }
+    }catch(e){}
+    return out;
+  }
+  window.huActiveRows = patched;
+  try{ huActiveRows = patched; }catch(e){}   /* rebind the top-level name too */
+})();
+
+/* Re-render once the login is known, so the first paint after sign-in is right. */
+(function(){
+  var tries = 0;
+  var t = setInterval(function(){
+    tries++;
+    try{
+      if (typeof USER!=='undefined' && USER && USER.ws){
+        if (typeof locSyncLegacyMaps==='function') locSyncLegacyMaps();
+        try{ if(typeof loadHoldupSnapshot==='function') loadHoldupSnapshot(); }catch(e){}
+        try{ if(typeof huRender==='function' && typeof HU_DATA!=='undefined' && HU_DATA.length) huRender(); }catch(e){}
+        clearInterval(t);
+      }
+    }catch(e){}
+    if (tries > 60) clearInterval(t);        /* 60 s ceiling, then stop trying */
+  }, 1000);
+})();
+
+/* ------------------------------------------------------------ diagnostic --- */
+function huDiag(){
+  var L = [];
+  function say(s){ L.push(s); }
+  try{
+    say('BUILD        ' + (window.HERO_BUILD||'?'));
+    say('USER         ' + ((USER&&USER.personName)||'?') + '  ws=' + ((USER&&USER.ws)||'?')
+        + '  role=' + ((USER&&(USER.role||USER.Role))||'?') + '  emp=' + ((USER&&USER.empno)||'?'));
+    say('allowedWsList ' + JSON.stringify((typeof allowedWsList==='function')?allowedWsList():'n/a'));
+    say('');
+
+    var raw = (typeof HU_DATA!=='undefined' && HU_DATA) ? HU_DATA : [];
+    say('ROWS IN MEMORY   ' + raw.length);
+    var ls = 0; try{ ls = (JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]')||[]).length; }catch(e){}
+    say('ROWS IN STORAGE  ' + ls);
+    say('');
+
+    var byCode = {}, byType = {}, saPresent = 0, supPresent = 0;
+    raw.forEach(function(r){
+      var c = String(r[HU_COLS.code]||'').trim() || '(blank)';
+      byCode[c] = (byCode[c]||0) + 1;
+      var t = String(r[HU_COLS.type]||r['Job Card Type']||'').trim() || '(blank)';
+      byType[t] = (byType[t]||0) + 1;
+      if (String(r['SA']||'').trim()) saPresent++;
+      if (String(r[HU_COLS.supervisor]||'').trim()) supPresent++;
+    });
+    say('DEALER CODES PRESENT');
+    Object.keys(byCode).forEach(function(c){
+      var mapped = '';
+      try{ mapped = HU_CODE_TO_WS[c]; }catch(e){}
+      say('   ' + c + '  x' + byCode[c] + '   map says: ' + (mapped||'(nothing)')
+          + '   visible: ' + ((typeof wsAllowed==='function') ? wsAllowed(mapped||c) : '?'));
+    });
+    say('');
+    say('JOB CARD TYPES');
+    Object.keys(byType).forEach(function(t){ say('   ' + t + '  x' + byType[t]); });
+    say('');
+    say('SA NAME present on   ' + saPresent + ' / ' + raw.length + ' rows'
+        + (saPresent ? '' : '   <-- backend is not sending an "SA" column'));
+    say('Supervisor ID on     ' + supPresent + ' / ' + raw.length + ' rows');
+    var mine = 0;
+    try{ if(typeof raviAssignedToMe==='function') mine = raw.filter(raviAssignedToMe).length; }catch(e){}
+    say('raviAssignedToMe()   ' + mine + ' rows match you');
+    try{
+      var keys = Object.keys(HU_SA_MAP||{});
+      say('HU_SA_MAP entries    ' + keys.length + '   ' + keys.slice(0,8).join(', '));
+    }catch(e){}
+    say('');
+    var active = (typeof huActiveRows==='function') ? huActiveRows(raw).length : -1;
+    var noWs   = (typeof huActiveRows==='function') ? huActiveRows(raw,{skipWs:true}).length : -1;
+    say('AFTER FILTER         ' + active + '   (this is the number on screen)');
+    say('IGNORING WORKSHOP    ' + noWs + '   (the difference is what scoping removes)');
+  }catch(e){
+    say('DIAG ERROR: ' + (e && e.message));
+  }
+  var txt = L.join('\n');
+  try{ console.log(txt); }catch(e){}
+  try{
+    var w = window.open('', '_blank');
+    if (w){ w.document.write('<pre style="font:12px monospace;padding:14px;white-space:pre-wrap">'
+      + txt.replace(/[&<>]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c];}) + '</pre>'); }
+    else alert(txt);
+  }catch(e){ alert(txt); }
+  return txt;
+}
+
+/* CEO/superadmin gets a small button next to Update now. */
+(function(){
+  setInterval(function(){
+    try{
+      if (typeof heroIsCeo!=='function' || !heroIsCeo()) return;
+      if (document.getElementById('hero-diag-btn')) return;
+      var b = document.createElement('button');
+      b.id='hero-diag-btn'; b.type='button'; b.textContent='\u2691 Holdup check';
+      b.style.cssText='position:fixed;right:12px;bottom:62px;z-index:9400;border:0;border-radius:11px;'
+        +'background:#334155;color:#fff;font:750 12px Inter,sans-serif;padding:10px 13px;'
+        +'box-shadow:0 10px 26px rgba(0,0,0,.25);cursor:pointer';
+      b.onclick=huDiag;
+      document.body.appendChild(b);
+    }catch(e){}
+  }, 4000);
+})();
+</script>
+<!-- ============== END HOLDUP FILTER FIX + DIAGNOSTIC (s40) ================= -->
 
 </body></html>
