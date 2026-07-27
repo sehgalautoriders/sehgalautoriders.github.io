@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set51-2026.07.26-s33';
+window.HERO_BUILD = 'set52-2026.07.26-s34';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9897,5 +9897,515 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
 
 })();
 </script>
+
+<!-- ==========================================================================
+     REPAIR TREE / REVENUE BUILDER  —  Ravi 26-Jul-2026  (build set52)
+
+     Complaint-first estimate building, the way DMS works:
+        Category -> Complaint code -> valid Labour codes for THIS model -> Parts
+
+     Wholly additive. Nothing above this line is edited. The panel and the ratio
+     strip are injected into the existing Estimate DOM at runtime, so the markup
+     that already works is never touched. If MD_Tree_* tabs are absent from the
+     master sheet the whole block stays silent and the module behaves exactly as
+     it does today.
+
+     Hooks used (all pre-existing): ES_ADDLAB, ES_ADDPART, ES_PRICE_LAB,
+     esDrawChips(), esUpdateLive(), esComputeCurrent(), esBoot(), jget().
+     ========================================================================== -->
+<style>
+  #rt-strip{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;padding:9px 11px;display:none}
+  #rt-strip .rt-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--steel)}
+  #rt-strip .rt-ratio{margin-left:auto;font-weight:800;font-size:15px;letter-spacing:-.01em}
+  #rt-bar{position:relative;height:7px;border-radius:99px;background:#e8ecf2;margin:8px 0 5px;overflow:hidden}
+  #rt-fill{position:absolute;inset:0 auto 0 0;border-radius:99px;transition:width .25s ease,background .25s ease}
+  #rt-strip .rt-mk{position:absolute;top:-3px;width:2px;height:13px;background:#c3cbd6}
+  #rt-next{font-size:11.5px;color:var(--steel)}
+  #rt-actions{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+  .rt-btn{flex:1;min-width:130px;border:1px solid var(--line);background:#fff;border-radius:9px;
+          padding:9px 10px;font-size:12.5px;font-weight:700;color:var(--ink);cursor:pointer;text-align:center}
+  .rt-btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+  #rt-panel{display:none;position:fixed;inset:0;z-index:9200;background:rgba(10,15,22,.55);
+            align-items:flex-end;justify-content:center}
+  #rt-sheet{width:100%;max-width:620px;max-height:92vh;background:#fff;border-radius:16px 16px 0 0;
+            display:flex;flex-direction:column;overflow:hidden}
+  #rt-head{padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  #rt-head h3{margin:0;font-size:15.5px}
+  #rt-head p{margin:2px 0 0;font-size:11.5px;color:var(--steel)}
+  #rt-x{margin-left:auto;border:0;background:#f1f4f8;width:32px;height:32px;border-radius:9px;font-size:17px;cursor:pointer}
+  #rt-crumb{padding:7px 15px;background:#f7f9fc;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--steel)}
+  #rt-crumb b{color:var(--ink)}
+  #rt-search{margin:11px 15px 0;width:calc(100% - 30px);padding:10px 12px;border:1px solid var(--line);
+             border-radius:9px;font-size:13.5px}
+  #rt-body{flex:1;overflow-y:auto;padding:11px 15px 20px;-webkit-overflow-scrolling:touch}
+  .rt-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px}
+  .rt-chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 11px;
+           font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .rt-chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .rt-row{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #eef1f5;cursor:pointer}
+  .rt-row:last-child{border-bottom:0}
+  .rt-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+  .rt-g{background:#16a34a}.rt-a{background:#d97706}.rt-r{background:#9aa4b2}
+  .rt-main{min-width:0;flex:1}
+  .rt-name{font-size:13.5px;font-weight:650;line-height:1.25}
+  .rt-meta{font-size:11px;color:var(--steel);margin-top:2px}
+  .rt-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--steel)}
+  .rt-amt{font-weight:800;font-size:13.5px;white-space:nowrap}
+  .rt-add{border:0;background:var(--ink);color:#fff;border-radius:8px;width:30px;height:30px;
+          font-size:16px;line-height:1;cursor:pointer;flex:0 0 30px}
+  .rt-add.done{background:#16a34a}
+  .rt-sec{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+          color:var(--steel);margin:14px 0 4px}
+  .rt-empty{padding:26px 6px;text-align:center;color:var(--steel);font-size:12.5px}
+  .rt-warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:8px;
+           padding:8px 10px;font-size:11.5px;margin-bottom:10px}
+</style>
+<script>
+"use strict";
+/* ---------------------------------------------------------------------------
+   1.  DATA
+   --------------------------------------------------------------------------- */
+var RT = { ready:false, loading:false, tried:false,
+           complaint:[], labour:[], ladder:[], modelmap:{}, model:{},
+           byCode:{}, byComplaint:{}, parts:[], partsLoaded:false, partsLoading:false };
+
+var RT_CATS = ['Brakes','Engine','Transmission','Electrical','Suspension/Steering',
+               'Fuel','Fuel Injection','Frame/Body','Value Added','General','Other'];
+
+function rtEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function rtMoney(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } }
+function rtCode(v){ var s=String(v==null?'':v).trim(); return /^\d+\.0+$/.test(s)?s.replace(/\.0+$/,''):s; }
+
+function rtLoad(cb){
+  if(RT.ready){ cb && cb(true); return; }
+  if(RT.loading){ setTimeout(function(){ rtLoad(cb); },250); return; }
+  RT.loading=true; RT.tried=true;
+  jget('tree_master',{},function(res){
+    RT.loading=false;
+    if(!res || !res.ok || !res.labour || !res.labour.length){ cb && cb(false); return; }
+    RT.complaint = res.complaint||[];
+    RT.labour    = res.labour||[];
+    RT.ladder    = res.ladder||[];
+    (res.modelmap||[]).forEach(function(r){ RT.modelmap[r[0]]=r[1]; });
+    (res.model||[]).forEach(function(r){ RT.model[r[0]]={tier:r[1],seg:r[2],active:r[3]}; });
+
+    RT.byCode={}; RT.byComplaint={};
+    RT.labour.forEach(function(L){
+      RT.byCode[L[0]]=L;
+      var all=String(L[4]||'').split('|').filter(Boolean);
+      if(!all.length && L[3]) all=[L[3]];
+      all.forEach(function(cc){ (RT.byComplaint[cc]=RT.byComplaint[cc]||[]).push(L); });
+    });
+    RT.ready=true;
+    cb && cb(true);
+  });
+}
+/* Parts are only pulled when the SA actually opens a complaint — 8,239 rows in
+   5 chunks, fetched once per session, never on estimate open. */
+function rtLoadParts(cb){
+  if(RT.partsLoaded){ cb&&cb(); return; }
+  if(RT.partsLoading){ setTimeout(function(){ rtLoadParts(cb); },300); return; }
+  RT.partsLoading=true;
+  var got=[], i=0;
+  (function next(){
+    jget('tree_parts',{i:i},function(res){
+      if(!res||!res.ok){ RT.partsLoading=false; RT.partsLoaded=true; RT.parts=got; cb&&cb(); return; }
+      got=got.concat(res.rows||[]);
+      i++;
+      if(i < (res.chunks||1)) next();
+      else { RT.parts=got; RT.partsLoaded=true; RT.partsLoading=false; cb&&cb(); }
+    });
+  })();
+}
+
+/* ---------------------------------------------------------------------------
+   2.  MODEL + RATE RESOLUTION
+   Evidence is computed against the model actually selected, not read from a
+   static column: GREEN only when this model's own labour master carries the
+   code with a real rate. That is the difference between "this code exists" and
+   "this code will take in DMS for this bike".
+   --------------------------------------------------------------------------- */
+function rtModel(){
+  var m=String((typeof val==='function' ? val('es-model') : '')||'').trim().toUpperCase();
+  return RT.modelmap[m] || m;
+}
+function rtModelRates(){
+  var map={};
+  (ES_PRICE_LAB||[]).forEach(function(r){
+    var c=rtCode(r['Labour Code']); if(!c) return;
+    var p=Number(String(r['Latest Rate (PreGST)']||r['Default Price']||0).replace(/[^0-9.]/g,''))||0;
+    if(!map[c] || p>map[c].p) map[c]={p:p, l:String(r['Labour Description']||'').trim()};
+  });
+  return map;
+}
+/* -> {code, name, rate, ev:'G'|'A', reason} */
+function rtResolve(L, rates){
+  var code=L[0], own=rates[code];
+  if(String(L[10]||'')==='ZERO-RATE') return {code:code,name:L[1],rate:0,ev:'R',reason:'free-service code, never billed'};
+  if(String(L[10]||'')==='AVOID')     return {code:code,name:L[1],rate:0,ev:'R',reason:'DMS carrier code — do not bill'};
+  if(own && own.p>0) return {code:code,name:(own.l||L[1]),rate:own.p,ev:'G',reason:'exact model rate'};
+  var fb=Number(L[6]||L[5]||0);
+  return {code:code,name:L[1],rate:fb,ev:'A',reason:fb>0?'rate from another model — test in DMS':'no rate on record'};
+}
+
+/* ---------------------------------------------------------------------------
+   3.  RATIO STRIP
+   --------------------------------------------------------------------------- */
+var RT_MARKS=[{r:2,t:'2 : 1'},{r:1.5,t:'1.5 : 1'},{r:1,t:'1 : 1'}];
+function rtEnsureStrip(){
+  if(document.getElementById('rt-strip')) return true;
+  var live=document.querySelector('#es-form-view .live'); if(!live) return false;
+  var d=document.createElement('div'); d.id='rt-strip';
+  d.innerHTML='<div class="rt-top"><span id="rt-pl"></span><span class="rt-ratio" id="rt-rv">—</span></div>'
+    +'<div id="rt-bar"><div id="rt-fill"></div><div class="rt-mk" style="left:33.3%"></div>'
+    +'<div class="rt-mk" style="left:66.6%"></div></div>'
+    +'<div id="rt-next"></div>'
+    +'<div id="rt-actions">'
+    +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'\')">\uFF0B Add work by complaint</button>'
+    +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')" id="rt-sugbtn">Suggested labour</button>'
+    +'</div>';
+  live.parentNode.insertBefore(d, live.nextSibling);
+  return true;
+}
+/* 0 -> 2:1 maps to the first third, 2:1 -> 1.5:1 the second, 1.5:1 -> 1:1 the last. */
+function rtPct(ratio){
+  if(!isFinite(ratio)||ratio<=0) return 100;
+  if(ratio>=6) return 3;
+  if(ratio>2)  return Math.max(3, 33.3*(6-ratio)/4);
+  if(ratio>1.5) return 33.3+33.3*(2-ratio)/0.5;
+  if(ratio>1)  return 66.6+33.4*(1.5-ratio)/0.5;
+  return 100;
+}
+function rtRenderStrip(){
+  if(!rtEnsureStrip()) return;
+  var strip=document.getElementById('rt-strip');
+  var c=null; try{ c=esComputeCurrent(); }catch(e){}
+  if(!c){ strip.style.display='none'; return; }
+  strip.style.display='block';
+  var parts=(+c.parts||0)+(+c.oil||0), lab=(+c.labour||0);
+  var ratio = lab>0 ? parts/lab : Infinity;
+  document.getElementById('rt-pl').innerHTML='Parts <b>'+rtMoney(parts)+'</b> &middot; Labour <b>'+rtMoney(lab)+'</b>';
+  var rv=document.getElementById('rt-rv');
+  rv.textContent = lab>0 ? (Math.round(ratio*10)/10)+' : 1' : (parts>0?'no labour':'—');
+  var pct=rtPct(ratio);
+  var col = ratio<=1 ? '#16a34a' : (ratio<=1.5 ? '#65a30d' : (ratio<=2 ? '#d97706' : '#dc2626'));
+  rv.style.color=col;
+  var f=document.getElementById('rt-fill'); f.style.width=pct+'%'; f.style.background=col;
+  var nx=document.getElementById('rt-next'), tgt=null;
+  for(var i=0;i<RT_MARKS.length;i++){ if(ratio>RT_MARKS[i].r){ tgt=RT_MARKS[i]; break; } }
+  if(!tgt) nx.innerHTML='At or beyond 1 : 1 &mdash; labour is carrying its share.';
+  else {
+    var need=Math.max(0, parts/tgt.r - lab);
+    nx.innerHTML='Next checkpoint <b>'+tgt.t+'</b> &middot; '+rtMoney(need)+' more labour';
+  }
+  var sb=document.getElementById('rt-sugbtn');
+  if(sb) sb.textContent = RT.ready ? 'Suggested labour' : 'Suggested labour';
+}
+
+/* ---------------------------------------------------------------------------
+   4.  PANEL
+   --------------------------------------------------------------------------- */
+var RT_VIEW={mode:'cat', cat:'', cc:'', q:''};
+function rtEnsurePanel(){
+  if(document.getElementById('rt-panel')) return;
+  var d=document.createElement('div'); d.id='rt-panel';
+  d.innerHTML='<div id="rt-sheet">'
+   +'<div id="rt-head"><div><h3>Add work</h3><p id="rt-sub">Pick what the customer reported</p></div>'
+   +'<button id="rt-x" type="button" onclick="rtClose()">&times;</button></div>'
+   +'<div id="rt-crumb"></div>'
+   +'<input id="rt-search" placeholder="Search complaint, labour, part or code\u2026" autocomplete="off">'
+   +'<div id="rt-body"></div></div>';
+  document.body.appendChild(d);
+  d.addEventListener('click', function(e){ if(e.target===d) rtClose(); });
+  document.getElementById('rt-search').addEventListener('input', function(){
+    RT_VIEW.q=this.value.trim(); rtDraw();
+  });
+}
+function rtOpen(mode){
+  rtEnsurePanel();
+  RT_VIEW={mode:(mode==='suggest'?'suggest':'cat'), cat:'', cc:'', q:''};
+  var s=document.getElementById('rt-search'); if(s) s.value='';
+  document.getElementById('rt-panel').style.display='flex';
+  document.getElementById('rt-body').innerHTML='<div class="rt-empty">Loading billing tree\u2026</div>';
+  rtLoad(function(ok){
+    if(!ok){
+      document.getElementById('rt-body').innerHTML='<div class="rt-warn">The repair tree is not on the server yet. '
+        +'Upload the MD_Tree_* tabs to HeroMasterSheet and add Hotfix_RepairTree.gs, then tap \u21BB Sync Now. '
+        +'Everything else in the estimate works exactly as before.</div>';
+      return;
+    }
+    rtDraw();
+  });
+}
+function rtClose(){ var p=document.getElementById('rt-panel'); if(p) p.style.display='none'; }
+
+function rtCrumb(){
+  var m=rtModel(), b=['<b>'+rtEsc(m||'model not set')+'</b>'];
+  if(RT_VIEW.mode==='suggest') b.push('Suggested labour');
+  else{
+    if(RT_VIEW.cat) b.push(rtEsc(RT_VIEW.cat));
+    if(RT_VIEW.cc){
+      var c=RT.complaint.filter(function(x){return x[0]===RT_VIEW.cc;})[0];
+      b.push(rtEsc(RT_VIEW.cc+(c?' \u2014 '+c[1]:'')));
+    }
+  }
+  document.getElementById('rt-crumb').innerHTML=b.join(' &nbsp;\u203A&nbsp; ');
+}
+function rtDraw(){
+  rtCrumb();
+  var body=document.getElementById('rt-body');
+  if(RT_VIEW.q){ body.innerHTML=rtSearchHtml(RT_VIEW.q); return; }
+  if(RT_VIEW.mode==='suggest'){ body.innerHTML=rtSuggestHtml(); return; }
+  if(!RT_VIEW.cat){ body.innerHTML=rtCatHtml(); return; }
+  if(!RT_VIEW.cc){ body.innerHTML=rtComplaintHtml(RT_VIEW.cat); return; }
+  body.innerHTML=rtWorkHtml(RT_VIEW.cc);
+  rtLoadParts(function(){ if(RT_VIEW.cc && !RT_VIEW.q) document.getElementById('rt-body').innerHTML=rtWorkHtml(RT_VIEW.cc); });
+}
+function rtGo(cat,cc){ RT_VIEW.cat=cat; RT_VIEW.cc=cc||''; RT_VIEW.q=''; 
+  var s=document.getElementById('rt-search'); if(s) s.value=''; rtDraw();
+  var b=document.getElementById('rt-body'); if(b) b.scrollTop=0; }
+
+function rtCatHtml(){
+  var counts={};
+  RT.complaint.forEach(function(c){ counts[c[2]]=(counts[c[2]]||0)+1; });
+  var order=RT_CATS.filter(function(c){ return counts[c]; })
+       .concat(Object.keys(counts).filter(function(c){ return RT_CATS.indexOf(c)<0; }));
+  return '<div class="rt-sec">Where is the problem?</div>'
+    + order.map(function(c){
+        return '<div class="rt-row" onclick="rtGo('+JSON.stringify(c).replace(/"/g,'&quot;')+')">'
+          +'<div class="rt-main"><div class="rt-name">'+rtEsc(c)+'</div>'
+          +'<div class="rt-meta">'+counts[c]+' complaint codes</div></div>'
+          +'<div class="rt-meta">\u203A</div></div>';
+      }).join('');
+}
+function rtComplaintHtml(cat){
+  var list=RT.complaint.filter(function(c){ return c[2]===cat; })
+            .sort(function(a,b){ return (b[3]||0)-(a[3]||0); });
+  if(!list.length) return '<div class="rt-empty">No complaint codes in this group.</div>';
+  return '<div class="rt-chips"><span class="rt-chip" onclick="rtGo(\'\')">\u2039 All groups</span></div>'
+    +'<div class="rt-sec">'+rtEsc(cat)+' complaints</div>'
+    + list.map(function(c){
+        var n=(RT.byComplaint[c[0]]||[]).length;
+        return '<div class="rt-row" onclick="rtGo('+JSON.stringify(cat).replace(/"/g,'&quot;')+','+JSON.stringify(c[0]).replace(/"/g,'&quot;')+')">'
+          +'<div class="rt-main"><div class="rt-name">'+rtEsc(c[1])+'</div>'
+          +'<div class="rt-meta"><span class="rt-code">'+rtEsc(c[0])+'</span>'
+          +(c[3]?' \u00B7 billed '+c[3]+'\u00D7 across the network':'')
+          +(n?' \u00B7 '+n+' labour codes':'')+'</div></div>'
+          +'<div class="rt-meta">\u203A</div></div>';
+      }).join('');
+}
+function rtWorkHtml(cc){
+  var rates=rtModelRates(), L=(RT.byComplaint[cc]||[]).slice();
+  var rows=L.map(function(x){ return rtResolve(x,rates); })
+            .filter(function(r){ return r.ev!=='R'; })
+            .sort(function(a,b){ return (a.ev===b.ev) ? b.rate-a.rate : (a.ev==='G'?-1:1); });
+  var h='<div class="rt-chips"><span class="rt-chip" onclick="rtGo('+JSON.stringify(RT_VIEW.cat).replace(/"/g,'&quot;')+')">\u2039 Back</span></div>';
+  if(!ES_PRICE_LAB || !ES_PRICE_LAB.length)
+    h+='<div class="rt-warn">This model\u2019s labour rates have not loaded yet, so every rate below is a cross-model figure. Pick the model first.</div>';
+  h+='<div class="rt-sec">Labour for this complaint</div>';
+  h+= rows.length ? rows.map(function(r){ return rtLabRow(r,cc); }).join('')
+                  : '<div class="rt-empty">No labour code is linked to this complaint in the DMS master.</div>';
+
+  if(RT.partsLoaded){
+    var P=RT.parts.filter(function(p){ return p[5]===cc; })
+            .sort(function(a,b){ return (b[7]||0)-(a[7]||0); }).slice(0,25);
+    h+='<div class="rt-sec">Parts usually replaced</div>';
+    h+= P.length ? P.map(rtPartRow).join('') : '<div class="rt-empty">No part is linked to this complaint.</div>';
+  } else {
+    h+='<div class="rt-sec">Parts usually replaced</div><div class="rt-empty">Loading parts\u2026</div>';
+  }
+  return h;
+}
+function rtLabRow(r, cc){
+  var on=(ES_ADDLAB||[]).some(function(x){ return rtCode(x.code)===r.code; });
+  return '<div class="rt-row">'
+    +'<i class="rt-dot '+(r.ev==='G'?'rt-g':'rt-a')+'"></i>'
+    +'<div class="rt-main"><div class="rt-name">'+rtEsc(r.name)+'</div>'
+    +'<div class="rt-meta"><span class="rt-code">'+rtEsc(r.code)+'</span> \u00B7 '+rtEsc(r.reason)+'</div></div>'
+    +'<div class="rt-amt">'+rtMoney(r.rate)+'</div>'
+    +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="rtAddLab(\''+r.code+'\',\''+rtEsc(cc||'')+'\',this)">'
+    +(on?'\u2713':'\uFF0B')+'</button></div>';
+}
+function rtPartRow(p){
+  var on=(ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===p[0]; });
+  var lk=String(p[6]||'').split('|').filter(Boolean).length;
+  return '<div class="rt-row">'
+    +'<i class="rt-dot '+(p[4]>0?'rt-g':'rt-a')+'"></i>'
+    +'<div class="rt-main"><div class="rt-name">'+rtEsc(p[1])+'</div>'
+    +'<div class="rt-meta"><span class="rt-code">'+rtEsc(p[0])+'</span>'
+    +(p[3]?' \u00B7 '+rtEsc(p[3]):'')+(lk?' \u00B7 '+lk+' fitment labour':'')+'</div></div>'
+    +'<div class="rt-amt">'+(p[4]>0?rtMoney(p[4]):'\u2014')+'</div>'
+    +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="rtAddPart(\''+p[0]+'\',this)">'
+    +(on?'\u2713':'\uFF0B')+'</button></div>';
+}
+
+/* ---------------------------------------------------------------------------
+   5.  SUGGESTED LABOUR  —  the ratio ladder
+   For the five DMS-tested models the staged ladder is used verbatim. For every
+   other model the same rule is applied live: GREEN codes (this model's own
+   rate), complaint-linked, not already on the estimate, cheapest-first until
+   the next ratio checkpoint is met.
+   --------------------------------------------------------------------------- */
+function rtSuggest(){
+  var m=rtModel(), rates=rtModelRates();
+  var have={}; (ES_ADDLAB||[]).forEach(function(x){ have[rtCode(x.code)]=1; });
+  var c=null; try{ c=esComputeCurrent(); }catch(e){}
+  var parts=c?((+c.parts||0)+(+c.oil||0)):0, lab=c?(+c.labour||0):0;
+  var lad=RT.ladder.filter(function(r){ return r[0]===m; });
+  var out=[], seen={};
+
+  if(lad.length){
+    ['Add to reach 2:1','Add to reach 1.5:1','Add to reach 1:1'].forEach(function(stage){
+      lad.filter(function(r){ return r[1]===stage; }).forEach(function(r){
+        var code=r[5]; if(have[code]||seen[code]) return; seen[code]=1;
+        var own=rates[code];
+        out.push({code:code, name:(own&&own.l)||r[6], rate:(own&&own.p>0)?own.p:(+r[7]||0),
+                  ev:(own&&own.p>0)?'G':'A', cc:r[2],
+                  reason:stage.replace('Add to reach','tested step to')+' \u00B7 '+r[3]});
+      });
+    });
+  }
+  if(out.length<8){
+    var pool=[];
+    RT.labour.forEach(function(L){
+      var code=L[0]; if(have[code]||seen[code]) return;
+      if(String(L[10]||'')) return;                       /* ZERO-RATE / AVOID */
+      if(!L[3]) return;                                    /* must carry a complaint */
+      var own=rates[code]; if(!own||own.p<=0) return;      /* GREEN only */
+      pool.push({code:code,name:own.l||L[1],rate:own.p,ev:'G',cc:L[3],
+                 reason:'exact model rate \u00B7 '+(L[2]||'')});
+    });
+    pool.sort(function(a,b){ return a.rate-b.rate; });
+    for(var i=0;i<pool.length && out.length<12;i++){ seen[pool[i].code]=1; out.push(pool[i]); }
+  }
+  return {list:out, parts:parts, lab:lab};
+}
+function rtSuggestHtml(){
+  var s=rtSuggest();
+  if(!s.list.length) return '<div class="rt-empty">Nothing further to suggest for this model.</div>';
+  var run=s.lab, h='';
+  h+='<div class="rt-sec">Suggested, in order</div>';
+  h+='<div class="rt-meta" style="margin-bottom:9px">Every line below is a genuine repair. Add only what the vehicle needs and the customer authorises.</div>';
+  h+=s.list.map(function(r){
+      run+=r.rate;
+      var ratio=run>0?s.parts/run:0;
+      var on=(ES_ADDLAB||[]).some(function(x){ return rtCode(x.code)===r.code; });
+      return '<div class="rt-row"><i class="rt-dot '+(r.ev==='G'?'rt-g':'rt-a')+'"></i>'
+        +'<div class="rt-main"><div class="rt-name">'+rtEsc(r.name)+'</div>'
+        +'<div class="rt-meta"><span class="rt-code">'+rtEsc(r.code)+'</span> \u00B7 '+rtEsc(r.reason)
+        +(run>0&&s.parts>0?' \u00B7 takes ratio to '+(Math.round(ratio*10)/10)+':1':'')+'</div></div>'
+        +'<div class="rt-amt">'+rtMoney(r.rate)+'</div>'
+        +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="rtAddLab(\''+r.code+'\',\''+rtEsc(r.cc||'')+'\',this)">'
+        +(on?'\u2713':'\uFF0B')+'</button></div>';
+    }).join('');
+  return h;
+}
+
+/* ---------------------------------------------------------------------------
+   6.  SEARCH
+   --------------------------------------------------------------------------- */
+function rtSearchHtml(q){
+  var Q=q.toUpperCase(), rates=rtModelRates(), h='', n=0;
+  var C=RT.complaint.filter(function(c){ return c[0].indexOf(Q)>-1 || c[1].toUpperCase().indexOf(Q)>-1; }).slice(0,8);
+  if(C.length){
+    h+='<div class="rt-sec">Complaints</div>'+C.map(function(c){
+      return '<div class="rt-row" onclick="rtGo('+JSON.stringify(c[2]).replace(/"/g,'&quot;')+','+JSON.stringify(c[0]).replace(/"/g,'&quot;')+')">'
+        +'<div class="rt-main"><div class="rt-name">'+rtEsc(c[1])+'</div>'
+        +'<div class="rt-meta"><span class="rt-code">'+rtEsc(c[0])+'</span> \u00B7 '+rtEsc(c[2])+'</div></div>'
+        +'<div class="rt-meta">\u203A</div></div>'; }).join(''); n+=C.length;
+  }
+  var L=RT.labour.filter(function(x){ return x[0].indexOf(Q)>-1 || String(x[1]).toUpperCase().indexOf(Q)>-1; })
+        .map(function(x){ return rtResolve(x,rates); })
+        .filter(function(r){ return r.ev!=='R'; }).slice(0,20);
+  if(L.length){ h+='<div class="rt-sec">Labour codes</div>'+L.map(function(r){ return rtLabRow(r,''); }).join(''); n+=L.length; }
+  if(RT.partsLoaded){
+    var P=RT.parts.filter(function(p){ return p[0].toUpperCase().indexOf(Q)>-1 || String(p[1]).toUpperCase().indexOf(Q)>-1; }).slice(0,20);
+    if(P.length){ h+='<div class="rt-sec">Parts</div>'+P.map(rtPartRow).join(''); n+=P.length; }
+  } else { rtLoadParts(function(){ if(RT_VIEW.q) rtDraw(); }); }
+  return n ? h : '<div class="rt-empty">Nothing matches \u201C'+rtEsc(q)+'\u201D.</div>';
+}
+
+/* ---------------------------------------------------------------------------
+   7.  ADD  —  writes into the existing estimate state, nothing bespoke
+   --------------------------------------------------------------------------- */
+function rtAddLab(code, cc, btn){
+  code=rtCode(code);
+  var L=RT.byCode[code]; if(!L){ alert('Code not found in the labour master.'); return; }
+  var r=rtResolve(L, rtModelRates());
+  if(r.ev==='R'){ alert(r.reason+'.'); return; }
+  if((ES_ADDLAB||[]).some(function(x){ return rtCode(x.code)===code; })){ alert('Already on this estimate.'); return; }
+  if(!(r.rate>0)){ alert('This code has no rate on record. Add it from the labour dropdown and type the amount.'); return; }
+  ES_ADDLAB.push({l:r.name, p:r.rate, code:code, cc:cc||L[3]||'', _fromTree:true});
+  if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
+  try{ esDrawChips(); }catch(e){}
+  rtRenderStrip();
+  if(RT_VIEW.mode==='suggest' && !RT_VIEW.q) document.getElementById('rt-body').innerHTML=rtSuggestHtml();
+}
+function rtAddPart(pn, btn){
+  var p=RT.parts.filter(function(x){ return x[0]===pn; })[0]; if(!p) return;
+  if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===pn; })){ alert('Already on this estimate.'); return; }
+  var price=+p[4]||0;
+  if(!(price>0)){
+    var t=prompt('No MRP on record for '+p[1]+'. Type the price:','');
+    price=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(price>0)) return;
+  }
+  ES_ADDPART.push({l:p[1], p:price, pn:pn, _fromTree:true});
+  /* fitment labour carried by the part — same rule the part dropdown already uses */
+  var rates=rtModelRates(), added=[];
+  String(p[6]||'').split('|').filter(Boolean).forEach(function(code){
+    code=rtCode(code);
+    var L=RT.byCode[code]; if(!L) return;
+    var r=rtResolve(L,rates);
+    if(r.ev==='R' || !(r.rate>0)) return;
+    if((ES_ADDLAB||[]).some(function(x){ return rtCode(x.code)===code; })) return;
+    ES_ADDLAB.push({l:r.name,p:r.rate,code:code,cc:p[5]||'',_fromPart:p[1],
+                    _fromTree:true,_amber:(r.ev==='A')});
+    added.push(r.name+(r.ev==='A'?' (rate not proven for this model \u2014 check)':''));
+  });
+  if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
+  try{ esDrawChips(); }catch(e){}
+  rtRenderStrip();
+  if(added.length){
+    var m=document.getElementById('es-msg');
+    if(m){ m.style.color='var(--ok)'; m.textContent='\uD83D\uDD17 Fitment labour added: '+added.join(', ')+'.';
+           setTimeout(function(){ if(m.textContent.indexOf('Fitment labour')>-1) m.textContent=''; },7000); }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   8.  WIRING  —  wrap, never replace
+   --------------------------------------------------------------------------- */
+(function(){
+  var OLD_UPDATE = window.esUpdateLive;
+  if(typeof OLD_UPDATE==='function'){
+    window.esUpdateLive = function(){
+      var r; try{ r=OLD_UPDATE.apply(this, arguments); }finally{ try{ rtRenderStrip(); }catch(e){} }
+      return r;
+    };
+  }
+  var OLD_BOOT = window.esBoot;
+  if(typeof OLD_BOOT==='function'){
+    window.esBoot = function(){
+      var r=OLD_BOOT.apply(this, arguments);
+      setTimeout(function(){
+        try{ rtEnsureStrip(); rtRenderStrip(); }catch(e){}
+        if(!RT.ready && !RT.tried) rtLoad(function(){});     /* warm, silent */
+      }, 400);
+      return r;
+    };
+  }
+  var OLD_NEW = window.esNewEstimate;
+  if(typeof OLD_NEW==='function'){
+    window.esNewEstimate = function(){
+      var r=OLD_NEW.apply(this, arguments);
+      try{ rtClose(); rtRenderStrip(); }catch(e){}
+      return r;
+    };
+  }
+})();
+</script>
+<!-- ===================== END REPAIR TREE / REVENUE BUILDER ================= -->
 
 </body></html>
