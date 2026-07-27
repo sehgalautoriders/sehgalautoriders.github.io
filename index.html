@@ -17,7 +17,7 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set53-2026.07.27-s35';
+window.HERO_BUILD = 'set54-2026.07.27-s36';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10868,5 +10868,318 @@ function esPickLab(code, btn){
 })();
 </script>
 <!-- ================= END ESTIMATE ACCURACY & UI (s35) ====================== -->
+
+<!-- ==========================================================================
+     UPDATE NOW · TREE DIAGNOSTICS · SA PITCH ENGINE   —  Ravi 27-Jul-2026
+     build set54-2026.07.27-s36
+
+     1. CEO-only "Update now" — checks GitHub immediately instead of waiting.
+     2. The repair-tree panel now reports WHAT the server actually returned,
+        instead of the useless "not on the server yet".
+     3. Suggested labour is replaced by a pitch engine built from workshop
+        rules, not from a pending classification exercise.
+     Additive. Overrides three s34/s35 functions by re-assignment.
+     ========================================================================== -->
+<style>
+  #hero-upd-now{position:fixed;right:12px;bottom:12px;z-index:9400;border:0;border-radius:11px;
+    background:#111827;color:#fff;font:750 12.5px Inter,sans-serif;padding:11px 14px;
+    box-shadow:0 10px 26px rgba(0,0,0,.28);cursor:pointer;display:none}
+  #hero-upd-now:active{transform:translateY(1px)}
+  #hero-upd-now.busy{opacity:.65}
+  .pt-tier{margin:14px 0 6px;display:flex;align-items:baseline;gap:8px}
+  .pt-tier b{font-size:12px;font-weight:850;letter-spacing:.02em}
+  .pt-tier span{font-size:11px;color:var(--steel)}
+  .pt-tier .pt-sum{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--ink)}
+  .pt-why{font-size:11px;color:var(--steel);background:#f7f9fc;border:1px solid var(--line);
+          border-radius:8px;padding:7px 9px;margin-bottom:8px;line-height:1.45}
+  .pt-blocked{opacity:.55}
+</style>
+<script>
+"use strict";
+
+/* =========================================================================
+   1.  UPDATE NOW  (CEO / superadmin only)
+   The app already self-updates, but during testing waiting for the service
+   worker to notice is the irritation. This asks GitHub directly, right now.
+   sw.js is fetched with no-store: browsers bypass the service worker for the
+   worker script itself, so this is the one file guaranteed to be fresh.
+   ========================================================================= */
+function heroIsCeo(){
+  try{
+    var lv=String((USER&&(USER.level||USER.Level))||'').toLowerCase();
+    var rl=String((USER&&(USER.role||USER.Role))||'').toUpperCase();
+    return lv==='superadmin'||lv==='admin'||rl==='CEO';
+  }catch(e){ return false; }
+}
+function heroUpdBtn(){ return document.getElementById('hero-upd-now'); }
+function heroUpdSay(txt, busy){
+  var b=heroUpdBtn(); if(!b) return;
+  b.textContent=txt; b.className=busy?'busy':'';
+  b.disabled=!!busy;
+}
+/* Nuclear, deliberately: clear the shell caches, drop the worker, reload.
+   Anything less can leave a phone on mixed old/new code. */
+function heroWipeAndReload(){
+  var go=function(){ location.reload(true); };
+  var jobs=[];
+  try{
+    if(window.caches && caches.keys){
+      jobs.push(caches.keys().then(function(keys){
+        return Promise.all(keys.map(function(k){
+          return (k.indexOf('hero-shell-')===0)?caches.delete(k):null; }));
+      }));
+    }
+  }catch(e){}
+  try{
+    if(navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+        return Promise.all(rs.map(function(r){ return r.unregister(); }));
+      }));
+    }
+  }catch(e){}
+  Promise.all(jobs).then(go, go);
+  setTimeout(go, 4000);            /* never leave it hanging */
+}
+function heroUpdateNow(){
+  heroUpdSay('Checking\u2026', true);
+  /* Flush anything queued offline first — a reload must never lose a gate entry. */
+  var check=function(){
+    fetch('./sw.js?ts='+Date.now(), {cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+      .then(function(t){
+        var m=/HERO_BUILD\s*=\s*['"]([^'"]+)['"]/.exec(t||'');
+        var remote=m?m[1]:'';
+        var local=window.HERO_BUILD||'';
+        if(!remote){ heroUpdSay('\u26A0 Could not read version', false); return; }
+        if(remote===local){
+          heroUpdSay('\u2713 Already latest \u00B7 '+local, false);
+          setTimeout(function(){ heroUpdSay('\u27F3 Update now', false); }, 4000);
+          return;
+        }
+        heroUpdSay('New build '+remote+' \u2014 installing\u2026', true);
+        setTimeout(heroWipeAndReload, 500);
+      })
+      .catch(function(e){
+        heroUpdSay('\u26A0 '+String(e.message||'offline'), false);
+        setTimeout(function(){ heroUpdSay('\u27F3 Update now', false); }, 4000);
+      });
+  };
+  if(typeof window.flushQueue==='function'){
+    try{ Promise.resolve(window.flushQueue()).then(check, check); }catch(e){ check(); }
+  } else check();
+}
+function heroMountUpdBtn(){
+  if(document.getElementById('hero-upd-now')) { 
+    document.getElementById('hero-upd-now').style.display = heroIsCeo()?'block':'none';
+    return;
+  }
+  var b=document.createElement('button');
+  b.id='hero-upd-now'; b.type='button';
+  b.textContent='\u27F3 Update now';
+  b.onclick=heroUpdateNow;
+  b.title='Checks GitHub for a newer build and installs it immediately';
+  document.body.appendChild(b);
+  b.style.display=heroIsCeo()?'block':'none';
+}
+setTimeout(heroMountUpdBtn, 1500);
+setInterval(heroMountUpdBtn, 8000);   /* appears as soon as the CEO logs in */
+
+/* =========================================================================
+   2.  TREE DIAGNOSTICS
+   "Not on the server yet" was true but useless. The most likely cause is a
+   deployment that was never re-versioned, in which case the router falls
+   through to the catch-all and returns the plain "backend live" message —
+   a success with no data. Now the panel says exactly that.
+   ========================================================================= */
+function rtOpen(mode){
+  rtEnsurePanel();
+  RT_VIEW={mode:(mode==='suggest'?'suggest':'cat'), cat:'', cc:'', q:''};
+  var s=document.getElementById('rt-search');
+  if(s){ s.value=''; s.placeholder='Search complaint, labour, part or code\u2026';
+         s.oninput=function(){ RT_VIEW.q=this.value.trim(); rtDraw(); }; }
+  document.getElementById('rt-panel').style.display='flex';
+  document.getElementById('rt-body').innerHTML='<div class="rt-empty">Loading billing tree\u2026</div>';
+  if(RT.ready){ rtDraw(); return; }
+  RT.loading=false;                       /* never inherit a stuck flag */
+  jget('tree_master',{},function(res){
+    var body=document.getElementById('rt-body');
+    if(res && res.ok && res.labour && res.labour.length){
+      RT.complaint=res.complaint||[]; RT.labour=res.labour||[]; RT.ladder=res.ladder||[];
+      RT.modelmap={}; RT.model={};
+      (res.modelmap||[]).forEach(function(r){ RT.modelmap[r[0]]=r[1]; });
+      (res.model||[]).forEach(function(r){ RT.model[r[0]]={tier:r[1],seg:r[2],active:r[3]}; });
+      RT.byCode={}; RT.byComplaint={};
+      RT.labour.forEach(function(L){
+        RT.byCode[L[0]]=L;
+        var all=String(L[4]||'').split('|').filter(Boolean);
+        if(!all.length && L[3]) all=[L[3]];
+        all.forEach(function(cc){ (RT.byComplaint[cc]=RT.byComplaint[cc]||[]).push(L); });
+      });
+      RT.ready=true; rtDraw(); return;
+    }
+    /* --- say what actually came back --- */
+    var why, fix;
+    if(!res){ why='No reply from the backend at all.'; fix='Check the connection, then tap \u21BB Sync Now.'; }
+    else if(res.ok===false){ why='Backend error: '+rtEsc(String(res.error||res.detail||'unknown')); fix='Send me this message.'; }
+    else if(res.msg){
+      why='The backend answered with its default message \u2014 <i>'+rtEsc(String(res.msg))+'</i>';
+      fix='That means <b>action=tree_master is not in doGet on the deployment this app uses</b>. '
+        + 'The three router lines were added, but the deployment was not re-versioned, '
+        + 'or this app points at a different /exec URL. '
+        + 'Fix: Apps Script \u2192 Deploy \u2192 Manage deployments \u2192 pencil \u2192 Version: <b>New version</b> \u2192 Deploy.';
+    }
+    else { why='The backend replied, but with no labour rows.'; fix='Run testRepairTree() and check the MD_Tree_Labour tab is populated.'; }
+    body.innerHTML='<div class="rt-warn"><b>The repair tree did not load.</b><br><br>'+why+'<br><br>'+fix+'</div>'
+      + '<div class="rt-empty" style="text-align:left;font-size:11px">'
+      + 'Backend in use:<br><span class="rt-code">'+rtEsc(String(typeof SHEET_URL!=='undefined'?SHEET_URL:'unknown')).slice(0,120)+'</span></div>';
+  });
+}
+
+/* =========================================================================
+   3.  SA PITCH ENGINE
+   Built from how the counter actually works, not from a pending taxonomy.
+
+   The governing rule, and the reason this is safe to put in an SA's hands:
+   a labour code that ends in (R/R) is FITMENT. Billing it without replacing
+   the part is the thing that gets caught in a DMS audit and the thing a
+   customer disputes. So fitment labour is offered ONLY once its part is on
+   the estimate. Everything an SA can genuinely pitch on its own is work done
+   on the part already fitted — cleaning, greasing, tuning, charging, testing.
+
+   Three tiers, in the order a customer accepts them:
+     A. Add now      — visible, cheap, no part, near-100% acceptance
+     B. With the part— fitment labour for parts already on this estimate
+     C. Inspect first— higher-value work, needs the vehicle checked and the
+                       customer told why. Never auto-suggested silently.
+   ========================================================================= */
+/* Curated by code, not by keyword guessing. Every one of these is work that
+   is physically performed on a vehicle already in the bay, is visible to the
+   customer, and needs no part. Rate comes from the model's own master. */
+var PT_SERVICE = {
+  '101002':{n:'Water wash',            why:'Vehicle goes back clean. Customer sees it first.'},
+  '302014':{n:'Rear brake cleaning',   why:'Drum dust removal. Explains a soft pedal.'},
+  '304002':{n:'Drive chain clean & lube', why:'Visible chain, audible difference on the test ride.'},
+  '310023':{n:'Front wheel bearing greasing', why:'Preventive. Cheap now, bearing later.'},
+  '404001':{n:'Carburettor cleaning',  why:'Answers "pickup kam hai" without a part.'},
+  '101003':{n:'Carburettor tuning (CO analyser)', why:'Instrument-backed. Customer sees the reading.'},
+  '101004':{n:'Air cleaner element clean', why:'Show the dirty element. Sells itself.'},
+  '508013':{n:'Battery charging',      why:'Standard on any slow-crank complaint.'},
+  '407007':{n:'Spark plug clean & regap', why:'Show the electrode. Cheaper than replacing.'},
+  '101012':{n:'Nitrogen filling',      why:'Tyre pressure holds longer. Easy yes.'},
+  '101016':{n:'Nitrogen top-up',       why:'Small add-on at delivery.'},
+  '301031':{n:'Seat cover staple',     why:'Only if the seat is actually loose.'},
+  '101017':{n:'Express service',       why:'Charge for priority only when it is genuinely given.'}
+};
+function ptIsFitment(desc){
+  return /\(R\s*\/\s*R|DISMANTLE|ASSEMBLE/i.test(String(desc||''));
+}
+function ptRate(code, rates, fallbackRow){
+  var own=rates[code];
+  if(own && own.p>0) return {p:own.p, name:own.l, ev:'G'};
+  var L=fallbackRow||RT.byCode[code];
+  var fb=L?Number(L[6]||L[5]||0):0;
+  return {p:fb, name:(L?L[1]:''), ev:'A'};
+}
+function rtSuggest(){
+  var rates=(typeof rtModelRates==='function')?rtModelRates():{};
+  var have={}; (ES_ADDLAB||[]).forEach(function(x){ have[String(x.code||'').replace(/\.0+$/,'')]=1; });
+  var c=null; try{ c=esComputeCurrent(); }catch(e){}
+  var parts=c?((+c.parts||0)+(+c.oil||0)):0, lab=c?(+c.labour||0):0;
+
+  /* --- A: service-only, pitchable on its own --- */
+  var A=[];
+  Object.keys(PT_SERVICE).forEach(function(code){
+    if(have[code]) return;
+    var r=ptRate(code, rates);
+    if(!(r.p>0)) return;                       /* not priced for this model — skip silently */
+    A.push({code:code, name:r.name||PT_SERVICE[code].n, rate:r.p, ev:r.ev,
+            why:PT_SERVICE[code].why, tier:'A'});
+  });
+  A.sort(function(a,b){ return a.rate-b.rate; });
+
+  /* --- B: fitment labour for parts ALREADY on this estimate --- */
+  var B=[], seenB={};
+  (ES_ADDPART||[]).forEach(function(p){
+    var pn=String(p.pn||''); if(!pn || !RT.partsLoaded) return;
+    var row=RT.parts.filter(function(x){ return x[0]===pn; })[0]; if(!row) return;
+    String(row[6]||'').split('|').filter(Boolean).forEach(function(code){
+      code=String(code).replace(/\.0+$/,'');
+      if(have[code]||seenB[code]) return; seenB[code]=1;
+      var L=RT.byCode[code]; if(!L) return;
+      if(String(L[10]||'')) return;
+      var r=ptRate(code, rates, L); if(!(r.p>0)) return;
+      B.push({code:code, name:r.name||L[1], rate:r.p, ev:r.ev, tier:'B',
+              why:'Fitment for '+String(p.l||pn)+' \u2014 already on this estimate.'});
+    });
+  });
+
+  /* --- C: higher-value, complaint-linked, inspection required --- */
+  var C=[], poolSeen={};
+  RT.labour.forEach(function(L){
+    var code=L[0];
+    if(have[code]||poolSeen[code]||PT_SERVICE[code]||seenB[code]) return;
+    if(String(L[10]||'')) return;                 /* zero-rate / carrier */
+    if(!L[3]) return;                             /* must carry a complaint code */
+    var own=rates[code]; if(!own||own.p<=0) return;  /* GREEN only */
+    if(own.p<150) return;                         /* small stuff lives in tier A */
+    poolSeen[code]=1;
+    C.push({code:code, name:own.l||L[1], rate:own.p, ev:'G', tier:'C', cc:L[3],
+            why:(ptIsFitment(own.l||L[1])
+                 ? 'Fitment \u2014 quote only if the part is being replaced.'
+                 : 'Inspect first, then explain the finding to the customer.'),
+            fit:ptIsFitment(own.l||L[1])});
+  });
+  C.sort(function(a,b){ return a.rate-b.rate; });
+  C=C.slice(0,14);
+
+  return {A:A, B:B, C:C, parts:parts, lab:lab,
+          list:A.concat(B).concat(C)};   /* kept for anything still reading .list */
+}
+function ptRow(r){
+  var on=(ES_ADDLAB||[]).some(function(x){ return String(x.code||'').replace(/\.0+$/,'')===r.code; });
+  var blocked = (r.tier==='C' && r.fit);
+  return '<div class="rt-row'+(blocked?' pt-blocked':'')+'">'
+    +'<i class="rt-dot '+(r.ev==='G'?'rt-g':'rt-a')+'"></i>'
+    +'<div class="rt-main"><div class="rt-name">'+rtEsc(r.name)+'</div>'
+    +'<div class="rt-meta"><span class="rt-code">'+rtEsc(r.code)+'</span> \u00B7 '+rtEsc(r.why)+'</div></div>'
+    +'<div class="rt-amt">'+rtMoney(r.rate)+'</div>'
+    +'<button type="button" class="rt-add'+(on?' done':'')+'" '
+    +'onclick="rtAddLab(\''+r.code+'\',\''+rtEsc(r.cc||'')+'\',this)">'+(on?'\u2713':'\uFF0B')+'</button></div>';
+}
+function rtSuggestHtml(){
+  var s=rtSuggest();
+  var sum=function(a){ return a.reduce(function(x,y){ return x+y.rate; },0); };
+  var ratioAfter=function(add){ var l=s.lab+add; return l>0?(Math.round(s.parts/l*10)/10):0; };
+  var h='';
+
+  h+='<div class="pt-why">Every line here is work that is actually performed. '
+    +'Nothing is added to a bill that was not done \u2014 that is what a customer disputes '
+    +'and what a DMS audit catches.</div>';
+
+  if(s.A.length){
+    h+='<div class="pt-tier"><b>A \u00B7 Add now</b><span>no part needed, customer sees it</span>'
+      +'<span class="pt-sum">'+rtMoney(sum(s.A))+' \u2192 '+ratioAfter(sum(s.A))+':1</span></div>';
+    h+=s.A.map(ptRow).join('');
+  }
+  if(s.B.length){
+    h+='<div class="pt-tier"><b>B \u00B7 Fitment for parts you already added</b>'
+      +'<span>owed labour, currently unbilled</span>'
+      +'<span class="pt-sum">'+rtMoney(sum(s.B))+'</span></div>';
+    h+=s.B.map(ptRow).join('');
+  } else if((ES_ADDPART||[]).length){
+    h+='<div class="pt-tier"><b>B \u00B7 Fitment</b><span>all fitment labour for your parts is already on the estimate</span></div>';
+  }
+  if(s.C.length){
+    h+='<div class="pt-tier"><b>C \u00B7 Inspect, then offer</b><span>higher value \u2014 show the customer the finding</span></div>';
+    h+='<div class="pt-why">Faded rows are fitment codes. Add the part first; the labour then '
+      +'appears in section B by itself.</div>';
+    h+=s.C.map(ptRow).join('');
+  }
+  if(!s.A.length && !s.B.length && !s.C.length)
+    h+='<div class="rt-empty">Nothing further to suggest for this model.</div>';
+  return h;
+}
+</script>
+<!-- ============ END UPDATE NOW / DIAGNOSTICS / PITCH ENGINE (s36) ========== -->
 
 </body></html>
