@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 1;
-window.HERO_BUILD = 'R1-2026.07.28';
+window.HERO_RELEASE = 2;
+window.HERO_BUILD = 'R2-2026.07.28';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2701,10 +2701,19 @@ function goHome(){
      to his name until MD_SA_Master has been read. See huLoadSaMap. The panels
      are refreshed once it lands, so the number corrects itself on first paint
      rather than only after the Holdup module has been opened. */
-  if(typeof huLoadSaMap==='function'){
-    huLoadSaMap(function(){
-      try{ loadHomeStats(); }catch(e){}
-      try{ if(typeof renderSaDash==='function') renderSaDash(); }catch(e){}
+  /* Both lookups must land before any panel counts a holdup row:
+       MD_Workshops  decides WHICH rows are in this man's workshop (dealer code -> WS)
+       MD_SA_Master  decides WHICH of those are his (SA code -> name)
+     Get either one wrong and the number is wrong but still looks plausible, which
+     is exactly how the 157-vs-179 and My-Holdup-0 bugs both survived so long. */
+  if(typeof huLoadWorkshops==='function'){
+    huLoadWorkshops(function(){
+      if(typeof huLoadSaMap==='function'){
+        huLoadSaMap(function(){
+          try{ loadHomeStats(); }catch(e){}
+          try{ if(typeof renderSaDash==='function') renderSaDash(); }catch(e){}
+        });
+      } else { try{ loadHomeStats(); }catch(e){} }
     });
   }
   renderHomeTiles();
@@ -5579,12 +5588,65 @@ const HU_COLS = {
   reg:'Vehicle Registration Number', model:'Model', orderDate:'Order Date ',
   status:'Order Status ', type:'Job Card Type', pendingDays:'Pending Days '
 };
-// Dealer code → workshop name mapping
-const HU_CODE_MAP = {'10307':'Sehgal (10307)','23490':'Sehgal Auto (23490)','17057':'Premia (17057)'};
-// Maps dealer code → actual workshop name as used in MD_Login "WS Name" column.
-// This is the link WM/GM logins need — without it their allowedWsList() never matches
-// a dealer-code label like "Sehgal Auto (23490)", which is why the screen was blank.
-const HU_CODE_TO_WS = {'10307':'CHINCHWAD','23490':'CHINCHWAD','17057':'PREMIA'};
+/* ============================================================================
+   DEALER CODES — NOW DATA, NOT CODE  (Ravi 28-Jul-2026)
+
+   WHAT WAS WRONG
+   These two maps were hardcoded constants, and one value in them was simply
+   untrue: 17057 was mapped to a workshop called "PREMIA", as though Premia were
+   a separate premises. It is not. Premia is a BRAND TIER — Hero's newer premium
+   bikes — exactly the way Nexa is a tier alongside Arena for Maruti Suzuki, with
+   nothing to do with where the workshop is. All three dealer codes (10307,
+   23490, 17057) sit on the SAME Chinchwad premises.
+
+   The cost of that one wrong constant: every Chinchwad advisor was scoped to
+   10307 + 23490 only, so 22 vehicles under 17057 vanished from his totals.
+   Sharad Kotwal saw "Whole WS: 157" against a real workshop total of 179, and
+   the two numbers could never be reconciled from inside the app.
+
+   HOW IT WORKS NOW
+   Both maps are loaded from the MD_Workshops tab in HeroMasterSheet. Adding a
+   fourth dealer code, renaming one, or moving a code between premises is a
+   sheet edit — no code change, no build, no deploy.
+
+   Brand and premises are deliberately SEPARATE columns, because they are
+   separate facts. 'WS Name' decides who can see the vehicle. 'Brand' is only a
+   label. Conflating them is what caused this bug in the first place.
+
+   The literals below are a LAST-RESORT OFFLINE FALLBACK, used only if the phone
+   has never once reached MD_Workshops. They are deliberately all-CHINCHWAD so
+   that even the fallback cannot re-create the bug.
+   ============================================================================ */
+let HU_CODE_MAP   = {'10307':'Sehgal (10307)','23490':'Sehgal Auto (23490)','17057':'Premia (17057)'};
+let HU_CODE_TO_WS = {'10307':'CHINCHWAD','23490':'CHINCHWAD','17057':'CHINCHWAD'};
+let HU_CODE_BRAND = {'10307':'Hero','23490':'Hero','17057':'Premia'};
+let HU_WS_READY   = false;
+
+/* Reads MD_Workshops. Columns: Dealer Code | Display Name | WS Name | Brand | Active
+   A row with a blank Dealer Code or blank WS Name is skipped rather than guessed at —
+   a half-known mapping is what produced the 157/179 split. */
+function huLoadWorkshops(cb){
+  if(HU_WS_READY){ if(cb) cb(); return; }
+  jget('master_table', {name:'Workshops'}, function(res){
+    const rows=(res&&res.rows)||[];
+    if(rows.length){
+      const map={}, tows={}, brand={};
+      rows.forEach(function(r){
+        const code=String(r['Dealer Code']||'').trim();
+        const ws=String(r['WS Name']||'').trim().toUpperCase();
+        if(!code||!ws) return;
+        if(String(r['Active']||'Yes').trim().toLowerCase()==='no') return;
+        map[code]=String(r['Display Name']||'').trim()||code;
+        tows[code]=ws;
+        brand[code]=String(r['Brand']||'').trim();
+      });
+      if(Object.keys(tows).length){
+        HU_CODE_MAP=map; HU_CODE_TO_WS=tows; HU_CODE_BRAND=brand; HU_WS_READY=true;
+      }
+    }
+    if(cb) cb();
+  });
+}
 let HU_DATA=[], HU_DATA_ENRICHED=[], HU_REASONS=[], HU_IS_PARTS_PERSON=false; // parsed rows
 let HU_SELECTED=new Set(); // row indices currently checked for bulk ops
 let HU_SA_FILTER='ALL'; // advisor slicer active filter
@@ -6043,7 +6105,8 @@ function huBoot(){
      MD_SA_Master is the real advisor register — code, name, emp no, location.
      Rows with no SA Code are skipped. Inactive advisors are still mapped on
      purpose, so old job cards keep showing a name instead of a bare code. */
-  huLoadSaMap(function(){ huRender(); }); // re-render once mapping is ready
+  // Workshops first (row scoping), then advisors (row ownership), then paint.
+  huLoadWorkshops(function(){ huLoadSaMap(function(){ huRender(); }); });
   // Parts Person login: auto-restrict to vehicles pending for parts only
   HU_IS_PARTS_PERSON = isPartsPerson();
   let loadedLocal=false;
