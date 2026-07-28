@@ -17,7 +17,15 @@
    build string below must match the HERO_BUILD line in sw.js.
    Does nothing at all unless the page is served over https, so opening the file
    from Downloads / content:// / file:// behaves exactly as it does today.       */
-window.HERO_BUILD = 'set60-2026.07.27-s42';
+/* RELEASE NUMBER — read this one, ignore everything else.
+   Ravi 28-Jul-2026: "set60-2026.07.27-s42" told you nothing. From now on every
+   release is a plain counting number. Release 1, Release 2, Release 3. If the
+   number on your screen is bigger than the one you saw last time, you have the
+   new app. Nothing else to decode.
+   release.ps1 increments this automatically in BOTH index.html and sw.js, and
+   refuses to publish if the two ever disagree. */
+window.HERO_RELEASE = 1;
+window.HERO_BUILD = 'R1-2026.07.28';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -83,7 +91,7 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
     t.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483646;background:#14532d;'
       + 'color:#fff;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;'
       + 'gap:10px;font:600 13px Inter,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-    t.innerHTML = '<span>&#10003; App updated &middot; now on ' + (window.HERO_BUILD || '') + '</span>'
+    t.innerHTML = '<span>&#10003; App updated &middot; now on Release ' + (window.HERO_RELEASE || '?') + '</span>'
       + '<button style="background:none;border:0;color:#bbf7d0;font:700 13px Inter,sans-serif;padding:8px 10px">OK</button>';
     t.querySelector('button').onclick = function () { t.remove(); };
     (document.body || document.documentElement).appendChild(t);
@@ -2687,6 +2695,18 @@ function showView(name){
 }
 function goHome(){
   showView('home');
+  /* Load the SA code -> name map BEFORE the home panels count anything.
+     Without this, "My Holdup" on an advisor's home screen is always 0, because
+     his vehicles are tagged with an SA CODE (SHA23490) that cannot be resolved
+     to his name until MD_SA_Master has been read. See huLoadSaMap. The panels
+     are refreshed once it lands, so the number corrects itself on first paint
+     rather than only after the Holdup module has been opened. */
+  if(typeof huLoadSaMap==='function'){
+    huLoadSaMap(function(){
+      try{ loadHomeStats(); }catch(e){}
+      try{ if(typeof renderSaDash==='function') renderSaDash(); }catch(e){}
+    });
+  }
   renderHomeTiles();
   loadHomeStats();
   try{ heroCustOffer(); }catch(e){}
@@ -5930,6 +5950,50 @@ function huSendEmailManual(){
 }
 
 let HU_SA_MAP={}; // Supervisor ID (uppercase) -> real SA Name. SOURCE: MD_SA_Master ONLY (Ravi 26-Jul-2026)
+let HU_SA_MAP_READY=false;   // has MD_SA_Master actually been fetched at least once?
+
+/* ============================================================================
+   THE "MY HOLDUP = 0" BUG  (Ravi 28-Jul-2026)
+
+   Sharad Kotwal (emp 5004) has holdup vehicles, but his SA home screen showed
+   "My Holdup: 0" every single time.
+
+   WHY. His vehicles carry Supervisor ID "SHA23490" — an SA CODE, not his name
+   and not his employee number. raviAssignedToMe() can only turn that code into
+   "Sharad Kotwal" by looking it up in HU_SA_MAP. But HU_SA_MAP was built inside
+   huBoot(), and huBoot() only runs when the HOLDUP MODULE IS OPENED. The home
+   screen computes "My Holdup" long before that. So at that moment the map was
+   an empty object, mySaCodes came back empty, and "SHA23490" was compared only
+   against "5004" and "SHARAD KOTWAL". It matched neither. Zero. Every time.
+
+   Opening Holdup first and then going Home would have shown the right number,
+   which is exactly why this looked intermittent and was so hard to pin down.
+
+   THE FIX. The fetch is lifted out of huBoot into this one loader, and called
+   once at login — before any screen asks the question. huBoot still calls it,
+   so opening Holdup directly still works; the fetch is cached after the first
+   success so this costs one extra call per session, not per screen.
+   ============================================================================ */
+function huLoadSaMap(cb){
+  if(HU_SA_MAP_READY){ if(cb) cb(); return; }      // already loaded this session
+  jget('master_table', {name:'SA_Master'}, function(res){
+    const rows=(res&&res.rows)||[];
+    if(rows.length){
+      HU_SA_MAP={};
+      rows.forEach(function(r){
+        const saCode=String(r['SA Code']||'').trim();
+        const name=String(r['SA Name']||'').trim();
+        if(!saCode||!name) return;
+        saCode.split(',').forEach(function(code){
+          code=code.trim().toUpperCase();
+          if(code) HU_SA_MAP[code]=name;
+        });
+      });
+      HU_SA_MAP_READY=true;
+    }
+    if(cb) cb();
+  });
+}
 function huBoot(){
   /* MD_HoldupReasons is now the ONLY source of the standard reason list. (Ravi 26-Jul-2026)
      It feeds two things:
@@ -5979,19 +6043,7 @@ function huBoot(){
      MD_SA_Master is the real advisor register — code, name, emp no, location.
      Rows with no SA Code are skipped. Inactive advisors are still mapped on
      purpose, so old job cards keep showing a name instead of a bare code. */
-  jget('master_table', {name:'SA_Master'}, function(res){
-    HU_SA_MAP={};
-    ((res&&res.rows)||[]).forEach(function(r){
-      const saCode=String(r['SA Code']||'').trim();
-      const name=String(r['SA Name']||'').trim();
-      if(!saCode||!name) return;
-      saCode.split(',').forEach(function(code){
-        code=code.trim().toUpperCase();
-        if(code) HU_SA_MAP[code]=name;
-      });
-    });
-    huRender(); // re-render once mapping is ready so SA names show correctly
-  });
+  huLoadSaMap(function(){ huRender(); }); // re-render once mapping is ready
   // Parts Person login: auto-restrict to vehicles pending for parts only
   HU_IS_PARTS_PERSON = isPartsPerson();
   let loadedLocal=false;
