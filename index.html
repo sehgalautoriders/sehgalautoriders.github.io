@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 2;
-window.HERO_BUILD = 'R2-2026.07.28';
+window.HERO_RELEASE = 3;
+window.HERO_BUILD = 'R3-2026.07.28';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3187,21 +3187,75 @@ const GE_GEMINI_BASE='https://generativelanguage.googleapis.com/v1beta/models/';
    the server copy is the source of truth and refreshes on every login / Sync Now.
    Same key will power requisition OCR, part-number ID and defect detection later. */
 let APP_SETTINGS={};
+/* KEYS NO LONGER COME TO THE PHONE  (Ravi 28-Jul-2026)
+   ---------------------------------------------------
+   This function used to hand the real Gemini key to the browser, which then
+   called Google directly. index.html is published to a PUBLIC GitHub repo and
+   the key sat in localStorage on every device — readable from DevTools in
+   seconds. All AI calls now go through the ai_ocr action, which holds the key
+   server-side in Script Properties. See Hotfix_AiProxy.gs.
+
+   A placeholder guard is included deliberately. When the keys were moved out of
+   the AppSettings sheet the cell was left reading "[moved to Script Properties]",
+   and because that is a non-empty string the old code happily used it AS the key
+   and even overwrote the good cached copy with it. Scanning worked for exactly
+   one photo and then failed. Anything that is not a real key is now treated as
+   no key at all. */
+function geIsRealKey_(v){
+  var s = String(v || '').trim();
+  if (!s) return false;
+  if (s.charAt(0) === '[') return false;          // "[moved to Script Properties]"
+  return s.length >= 20;                          // real keys are long
+}
 function geGeminiKey(){
-  // server-provided value wins; fall back to local mirror (offline / pre-first-sync)
-  return String(APP_SETTINGS.GEMINI_API_KEY || localStorage.getItem('app_gemini_key') || '').trim();
+  var v = String(APP_SETTINGS.GEMINI_API_KEY || localStorage.getItem('app_gemini_key') || '').trim();
+  return geIsRealKey_(v) ? v : '';
 }
 function loadAppSettings(cb){
   try{
     jget('app_settings', {}, function(res){
       if(res && res.settings){
         APP_SETTINGS=res.settings;
-        if(APP_SETTINGS.GEMINI_API_KEY){ try{ localStorage.setItem('app_gemini_key', APP_SETTINGS.GEMINI_API_KEY); }catch(e){} }
-        if(APP_SETTINGS.VISION_API_KEY){ try{ localStorage.setItem('app_vision_key', APP_SETTINGS.VISION_API_KEY); }catch(e){} }
+        /* Only mirror a value that is actually a key. Never cache a placeholder. */
+        if(geIsRealKey_(APP_SETTINGS.GEMINI_API_KEY)){ try{ localStorage.setItem('app_gemini_key', APP_SETTINGS.GEMINI_API_KEY); }catch(e){} }
+        else { try{ localStorage.removeItem('app_gemini_key'); }catch(e){} }
+        if(geIsRealKey_(APP_SETTINGS.VISION_API_KEY)){ try{ localStorage.setItem('app_vision_key', APP_SETTINGS.VISION_API_KEY); }catch(e){} }
+        else { try{ localStorage.removeItem('app_vision_key'); }catch(e){} }
       }
       if(cb) cb();
     });
   }catch(e){ if(cb) cb(); }
+}
+
+/* THE NEW PATH — send the image, get back only the answer.
+   task: 'odometer' | 'plate' | 'vin'
+   cb({ok, km|reg|vin, confidence, engine})
+   The backend runs Gemini first and only calls Vision when Gemini fails or is
+   unsure, so Vision's per-scan cost is spent only when it earns it. */
+/* geGemProxy — the ONE way this app talks to Gemini now.
+   Takes the same prompt and the same `parts` array the old direct fetch built,
+   so every existing prompt and every existing parser is untouched. The only
+   difference is that the request goes to our backend, which holds the key.
+   Returns {ok, text} — text is the raw model reply, exactly as before. */
+async function geGemProxy(prompt, parts){
+  try{
+    const images=(parts||[]).map(function(p){
+      if(p && p.inline_data) return {b64:p.inline_data.data, mime:p.inline_data.mime_type||'image/jpeg'};
+      if(p && p.text) return {text:p.text};
+      return null;
+    }).filter(Boolean);
+    const r=await jpost({type:'ai_gen', prompt:prompt, images:images});
+    return r || {ok:false, error:'no response'};
+  }catch(e){ return {ok:false, error:String(e&&e.message||e)}; }
+}
+
+function geAiScan(task, b64, mime, cb){
+  var body = String(b64 || '');
+  var comma = body.indexOf(',');
+  if (body.indexOf('data:') === 0 && comma > -1) body = body.slice(comma + 1);  // strip data: prefix
+  jpost({type:'ai_ocr', task:task, b64:body, mime:mime||'image/jpeg'})
+    .then(function(r){ cb(r || {ok:false, error:'no response'}); })
+    .catch(function(e){ cb({ok:false, error:String(e && e.message || e)}); });
 }
 /* CEO/superadmin-only: set the key for the WHOLE app (all devices). */
 function geSetGeminiKey(){
@@ -3292,13 +3346,12 @@ async function geRecognise(){
 2. From the ODOMETER photo (if given): read the TOTAL km as a whole number — the main large digits. Ignore trip meter, clock, fuel bars. If digital and showing something else, or unreadable, return 0.
 Return ONLY JSON, no markdown:
 {"registration_number":"","odometer_km":0,"confidence_percent":0}`;
-    const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
-    const body={contents:[{parts:[{text:prompt},...parts]}],generationConfig:{temperature:0,response_mime_type:'application/json'}};
-    let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.status===429){ geAiStatus('⏳ Gemini busy, retrying…','info'); await new Promise(s=>setTimeout(s,4000)); r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
-    if(!r.ok){ let t=''; try{t=await r.text();}catch(e){} throw new Error('Gemini error '+r.status+': '+t.slice(0,180)); }
-    const j=await r.json();
-    const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+    /* Key stays on the server now — see Hotfix_AiProxy.gs. The prompt and the
+       photos are unchanged; only the transport moved. The 429 retry lives in
+       aiGenerate() on the backend. */
+    const _res=await geGemProxy(prompt,parts);
+    if(!_res.ok) throw new Error('Gemini error: '+(_res.error||'unknown'));
+    const txt=_res.text||'';
     let g={}; try{ let s=txt.trim().replace(/^```json\s*/i,'').replace(/```$/,''); const a=s.indexOf('{'),b=s.lastIndexOf('}'); if(a>=0)s=s.slice(a,b+1); g=JSON.parse(s); }catch(e){ throw new Error('Could not parse AI reply.'); }
     GE_AI_RESULT=g;
     let plate=geNormPlate(g.registration_number);
@@ -3309,8 +3362,8 @@ Return ONLY JSON, no markdown:
       try{
         const b2=await geCompressForAi(GE_PHOTOS.back);
         const body2={contents:[{parts:[{text:'Read the Indian vehicle registration plate in this photo exactly (format like MH14AB1234). Return ONLY JSON: {"registration_number":""}'},{inline_data:{mime_type:'image/jpeg',data:b2}}]}],generationConfig:{temperature:0,response_mime_type:'application/json'}};
-        const r2=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body2)});
-        if(r2.ok){ const j2=await r2.json(); const t2=((((j2.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+        const r2=await geGemProxy('Read the Indian vehicle registration plate in this photo exactly (format like MH14AB1234). Return ONLY JSON: {"registration_number":""}',[{inline_data:{mime_type:'image/jpeg',data:b2}}]);
+        if(r2.ok){ const t2=r2.text||'';
           try{ const g2=JSON.parse(t2.trim().replace(/^```json\s*/i,'').replace(/```$/,'')); plate=geNormPlate(g2.registration_number)||''; if(plate) g.registration_number=plate; }catch(e2){}
         }
       }catch(e2){}
@@ -3439,19 +3492,13 @@ function geFillFromVehicle(v, fuzzy){
 async function geDetectModelAI(){
   try{
     if(!GE_PHOTOS.front && !GE_PHOTOS.back) return null;
-    const key=geGeminiKey();
-    if(!key) return null;
-    const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
     const modelList=Object.keys(KNOWN_MODELS).slice(0,40).join(', ');
     const b64=await geCompressForAi(GE_PHOTOS.front||GE_PHOTOS.back);
-    const body={contents:[{parts:[
-      {text:'Identify the most likely Hero MotoCorp two-wheeler model from visual badges/body shape. Known models: '+modelList+'. Also the colour. Return ONLY JSON: {"model":"","colour":"","confidence_percent":0}. If unsure, model "Unknown".'},
-      {inline_data:{mime_type:'image/jpeg',data:b64}}]}],
-      generationConfig:{temperature:0,response_mime_type:'application/json'}};
-    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    /* via the server-side proxy — no key on this device */
+    const r=await geGemProxy('Identify the most likely Hero MotoCorp two-wheeler model from visual badges/body shape. Known models: '+modelList+'. Also the colour. Return ONLY JSON: {"model":"","colour":"","confidence_percent":0}. If unsure, model "Unknown".',
+      [{inline_data:{mime_type:'image/jpeg',data:b64}}]);
     if(!r.ok) return null;
-    const j=await r.json();
-    const t=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+    const t=r.text||'';
     let s=t.trim().replace(/^```json\s*/i,'').replace(/```$/,''); const a=s.indexOf('{'),b=s.lastIndexOf('}'); if(a>=0)s=s.slice(a,b+1);
     return JSON.parse(s);
   }catch(e){ return null; }
@@ -9622,20 +9669,13 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      full text block, or '' if the API is not enabled on this key (in which case
      the caller quietly falls back to Gemini). */
   async function visionText(canvas){
-    const key=(typeof geVisionKey==='function')?geVisionKey():'';
-    if(!key) return '';
     try{
       const b64=canvas.toDataURL('image/jpeg',0.92).split(',')[1];
-      const r=await fetch('https://vision.googleapis.com/v1/images:annotate?key='+encodeURIComponent(key),{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({requests:[{image:{content:b64},
-          features:[{type:'TEXT_DETECTION'}], imageContext:{languageHints:['en']}}]})});
-      if(!r.ok) return '';
-      const j=await r.json();
-      const a=(j.responses||[])[0]||{};
-      if(a.error) return '';
-      return String((a.fullTextAnnotation&&a.fullTextAnnotation.text)
-                 || (((a.textAnnotations||[])[0]||{}).description) || '');
+      /* Vision key is server-side too. Same reader, no key on the device. */
+      const r=await new Promise(function(res){
+        jpost({type:'ai_vision', b64:b64}).then(res).catch(function(){ res({ok:false}); });
+      });
+      return (r && r.ok) ? String(r.text||'') : '';
     }catch(e){ return ''; }
   }
 
@@ -9658,19 +9698,13 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      one image, one question. Used for the plate and for the chassis number.
      `raw` skips the second compression pass. */
   async function askGemini(dataUrl, prompt, field, raw){
-    const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
-    if(!key || !dataUrl) return '';
+    if(!dataUrl) return '';
     try{
       const b64 = raw ? String(dataUrl).split(',')[1] : await geCompressForAi(dataUrl);
-      const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
-      const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
-                  generationConfig:{temperature:0,response_mime_type:'application/json'}};
-      let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(r.status===429){ await new Promise(s=>setTimeout(s,3500));
-        r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+      /* server-side proxy; the 429 retry now lives in aiGenerate() */
+      const r=await geGemProxy(prompt,[{inline_data:{mime_type:'image/jpeg',data:b64}}]);
       if(!r.ok) return '';
-      const j=await r.json();
-      const t=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+      const t=r.text||'';
       let x=t.trim().replace(/^```json\s*/i,'').replace(/```$/,'');
       const a=x.indexOf('{'), b=x.lastIndexOf('}'); if(a>=0) x=x.slice(a,b+1);
       const o=JSON.parse(x);

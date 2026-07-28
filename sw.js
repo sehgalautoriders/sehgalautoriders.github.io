@@ -28,8 +28,8 @@
 
 /* Must match window.HERO_RELEASE / window.HERO_BUILD in index.html exactly.
    release.ps1 bumps both together and refuses to publish on a mismatch. */
-const HERO_RELEASE = 2;
-const HERO_BUILD = 'R2-2026.07.28';
+const HERO_RELEASE = 3;
+const HERO_BUILD = 'R3-2026.07.28';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
 /* Throttle for the background shell refresh — see the fetch handler. */
 let LAST_SHELL_REFRESH = 0;
