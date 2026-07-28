@@ -28,8 +28,8 @@
 
 /* Must match window.HERO_RELEASE / window.HERO_BUILD in index.html exactly.
    release.ps1 bumps both together and refuses to publish on a mismatch. */
-const HERO_RELEASE = 4;
-const HERO_BUILD = 'R4-2026.07.28';
+const HERO_RELEASE = 5;
+const HERO_BUILD = 'R5-2026.07.28';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
 /* Throttle for the background shell refresh — see the fetch handler. */
 let LAST_SHELL_REFRESH = 0;
@@ -97,9 +97,19 @@ self.addEventListener('install', function (event) {
         if (res && res.ok) await libs.put(u, res);
       } catch (e) { /* runtime fetch will fill it */ }
     }));
-    // Deliberately NOT calling skipWaiting() here. The new version waits until
-    // the user taps the update bar. Ravi decides when a build goes live on a
-    // phone — a build must never swap itself in halfway through a gate entry.
+    /* SILENT AUTO-UPDATE (Ravi 28-Jul-2026).
+       This used to deliberately NOT call skipWaiting(), so a new build sat
+       waiting until somebody tapped an update bar. In a workshop nobody taps
+       it — and when the bar is missed the phone stays on old code for weeks,
+       which is why people were being told to "clear the cache". Nobody in a
+       workshop knows what a cache is, and they should not have to.
+
+       skipWaiting() lets the new worker take over as soon as it has finished
+       downloading. The page already open is NOT reloaded — the original concern
+       was right, a build must never swap itself in halfway through a gate entry.
+       The new shell is simply what loads the NEXT time the app is opened.
+       Automatic, invisible, and never interrupts anyone mid-job. */
+    self.skipWaiting();
   })());
 });
 

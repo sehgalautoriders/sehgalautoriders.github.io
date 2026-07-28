@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 4;
-window.HERO_BUILD = 'R4-2026.07.28';
+window.HERO_RELEASE = 5;
+window.HERO_BUILD = 'R5-2026.07.28';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -777,7 +777,10 @@ body { font-size:14px; }
 .td-days-lt2{color:var(--ok)}
 .hu-excel-table .hu-remarks-in{width:100%;border:none;background:transparent;font-size:11px;font-family:'Inter';color:var(--ink);padding:2px 4px}
 .hu-excel-table .hu-remarks-in:focus{outline:2px solid var(--signal);outline-offset:-1px;border-radius:3px;background:#fff}
-.hu-row-part-flag{border-left:3px solid #b91c1c!important}
+/* Red row stripe removed 28-Jul-2026. It fired on most rows, so it marked
+   nothing — a signal that is always on is not a signal. The Blockers chips
+   carry this information properly. */
+.hu-row-part-flag{}
 .hu-row-part-flag td:first-child{border-left:none}
 .hu-hist-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;color:var(--steel);border-radius:4px}
 .hu-hist-btn:hover{background:var(--shade);color:var(--ink)}
@@ -943,9 +946,16 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 .hu-excel-table td:nth-child(8){max-width:90px;white-space:normal!important;line-height:1.15}
 .hu-excel-table th:nth-child(9){min-width:150px!important}
 .hu-excel-table th:nth-child(10){min-width:86px!important}
-.hu-excel-table th:nth-child(11){min-width:145px!important}
-.drs-select{min-width:145px}
-.hu-eta-select{min-width:88px}
+/* OVERLAP FIX (Ravi 28-Jul-2026): the Daily Review Status dropdown was running
+   over the ETA column. Cause was .drs-select carrying BOTH width:100% and
+   min-width:145px with no border-box — padding and border were added on top of
+   100%, so the control was always wider than its cell. box-sizing makes 100%
+   mean 100%, max-width stops min-width winning in a narrow column, and the
+   column itself is given room for the control plus the cell padding. */
+.hu-excel-table th:nth-child(11){min-width:172px!important}
+.drs-select{min-width:150px;max-width:100%;box-sizing:border-box}
+.hu-eta-select{min-width:88px;max-width:100%;box-sizing:border-box}
+.hu-excel-table td{overflow:hidden}
 .hu-remarks-in{min-width:130px!important}
 .ravi-doc-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ravi-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
