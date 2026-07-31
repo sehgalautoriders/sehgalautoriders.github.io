@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 15;
-window.HERO_BUILD = 'R15-2026.07.31';
+window.HERO_RELEASE = 16;
+window.HERO_BUILD = 'R16-2026.07.31';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -406,22 +406,65 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
      with white-space:nowrap and no shrink meant the row could not compress and
      ran off the right edge. It now shrinks, and drops its least important parts
      first — the rupee gap, then the label — so the ratio itself always fits. */
-  .ratiostrip{display:flex;align-items:center;gap:8px;margin-left:10px;padding:5px 12px;
-              border:1.5px solid var(--line);border-radius:8px;background:#fff;
-              font-size:12.5px;font-weight:600;white-space:nowrap;
-              flex:0 1 auto;min-width:0;overflow:hidden}
-  .ratiostrip .rlab{color:var(--steel);font-weight:600}
-  .ratiostrip .rval{font-family:'Roboto Mono';font-weight:700}
-  .ratiostrip .rband{padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700}
-  .ratiostrip .rband.ok{background:#dcfce7;color:#166534}
-  .ratiostrip .rband.close{background:#fef9c3;color:#854d0e}
-  .ratiostrip .rband.behind{background:#fee2e2;color:#991b1b}
-  .ratiostrip .rgap{color:var(--steel);font-weight:600}
-  /* Shed the optional parts before the bar can overflow. The ratio and its
-     band are the point; the rupee gap and the words are the nice-to-have. */
-  @media(max-width:1180px){ .ratiostrip .rgap{display:none} }
-  @media(max-width:1000px){ .ratiostrip .rlab{display:none} .ratiostrip{padding:5px 9px;gap:6px} }
-  @media(max-width:760px){  .ratiostrip{margin-left:0;font-size:11.5px} }
+  /* MEASURED, NOT GUESSED (Ravi 31-Jul-2026).
+     The first version was 366px wide and sat in a top bar that already held the
+     logo, brand, user box, network badge and a 245px status box. The bar is
+     flex-wrap:wrap, so it did not shrink - it WRAPPED to three rows and grew
+     from 110px to 188px tall, pushing the whole page down. My "let it shrink"
+     CSS was written for the wrong failure mode because I never looked at the
+     rendered bar.
+
+     It is now a chip: a colour dot and the ratio. About 70px. The detail that
+     used to be printed - month, parts, labour, jobs, source, rupees short -
+     all moved into the tooltip, which costs no space at all. */
+  .ratiostrip{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding:4px 9px;
+              border:1.5px solid var(--line);border-radius:20px;background:#fff;
+              font-size:12px;font-weight:700;white-space:nowrap;
+              flex:0 0 auto;cursor:default}
+  .ratiostrip .rdot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .ratiostrip .rdot.ok{background:#16a34a}
+  .ratiostrip .rdot.close{background:#ca8a04}
+  .ratiostrip .rdot.behind{background:#dc2626}
+  .ratiostrip .rval{font-family:'Roboto Mono';font-weight:800;color:var(--ink)}
+  /* ==========================================================================
+     PHONE HEADER — measured on a OnePlus 13 viewport (412 x 915 CSS px).
+
+     Before this rule the top bar was FOUR stacked rows and 132px tall on that
+     screen: the brand on one line, the logo alone on the next, the network
+     badge on a third, and a 245px backend status box on a fourth. That is 14%
+     of the phone gone before any work appears, and it was there before the
+     ratio chip was added — the chip only made an existing problem visible.
+
+     One row now. The logo and brand stay. The status box keeps its sync
+     control but loses the words. Everything measured, not guessed.
+     ========================================================================== */
+  @media(max-width:640px){
+    .top{padding:8px 10px;gap:8px;flex-wrap:nowrap;overflow:hidden}
+    .top img{width:26px;height:26px}
+    /* flex:1 1 auto, NOT 0 1 auto. With 0 the brand shrank to zero width and the
+       app name vanished entirely — measured, not assumed. */
+    .brand{font-size:14px;line-height:1.05;flex:1 1 auto!important;min-width:76px;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .brand .sub{display:none}
+    .who{gap:6px;font-size:11px;flex:0 0 auto!important;width:auto!important;margin-left:auto!important}
+    .who > span:first-child{display:none}   /* name/role/ws already shown on Home */
+    .who .navbtn{padding:5px 8px!important;font-size:11px!important;white-space:nowrap}
+    .net{flex:0 0 auto;margin-left:0!important}
+    .net #nettxt{display:none}              /* the dot alone says online or not */
+    /* The status box was 244px of a 412px screen. Its spans carry INLINE
+       font-size:12px, so a plain stylesheet rule loses to them — !important is
+       required here, not optional. 244px -> 32px. */
+    #backend-status-box{margin-left:6px!important;padding:4px 6px!important;gap:5px!important;flex:0 0 auto}
+    #backend-status-box>span{font-size:0!important}
+    #backend-status-box #ver-badge::after{content:'\2139';font-size:13px}
+    #backend-status-box>span:last-child::after{content:'\21BB';font-size:14px}
+    #sync-badge{display:none!important}
+    .ratiostrip{margin-left:6px;padding:4px 7px}
+    .ratiostrip .rval{display:none}         /* dot only; the number is in the tooltip */
+    #hero-upd-now{font-size:0!important;padding:5px 7px!important;margin-left:6px;
+                  width:30px;box-sizing:border-box;overflow:hidden}
+    #hero-upd-now::after{content:'\21BB';font-size:14px}
+  }
   .plus{background:var(--ink);color:#fff;border:none;border-radius:7px;padding:0 14px;height:40px;font-size:20px;cursor:pointer;flex:0 0 auto}
   .live{background:var(--ink);color:#fff;border-radius:10px;padding:13px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center}
   .live .l{font-family:'Barlow Condensed';font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:#aab0b8}
@@ -812,6 +855,15 @@ body { font-size:14px; }
 .hu-excel-table th{background:var(--ink);color:#fff;padding:9px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;position:sticky;top:0;z-index:2}
 .hu-excel-table th:first-child{border-radius:0;width:36px}
 .hu-excel-table td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle;background:#fff}
+/* HOLDUP TEXT WAS RUNNING OVER, NOT WRAPPING.        (Ravi 31-Jul-2026)
+   "Holdup cases - the english is overriding. Not wrapped properly."
+   Model, JC Type, Order Status and SA each carried white-space:nowrap, so a
+   name like SPLENDOR PLUS XTEC 2.0 could not break and pushed the row wide
+   until columns overlapped. They wrap now, with a min-width so a short value
+   does not collapse the column. vertical-align moves to top so a two-line
+   cell lines up with its neighbours instead of floating in the middle. */
+.hu-excel-table td.hu-wrapcell{white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.25;vertical-align:top}
+@media(max-width:640px){ .hu-excel-table td.hu-wrapcell{font-size:10.5px!important;min-width:0!important} }
 .hu-excel-table tr:nth-child(even) td{background:#fafaf8}
 .hu-excel-table tr:hover td{background:#f5f3ef}
 .hu-excel-table tr.hu-selected td{background:#eff6ff!important}
@@ -849,7 +901,8 @@ body { font-size:14px; }
 }
 
 /* Req photo per row */
-.hu-req-photo-btn{background:none;border:1.5px solid var(--line);border-radius:8px;padding:5px 8px;cursor:pointer;font-size:16px;color:var(--steel);display:flex;align-items:center;gap:4px;transition:all .12s}
+.hu-req-photo-btn{background:none;border:1.5px solid var(--line);border-radius:8px;padding:5px 8px;cursor:pointer;font-size:16px;color:var(--steel);display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1;transition:all .12s}
+.hu-req-lbl{font-size:8.5px;font-weight:800;letter-spacing:.01em;white-space:nowrap;text-transform:uppercase}
 .hu-req-photo-btn:hover{border-color:var(--signal);color:var(--signal)}
 .hu-req-photo-btn.has-photo{border-color:#7c3aed;color:#7c3aed;background:#faf5ff}
 .hu-req-thumb{width:32px;height:32px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid var(--line)}
@@ -2784,17 +2837,16 @@ function hxPaintRatio(r){
   if(!el) return;
   if(!r||!r.jobs){ el.style.display='none'; return; }   // nothing billed yet this month
   const cls = r.band==='ON TARGET' ? 'ok' : (r.band==='CLOSE' ? 'close' : 'behind');
-  /* Ratio is shown as parts:labour, e.g. 1.64 means parts are 1.64x labour. */
-  const gap = r.labourShortfall>0
-    ? '<span class="rgap">labour short '+inr(r.labourShortfall)+'</span>'
-    : '<span class="rgap">parity reached</span>';
-  el.style.display='flex';
-  el.innerHTML='<span class="rlab">Parts : Labour</span>'
-    +'<span class="rval">'+(r.ratio!==null?r.ratio.toFixed(2):'—')+' : 1</span>'
-    +'<span class="rband '+cls+'">'+r.band+'</span>'
-    +gap;
-  el.title='Month '+r.month+'  ·  parts '+inr(r.parts)+'  ·  labour '+inr(r.labour)
-          +'  ·  '+r.jobs+' jobs  ·  source: '+r.source
+  /* A dot and the number. Everything else is in the tooltip, which costs no
+     width. Ratio reads parts:labour - 1.64 means parts are 1.64x labour. */
+  el.style.display='inline-flex';
+  el.innerHTML='<span class="rdot '+cls+'"></span>'
+    +'<span class="rval">'+(r.ratio!==null?r.ratio.toFixed(2):'—')+':1</span>';
+  el.title='Parts : Labour — '+r.band
+          +'\nMonth '+r.month+'   ·   '+r.jobs+' jobs'
+          +'\nParts '+inr(r.parts)+'   ·   Labour '+inr(r.labour)
+          +(r.labourShortfall>0 ? '\nLabour short of parity: '+inr(r.labourShortfall) : '\nParity reached')
+          +'\nSource: '+r.source
           +'\nTarget is 1:1 across the month, not on any single job card.';
 }
 
@@ -3276,9 +3328,20 @@ function geOnPhotoChange(e, side){
       // AUTO-READ (Ravi 14-Jul): no button press. The moment the plate photo (front)
       // AND the odometer photo both exist, recognition fires by itself — guard keeps
       // shooting the remaining sides while AI fills reg + km in the background.
-      if(!GE_AI_AUTORAN && !GE_AI_RESULT && GE_PHOTOS.front && GE_PHOTOS.odo){
-        GE_AI_AUTORAN=true; try{ geRecognise(); }catch(e){}
-      }
+      /* DISABLED 31-Jul-2026. This fired geRecognise() the moment the odometer
+         photo arrived — and geRecognise resets GE_ID.done and re-runs the whole
+         identification from the front photo again. That was the third read of
+         the same picture.
+
+         It is also redundant: the later wiring block already starts the plate
+         read the instant the front photo exists, and reads the odometer when
+         the odometer photo exists. Nothing is lost by removing this; the guard
+         still gets reg and km filled automatically, just once each. */
+      /* (auto-run removed — see geOnPhotoChange override further down) */
+      /* Ask the server for the next token NOW, while the guard is still taking
+         photos, so that Save can show it the instant it is pressed instead of
+         saying "Saving in background…". See geSaveEntry. */
+      try{ if(GE_PHOTOS.front && !GE_TOKEN_PRE && !GE_TOKEN_PREBUSY) gePrefetchToken(); }catch(e){}
       geApplyPhotoGate();
     };
     img.src=ev.target.result;
@@ -3745,6 +3808,38 @@ function geResolveModel(model){
 function geWaNum(m){ return (m||'').replace(/\D/g,''); }
 
 let GE_TODAY_COUNT=0;
+/* ==========================================================================
+   OPTIMISTIC SAVE — the token appears the moment Save is pressed.
+                                                        (Ravi 31-Jul-2026)
+   "Saving in background. Who wants to read that. After clicking save, it
+    should immediately say Token no - **** - created. Optimistic save."
+
+   The token is issued by the server, so showing it instantly means having it
+   BEFORE Save is pressed. It is fetched while the guard is still photographing
+   the vehicle — several seconds of dead time that were being wasted.
+
+   Why not just invent a token on the phone: that was tried in July and it
+   poisoned the whole day's sequence. The backend numbers tokens from the
+   largest trailing number it can see, so one made-up 'WS-1721...' row pushed
+   every later token into the millions. The number must come from the server.
+
+   If the pre-fetch has not returned yet, Save still works exactly as before —
+   it just shows the token a second later instead of instantly. Nothing is
+   blocked and nothing is invented.
+   ========================================================================== */
+let GE_TOKEN_PRE=null, GE_TOKEN_PREBUSY=false, GE_TOKEN_PRELOC='';
+function gePrefetchToken(){
+  const loc=val('ge-loc'); if(!loc || !ONLINE) return;
+  GE_TOKEN_PREBUSY=true; GE_TOKEN_PRELOC=loc;
+  jget('next_token', {location:loc}, function(t){
+    GE_TOKEN_PREBUSY=false;
+    /* Keep it only if it is a real server token and the guard has not switched
+       location in the meantime. */
+    if(t && t.token && GE_TOKEN_PRELOC===val('ge-loc')) GE_TOKEN_PRE=t;
+    else GE_TOKEN_PRE=null;
+  });
+}
+
 function geSaveEntry(){
   const msg=document.getElementById('ge-msg'); msg.style.color='var(--steel)'; msg.textContent='';
   document.getElementById('ge-okban').style.display='none';
@@ -3775,8 +3870,17 @@ function geSaveEntry(){
 
   // INSTANT RESET — don't wait on any network call. The save happens in the background;
   // this is what makes it feel like AppSheet (tap, gone, next form, ready in milliseconds).
-  document.getElementById('ge-okban').style.display='block';
-  document.getElementById('ge-okban').textContent='Saving in background…';
+  /* Take the pre-fetched token now, before the form is cleared, and say it out
+     loud. If it is not here yet the banner is honest about that rather than
+     printing a number nobody issued. */
+  const preTok = (GE_TOKEN_PRE && GE_TOKEN_PRE.token) ? GE_TOKEN_PRE : null;
+  GE_TOKEN_PRE=null;
+  const okban=document.getElementById('ge-okban');
+  okban.style.display='block';
+  okban.style.color='';
+  okban.textContent = preTok
+    ? ('✅ Token ' + preTok.token + ' created · ' + reg)
+    : ('✅ Saved · ' + reg + ' — token coming…');
   ['ge-name','ge-mob','ge-alt','ge-reg','ge-km','ge-other'].forEach(i=>{ const el=document.getElementById(i); if(el) el.value=''; });
   document.getElementById('ge-model').value='';
   document.querySelectorAll('#ge-purpose-grid .pill').forEach(x=>x.classList.remove('sel'));
@@ -3809,7 +3913,11 @@ function geSaveEntry(){
       empno:USER.empno, empname:USER.personName};
     jpost(rec).then(()=>{
       const ban=document.getElementById('ge-okban');
-      if(ban) { ban.textContent='Saved — '+reg+' · Token: '+token; }
+      /* Only rewrite the banner if it was not already showing this token —
+         otherwise the guard sees the same line flicker and rewrite itself. */
+      if(ban && String(ban.textContent||'').indexOf(token)<0){
+        ban.textContent='✅ Token '+token+' created · '+reg;
+      }
       // Teach reg→model ONCE, only now that the entry is actually saved (issue 1 fix).
       try{ geTeachModel(reg, model); }catch(e){}
       geAddMyEntry({reg,model,token,time:new Date(),name,mob,alt,purpose,km,guard,empno:USER.empno,empname:USER.personName});
@@ -3818,11 +3926,19 @@ function geSaveEntry(){
       if(ban){ ban.style.color='var(--signal-d)'; ban.textContent='⚠ Could not confirm save for '+reg+' — check connection, may need re-entry.'; }
     });
   };
-  jget('next_token', {location:loc}, function(t1){
-    if(t1 && t1.token){ geAfterToken(t1); return; }
-    if(t1 && t1.error==='network'){ geAfterToken(t1); return; } // network is clearly down — use the safe fallback token now, don't make the guard wait through a second 20s timeout
-    jget('next_token', {location:loc}, function(t2){ geAfterToken(t2); }); // one retry only when the first reply wasn't a network failure
-  });
+  if(preTok){
+    /* Already have a real server token - no round trip, no wait. */
+    geAfterToken(preTok);
+  } else {
+    jget('next_token', {location:loc}, function(t1){
+      if(t1 && t1.token){ geAfterToken(t1); return; }
+      if(t1 && t1.error==='network'){ geAfterToken(t1); return; } // network is clearly down — use the safe fallback token now, don't make the guard wait through a second 20s timeout
+      jget('next_token', {location:loc}, function(t2){ geAfterToken(t2); }); // one retry only when the first reply wasn't a network failure
+    });
+  }
+  /* Get the next vehicle's token ready while this one uploads, so the very
+     next Save is instant too. */
+  setTimeout(function(){ try{ if(!GE_TOKEN_PRE && !GE_TOKEN_PREBUSY) gePrefetchToken(); }catch(e){} }, 1200);
 }
 </script>
 <script>
@@ -6998,7 +7114,7 @@ function huRender(){
       <th style="width:14px">●</th><th>Reg No</th><th>Model</th><th>Days</th><th>JC Type</th><th>Order Status</th><th>SA</th>
       <th style="min-width:190px">Daily Review Status</th>
       <th style="min-width:110px">ETA</th><th style="min-width:180px">Remarks</th>
-      <th style="width:44px">📷</th><th style="width:64px">Action</th><th style="width:40px">📅</th>
+      <th style="width:70px">Req</th><th style="width:64px">Action</th><th style="width:40px">📅</th>
     </tr></thead>
     <tbody>${rows.map((r,i)=>{
       const days=r.__days;
@@ -7025,11 +7141,11 @@ function huRender(){
         <td style="width:32px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${isSel?'checked':''} onchange="huToggleRow(${i},this.checked)"></td>
         <td style="width:18px;text-align:center;pointer-events:none"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${dotCls==='green'?'var(--ok)':'var(--signal-d)'}"></span></td>
         <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}</td>
-        <td style="font-size:12px;white-space:nowrap">${r[HU_COLS.model]||'—'}</td>
+        <td class="hu-wrapcell" style="font-size:12px;min-width:96px">${r[HU_COLS.model]||'—'}</td>
         <td class="td-days ${dClass}">${days>=0?days+'d':'—'}</td>
-        <td style="font-size:11px;white-space:nowrap">${r[HU_COLS.type]||'—'}</td>
-        <td style="font-size:11px;white-space:nowrap">${r[HU_COLS.status]||'—'}</td>
-        <td style="font-size:11px;color:var(--steel);white-space:nowrap">${saName||'—'}</td>
+        <td class="hu-wrapcell" style="font-size:11px;min-width:72px">${r[HU_COLS.type]||'—'}</td>
+        <td class="hu-wrapcell" style="font-size:11px;min-width:88px">${r[HU_COLS.status]||'—'}</td>
+        <td class="hu-wrapcell" style="font-size:11px;color:var(--steel);min-width:84px">${saName||'—'}</td>
         <td onclick="event.stopPropagation()">${canEdit
           ?`<select class="drs-select" onchange="huInlineUpdate(${i},'status',this.value)" style="color:${drsColor};font-weight:600"><option value="">Select status…</option>${drsOptsHtml}</select>`
           :`<span class="drs-badge" style="background:${drsColor}15;color:${drsColor};border:1px solid ${drsColor}40;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600">${curHS||'—'}</span>`}</td>
@@ -7308,11 +7424,23 @@ function huReqPhotoCell(r, i){
   // Per project note: the requisition-photo option must be available ALL the time —
   // not only after a parts status is saved (that link appeared too late). Parts cases
   // get a highlighted button so the missing slip stands out.
-  return `<button class="hu-req-photo-btn${isPartCase?' has-photo':''}" onclick="huUploadPhoto(${i})" title="Upload requisition slip photo">📷${isPartCase?'<span style="font-size:9px;color:#dc2626;font-weight:800">!</span>':''}</button>`;
+  /* Labelled "Req punching" so it is obvious what the camera is for — an icon
+     alone told nobody. The label is tiny and sits under the icon so the column
+     width does not change. */
+  return `<button class="hu-req-photo-btn${isPartCase?' has-photo':''}" onclick="huUploadPhoto(${i})" title="Req punching — take a photo or pick the slip from the gallery">📷${isPartCase?'<span style="font-size:9px;color:#dc2626;font-weight:800">!</span>':''}<span class="hu-req-lbl">Req punching</span></button>`;
 }
 function huUploadPhoto(rowIdx){
   const r=HU_ROWS_CURRENT[rowIdx]; if(!r) return;
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  /* CAMERA OR GALLERY, NOT CAMERA ONLY.               (Ravi 31-Jul-2026)
+     "it opens camera directly. What if the requisition is saved on the phone.
+      it should give both options."
+
+     capture='environment' is an instruction to the phone: skip the picker and
+     open the rear camera now. Dropping it is the whole fix — Android and iOS
+     then show their own chooser with Camera, Gallery and Files, which is the
+     familiar sheet every user already knows. No custom menu needed, and it
+     stays correct on a laptop too, where there may be no camera at all. */
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
   inp.onchange=function(){
     const file=inp.files[0]; if(!file) return;
     const reader=new FileReader();
@@ -9948,7 +10076,12 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     return '';
   };
 
-  const GE_ID = { busy:false, plate:'', done:false };
+  /* tried{} — every photo slot this gate entry has ALREADY sent to OCR.
+     Ravi 31-Jul-2026: "After putting in odometer, it again scans each photo
+     again and again. How many times are you going to waste reading like this.
+     If it is not caught in the first time it should stop at that."
+     He is right, and it was costing a Vision/Gemini call every time. */
+  const GE_ID = { busy:false, plate:'', done:false, tried:{} };
   window.GE_ID = GE_ID;
 
   function el(id){ return document.getElementById(id); }
@@ -10121,15 +10254,34 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
         }catch(e){}
         return geNormPlate(await askGemini(dataUrl, PLATE_PROMPT, 'registration_number'));
       };
-      if(GE_PHOTOS.front){
+      /* READ EACH PHOTO ONCE. A slot already sent to OCR is never sent again,
+         however many times this function is re-entered — and it is re-entered
+         on every photo capture and by the purple button. Before this, the front
+         photo was read up to three times per gate entry: once on capture, again
+         when the back photo arrived, and again when the odometer triggered the
+         old auto-run. Every one of those is a paid Vision/Gemini call, and each
+         one announced "reading the number plate from the front photo", which is
+         why the same message appeared for the back photo too. */
+      if(GE_PHOTOS.front && !GE_ID.tried.front){
+        GE_ID.tried.front=true;
         status('⏳ Reading the number plate from the front photo…','info');
         plate=await readPlate(GE_PHOTOS.front);
         from='front';
       }
-      if(!raviValidReg(plate) && GE_PHOTOS.back){
-        status('⏳ Front plate not clear — reading the back photo…','info');
+      if(!raviValidReg(plate) && GE_PHOTOS.back && !GE_ID.tried.back){
+        GE_ID.tried.back=true;
+        status('⏳ Front plate not clear — now reading the <b>back</b> photo…','info');
         const p2=await readPlate(GE_PHOTOS.back);
         if(raviValidReg(p2)){ plate=p2; from='back'; }
+      }
+      /* Both photos already attempted and neither gave a plate — stop. Do not
+         loop back to the front and pay for it a second time. */
+      if(!raviValidReg(plate) && GE_ID.tried.front && GE_ID.tried.back){
+        GE_ID.busy=false; GE_ID.done=true;
+        status('⚠ The plate could not be read from either photo. Please type the reg number below, '+
+               'or use the chassis number.','warn');
+        try{ geRevealDetails(); geVinShow('The number plate could not be read from the photos.'); }catch(e){}
+        return;
       }
       if(!raviValidReg(plate)){
         GE_ID.busy=false;
@@ -10369,7 +10521,9 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   /* ------------------------------------------------- odometer, on its own call */
   window.geReadOdo = async function(){
     if(!GE_PHOTOS.odo) return;
+    if(GE_ID.tried.odo) return;              // read once per gate entry, never again
     const kmEl=el('ge-km'); if(kmEl && String(kmEl.value||'').trim()) return;   // guard already typed it
+    GE_ID.tried.odo=true;
     const raw=await askGemini(GE_PHOTOS.odo,
       'Read the TOTAL odometer reading from this two-wheeler instrument cluster. '+
       'Take the main large number only. Ignore the trip meter, clock, speed, fuel bars and gear. '+
@@ -10395,12 +10549,19 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   };
 
   /* The purple button becomes a manual re-run of the same path. */
-  window.geRecognise = function(){ GE_ID.done=false; GE_ID.busy=false; geIdentify('button'); geReadOdo(); };
+  /* The purple button is an explicit "try again", so it DOES clear the
+     read-once record — that is the one place a re-read is intentional. */
+  window.geRecognise = function(){
+    GE_ID.done=false; GE_ID.busy=false; GE_ID.tried={};
+    geIdentify('button'); geReadOdo();
+  };
 
   /* Clearing the photos resets the identification state too. */
   const OLD_REMOVE = window.geRemovePhoto;
   window.geRemovePhoto = function(side){
-    if(!side){ GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false; geVinHide(); }
+    if(!side){ GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false; GE_ID.tried={}; geVinHide(); }
+    /* A replaced photo is a NEW photo, so that one slot may be read again. */
+    else if(GE_ID.tried) delete GE_ID.tried[side];
     return OLD_REMOVE ? OLD_REMOVE.apply(this, arguments) : undefined;
   };
 
