@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 5;
-window.HERO_BUILD = 'R5-2026.07.28';
+window.HERO_RELEASE = 14;
+window.HERO_BUILD = 'R14-2026.07.29';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -377,6 +377,19 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
   .chip{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12.5px}
   .chip b{font-family:'Roboto Mono';font-weight:500}
   .chip .x{color:var(--signal);cursor:pointer;font-weight:700;padding:0 4px}
+  /* Fitting labour carried in by a part: shown, priced, and not removable on its own. */
+  .chip .lk{color:var(--steel);cursor:default;padding:0 4px;opacity:.75}
+  /* 1:1 parts:labour strip — same visual language as the rest of the top bar */
+  .ratiostrip{display:flex;align-items:center;gap:8px;margin-left:10px;padding:5px 12px;
+              border:1.5px solid var(--line);border-radius:8px;background:#fff;
+              font-size:12.5px;font-weight:600;white-space:nowrap}
+  .ratiostrip .rlab{color:var(--steel);font-weight:600}
+  .ratiostrip .rval{font-family:'Roboto Mono';font-weight:700}
+  .ratiostrip .rband{padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700}
+  .ratiostrip .rband.ok{background:#dcfce7;color:#166534}
+  .ratiostrip .rband.close{background:#fef9c3;color:#854d0e}
+  .ratiostrip .rband.behind{background:#fee2e2;color:#991b1b}
+  .ratiostrip .rgap{color:var(--steel);font-weight:600}
   .plus{background:var(--ink);color:#fff;border:none;border-radius:7px;padding:0 14px;height:40px;font-size:20px;cursor:pointer;flex:0 0 auto}
   .live{background:var(--ink);color:#fff;border-radius:10px;padding:13px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center}
   .live .l{font-family:'Barlow Condensed';font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:#aab0b8}
@@ -1105,6 +1118,11 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
     <button class="navbtn" onclick="goHome()">Home</button>
     <button class="navbtn" onclick="logout()">Logout</button>
   </div>
+  <!-- 1:1 parts:labour position for the month. Shown on every screen to every
+       role, because Ravi made it the main project: "everybody should see it".
+       INTERNAL ONLY - it must never reach a customer estimate, PDF or WhatsApp
+       (CLAUDE.md rule 7). It reports; it never changes a price. -->
+  <div id="ratiostrip" class="ratiostrip" style="display:none" title="Parts to labour, this month. Target 1:1."></div>
   <div class="net" id="netbadge" style="margin-left:auto"><span class="dot"></span><span id="nettxt">Checking…</span></div>
   <div id="backend-status-box" style="display:flex;align-items:center;gap:10px;margin-left:10px;padding:5px 12px;border:1.5px solid var(--line);border-radius:8px;background:#fff">
     <span id="ver-badge" onclick="checkBackendVersion()" style="cursor:pointer;font-size:12px;font-weight:800;color:var(--ink)" title="Tap to verify backend deployment version">Backend Server: Check</span>
@@ -1444,6 +1462,14 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
                 </label>
               </div>
               <div class="chips" id="es-chips"></div>
+            </div>
+
+            <!-- What the owner manual says is due for THIS bike. Filled by
+                 esLoadServiceDue() from the svc_due route. Advisory only —
+                 nothing is added to the estimate without the advisor tapping it. -->
+            <div id="es-due-wrap" style="display:none;margin-top:12px">
+              <div class="sec">Owner manual — due for this vehicle</div>
+              <div id="es-due-list"></div>
             </div>
 
             <div class="sec">Express service</div>
@@ -2687,6 +2713,59 @@ function wsAllowed(ws){
 }
 
 /* ================= NAVIGATION ================= */
+/* ==========================================================================
+   THE 1:1 STRIP                                     (Ravi, 29-Jul-2026)
+
+   "Add this strip in each window SA, WM, GM, CEO, Parts, Billing almost all
+    of them... Lets make it our main project for the Hero app.
+    Parts : Labour ratio of 1:1. That automatically solves the labour problem."
+
+   One number, on every screen, for every role. Parts against labour for the
+   MONTH so far, and how many rupees of labour are short of parity.
+
+   It is a mirror, not a control. It never adds a line, never changes a price
+   and never blocks a save. The month is the target, not the job card - forcing
+   1:1 on one bike would mean charging labour to a customer who only needs a
+   part. Seeing the month position is what lets the advisor push the justified
+   work on the vehicles that genuinely need it.
+
+   INTERNAL. Never on a customer estimate, PDF or WhatsApp. CLAUDE.md rule 7.
+   Cached for 10 minutes so moving between screens costs nothing.
+   ========================================================================== */
+let RATIO_CACHE = {at:0, data:null};
+const RATIO_TTL_MS = 10*60*1000;
+function hxRenderRatioStrip(force){
+  const el=document.getElementById('ratiostrip');
+  if(!el) return;
+  if(!USER){ el.style.display='none'; return; }
+  const fresh = RATIO_CACHE.data && (Date.now()-RATIO_CACHE.at < RATIO_TTL_MS);
+  if(fresh && !force){ hxPaintRatio(RATIO_CACHE.data); return; }
+  if(!RATIO_CACHE.data){ el.style.display='flex'; el.innerHTML='<span class="rlab">Parts : Labour</span><span class="rval">…</span>'; }
+  jget('ratio_today',{},function(res){
+    if(!res||!res.ok) return;
+    RATIO_CACHE={at:Date.now(),data:res};
+    hxPaintRatio(res);
+  });
+}
+function hxPaintRatio(r){
+  const el=document.getElementById('ratiostrip');
+  if(!el) return;
+  if(!r||!r.jobs){ el.style.display='none'; return; }   // nothing billed yet this month
+  const cls = r.band==='ON TARGET' ? 'ok' : (r.band==='CLOSE' ? 'close' : 'behind');
+  /* Ratio is shown as parts:labour, e.g. 1.64 means parts are 1.64x labour. */
+  const gap = r.labourShortfall>0
+    ? '<span class="rgap">labour short '+inr(r.labourShortfall)+'</span>'
+    : '<span class="rgap">parity reached</span>';
+  el.style.display='flex';
+  el.innerHTML='<span class="rlab">Parts : Labour</span>'
+    +'<span class="rval">'+(r.ratio!==null?r.ratio.toFixed(2):'—')+' : 1</span>'
+    +'<span class="rband '+cls+'">'+r.band+'</span>'
+    +gap;
+  el.title='Month '+r.month+'  ·  parts '+inr(r.parts)+'  ·  labour '+inr(r.labour)
+          +'  ·  '+r.jobs+' jobs  ·  source: '+r.source
+          +'\nTarget is 1:1 across the month, not on any single job card.';
+}
+
 function showView(name){
   ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder'].forEach(v=>{
     const el = document.getElementById('view-'+v);
@@ -2694,13 +2773,20 @@ function showView(name){
   });
   const whobox = document.getElementById('whobox');
   const pwdBtn = document.getElementById('topright-pwd-btn');
-  if(name==='login'){ whobox.style.display='none'; if(pwdBtn) pwdBtn.style.display='none'; }
+  const rstrip = document.getElementById('ratiostrip');
+  if(name==='login'){
+    whobox.style.display='none';
+    if(pwdBtn) pwdBtn.style.display='none';
+    if(rstrip) rstrip.style.display='none';
+  }
   else if(USER){
     whobox.style.display='flex';
     if(pwdBtn) pwdBtn.style.display='inline-block';
     document.getElementById('who-name').textContent = USER.personName || USER.empno;
     document.getElementById('who-role').textContent = USER.level || USER.designation || '';
     document.getElementById('who-ws').textContent = USER.ws;
+    /* Every screen, every role. Cached, so switching screens costs nothing. */
+    try{ hxRenderRatioStrip(false); }catch(e){}
   }
 }
 function goHome(){
@@ -4386,6 +4472,7 @@ document.getElementById('es-model').addEventListener('change',()=>{
   esResetRemoved();
   esLoadLabourForSelectedModel(val('es-model'));
   esEnsurePartsReady(); // preload parts now so Category is ready and fast when the SA reaches it
+  try{ esLoadServiceDue(); }catch(e){}   // owner-manual due list
   esUpdateLive();
 });
 let __esLiveTimer=null;
@@ -4600,10 +4687,42 @@ function esAddPartFn(){
   if(map){
     let added=[];
     map.labours.forEach(lb=>{
-      if(!ES_ADDLAB.some(x=>x.l.toLowerCase()===lb.l.toLowerCase())){ ES_ADDLAB.push({l:lb.l,p:lb.p,code:lb.code,cc:lb.cc,_fromPart:row.l}); added.push(lb.l+' ('+inr(lb.p)+')'); }
+      if(!ES_ADDLAB.some(x=>x.l.toLowerCase()===lb.l.toLowerCase())){ ES_ADDLAB.push({l:lb.l,p:lb.p,code:lb.code,cc:lb.cc,_fromPart:row.l,_fromPn:row.pn||'',_locked:true}); added.push(lb.l+' ('+inr(lb.p)+')'); }
     });
     const msg=document.getElementById('es-msg');
     if(msg && added.length){ msg.style.color='var(--ok)'; msg.textContent='🔗 Linked labour added: '+added.join(', ')+'. It will be removed automatically if the part is removed.'; setTimeout(()=>{ if(msg.textContent.indexOf('Linked labour')>-1) msg.textContent=''; },7000); }
+  }
+  /* ESTIMATE ENGINE (Ravi 28-Jul-2026) — backend top-up of the fitment labour.
+     esFindLinkedLabours() above matches on the part NAME against MD_PartLabourMap,
+     which only covers the parts somebody has mapped by hand. The backend
+     MD_Tree_PartLink table covers 8,239 part NUMBERS, follows supersession chains,
+     and carries the per-model rate. So: the local map still fires instantly (this
+     is what the SA sees the moment the part is picked, and it works offline), and
+     the backend then fills in anything the local map did not know about.
+     Never blocks, never removes a line the local map already added. */
+  if(row.pn){
+    try{
+      jget('ee_forpart',{part:row.pn,model:esCurrentModelUP()},function(res){
+        if(!res||!res.ok||!res.labour||!res.labour.length) return;
+        // The part may have been taken off the estimate while this call was in flight.
+        if(!ES_ADDPART.some(x=>x.pn===row.pn)) return;
+        const gained=[];
+        res.labour.forEach(function(lb){
+          const code=String(lb.code||'').trim(), desc=String(lb.desc||'').trim();
+          if(!desc && !code) return;
+          const dup=ES_ADDLAB.some(x=>
+            (code && String(x.code||'').trim().toUpperCase()===code.toUpperCase()) ||
+            (desc && String(x.l||'').trim().toUpperCase()===desc.toUpperCase()));
+          if(dup) return;
+          ES_ADDLAB.push({l:desc||code,p:Number(lb.rate||0),code:code,cc:'',_fromPart:row.l,_fromPn:row.pn||'',_locked:true});
+          gained.push((desc||code)+' ('+inr(Number(lb.rate||0))+')');
+        });
+        if(!gained.length) return;
+        esDrawChips();
+        const m2=document.getElementById('es-msg');
+        if(m2){ m2.style.color='var(--ok)'; m2.textContent='🔗 Linked labour added: '+gained.join(', ')+'. It will be removed automatically if the part is removed.'; setTimeout(()=>{ if(m2.textContent.indexOf('Linked labour')>-1) m2.textContent=''; },7000); }
+      });
+    }catch(e){}
   }
   document.getElementById('es-add-pcat').value='';
   var _sub=document.getElementById('es-add-psub'); if(_sub) _sub.innerHTML='<option value="">Sub-category…</option>';
@@ -4617,11 +4736,25 @@ esRenderPartCategoryDropdown();
 function esDrawChips(){
   const c=document.getElementById('es-chips');
   c.innerHTML=[...ES_ADDLAB.map((x,i)=>({...x,t:'L',i})),...ES_ADDPART.map((x,i)=>({...x,t:'P',i}))]
-    .map(x=>`<div class="chip"><span>${x.t==='L'?'🔧':'⚙️'} ${x.l}${x.code?' <b style="font-size:10px;color:var(--steel)">['+x.code+']</b>':''}</span><span><b>${inr(x.p)}</b> <span class="x" onclick="esRmChip('${x.t}',${x.i})">✕</span></span></div>`).join('');
+    /* A labour line that a part brought with it carries a lock, not a ✕. It is the
+       fitting labour for that part — it goes when the part goes, and not before.
+       The SA explains it; the SA does not delete it. Everything else stays removable. */
+    .map(x=>`<div class="chip"><span>${x.t==='L'?'🔧':'⚙️'} ${x.l}${x.code?' <b style="font-size:10px;color:var(--steel)">['+x.code+']</b>':''}</span><span><b>${inr(x.p)}</b> ${(x.t==='L'&&x._locked)?`<span class="lk" title="Fitting labour for ${(x._fromPart||'the part').replace(/"/g,'')} — it comes off when that part is removed">🔒</span>`:`<span class="x" onclick="esRmChip('${x.t}',${x.i})">✕</span>`}</span></div>`).join('');
   esUpdateLive();
 }
 function esRmChip(t,i){
-  if(t==='L'){ ES_ADDLAB.splice(i,1); }
+  if(t==='L'){
+    /* Belt and braces: the chip for a locked line renders a 🔒 and no ✕, so this
+       cannot normally be reached. It still guards the array, because a phone on an
+       older cached page could call it with a stale index. */
+    const lk=ES_ADDLAB[i];
+    if(lk&&lk._locked){
+      const m=document.getElementById('es-msg');
+      if(m){ m.style.color='var(--steel)'; m.textContent='🔒 This labour goes with '+(lk._fromPart||'the part')+'. Remove that part and this comes off with it.'; setTimeout(()=>{ if(m.textContent.indexOf('This labour goes with')>-1) m.textContent=''; },5000); }
+      return;
+    }
+    ES_ADDLAB.splice(i,1);
+  }
   else {
     const removed=ES_ADDPART[i];
     ES_ADDPART.splice(i,1);
@@ -4843,10 +4976,60 @@ function esAnnotateDmsCodes(L, dec, freeStage, modelName){
   L.parts.forEach(it=>{ if(!it.pn){ const pn=esPartNo(it.l, modelName); if(pn) it.pn=pn; } });
   return L;
 }
+/* ==========================================================================
+   REMOVING A RECOMMENDED PART                        (Ravi, 29-Jul-2026)
+
+   "Removing them will give a warning that the owners manual recommends to
+    replace the same at these intervals."
+
+   The part still comes off. This is a warning, not a block - the customer may
+   have a good reason and the advisor must be able to act on it. What it does
+   is make sure nobody removes a scheduled item without seeing what Hero says
+   about it, in Hero's own words.
+
+   The text comes from MD_PartConsequence, which is Hero's own "consequential
+   damages on using non-genuine parts" table, and from MD_ReplacementRules for
+   the interval. Nothing here is written by us.
+   ========================================================================== */
+let ES_CONSEQ_CACHE = {};
+function esWarnBeforeRemove(label, onProceed){
+  const name=String(label||'').trim();
+  if(!name){ onProceed(); return; }
+  const key=name.toUpperCase();
+  const show=(res)=>{
+    let msg='';
+    const m=(res&&res.matches)||[];
+    if(m.length && m[0].consequences && m[0].consequences.length){
+      msg='The owner manual lists this part.\n\nHero states that fitting a non-genuine '
+         +m[0].part+' causes:\n  • '+m[0].consequences.slice(0,4).join('\n  • ')
+         +'\n\nRemove it from the estimate anyway?';
+    }
+    if(!msg){ onProceed(); return; }          // nothing on record, do not invent a warning
+    if(confirm(msg)) onProceed();
+  };
+  if(ES_CONSEQ_CACHE[key]){ show(ES_CONSEQ_CACHE[key]); return; }
+  try{
+    jget('svc_consequence',{part:name},function(res){
+      ES_CONSEQ_CACHE[key]=res;
+      show(res);
+    });
+  }catch(e){ onProceed(); }
+}
+
 function esRemoveItem(label){
   const c=esComputeCurrent();
   const linked=c&&c.items.labour.find(x=>x.l===label&&x._fromPart);
   if(linked){ alert('This labour is linked to a selected part. Remove the part to remove its labour.'); return; }
+  /* If this is a part the manual recommends, say so first. The removal still
+     happens if the advisor confirms - esRemoveItemNow does the work. */
+  const isPart=c&&c.items.parts.some(x=>x.l===label);
+  if(isPart && !esRemoveItem._confirmed){
+    esWarnBeforeRemove(label,function(){
+      esRemoveItem._confirmed=true;
+      try{ esRemoveItem(label); } finally { esRemoveItem._confirmed=false; }
+    });
+    return;
+  }
   ES_UNDO_STACK.push({removed:new Set(ES_REMOVED),overrides:{...ES_PRICE_OVERRIDES},lineDiscounts:JSON.parse(JSON.stringify(ES_LINE_DISCOUNTS||{})),label:label});
   if(ES_UNDO_STACK.length>10) ES_UNDO_STACK.shift();
   ES_REMOVED.add(label);
@@ -4884,13 +5067,146 @@ function esRenderUndoBtn(){
 }
 function esResetRemoved(){ ES_REMOVED=new Set(); }
 
+/* Odometer and date of sale both change what the manual says is due, so the
+   panel refreshes when either is edited. Debounced — the advisor is typing. */
+let ES_DUE_TIMER=null;
+['es-km','es-dos'].forEach(function(id){
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('change',function(){
+    clearTimeout(ES_DUE_TIMER);
+    ES_DUE_TIMER=setTimeout(function(){ try{ esLoadServiceDue(); }catch(e){} },400);
+  });
+});
+
+/* ==========================================================================
+   THE ONE RULE THAT CANNOT BE ALLOWED TO BREAK  (Ravi, 29-Jul-2026)
+
+   "Removing the part should remove its corresponding labours also. If the
+    labour stays and gets billed and the customer sees that he is being billed
+    for labour without parts, he will complain to Hero. That will be a bigger
+    problem than the App itself."
+
+   Fitment labour is added from THREE different places — the local part→labour
+   map, the backend ee_forpart engine, and the repair tree — and it can be
+   removed from TWO (the chip ✕ and the estimate line ✕), with an undo stack on
+   top. Every one of those paths tried to tidy up after itself at the moment of
+   removal. That is five places to get right and any one of them missing a case
+   — a label typed in a different case, a backend labour the local map has never
+   heard of, an undo that puts a part back but not its labour — puts a labour
+   line on a printed estimate with no part behind it.
+
+   So it is not enforced at the removal points. It is enforced HERE, at the one
+   place the estimate is actually computed, on every recompute. Whatever route a
+   part left by, its labour cannot survive the next calculation. Totals, the
+   printed estimate and the saved record are all built from what this returns.
+
+   Standalone labour — the service package, anything the advisor added on its
+   own — has no _fromPart/_fromPn and is never touched.
+   ========================================================================== */
+let ES_ORPHAN_LABOUR = [];
+function esEnforceLinkedLabour_(items){
+  ES_ORPHAN_LABOUR = [];
+  if(!items || !Array.isArray(items.labour) || !items.labour.length) return items;
+
+  const key = v => String(v == null ? '' : v).trim().toUpperCase();
+  const present = new Set();
+  (items.parts || []).forEach(function(p){
+    if(p && p.l)  present.add(key(p.l));
+    if(p && p.pn) present.add(key(p.pn));
+  });
+  /* Oil is a consumable line, not a part line, but oil-change labour is still
+     legitimately backed by it. Count it as present. */
+  (items.oil || []).forEach(function(o){ if(o && o.l) present.add(key(o.l)); });
+
+  items.labour = items.labour.filter(function(lb){
+    const fromL = key(lb && lb._fromPart), fromP = key(lb && lb._fromPn);
+    if(!fromL && !fromP) return true;                       // standalone labour
+    if(fromP && present.has(fromP)) return true;            // its part is here
+    if(fromL && present.has(fromL)) return true;
+    ES_ORPHAN_LABOUR.push(lb.l || lb.code || '');
+    return false;                                           // part gone → labour goes
+  });
+  return items;
+}
+
+/* ==========================================================================
+   OWNER MANUAL — WHAT IS DUE FOR THIS BIKE          (Ravi, 29-Jul-2026)
+
+   Why this exists, in one line: our own billing shows we replaced brake fluid
+   ZERO times and front fork oil ZERO times in 14 months, on 19,366 oil changes.
+   The manual says both are due every 2 years OR 30,000 km, whichever comes
+   first. Nothing in the app was ever date-driven, so on a bike doing 6,000 km
+   a year the km rule only arrives in year five and the job was never raised.
+
+   This panel asks the backend (svc_due) what is due for the model, the current
+   odometer AND the date of sale, then shows it. It adds nothing by itself.
+   The advisor taps an item to put it on the estimate, so the decision and the
+   explanation stay with the person facing the customer.
+   ========================================================================== */
+let ES_DUE_CACHE = {key:'', data:null};
+function esLoadServiceDue(){
+  const wrap=document.getElementById('es-due-wrap'), list=document.getElementById('es-due-list');
+  if(!wrap||!list) return;
+  const model=val('es-model'), km=+val('es-km')||0, dos=val('es-dos');
+  if(!model){ wrap.style.display='none'; return; }
+  const key=model+'|'+km+'|'+dos;
+  if(ES_DUE_CACHE.key===key && ES_DUE_CACHE.data){ esRenderServiceDue(ES_DUE_CACHE.data); return; }
+  list.innerHTML='<div class="hint">Checking the owner manual…</div>';
+  wrap.style.display='block';
+  jget('svc_due',{model:model,km:km,dateOfSale:dos||''},function(res){
+    if(val('es-model')!==model) return;           // advisor moved on
+    ES_DUE_CACHE={key:key,data:res};
+    esRenderServiceDue(res);
+  });
+}
+function esRenderServiceDue(res){
+  const wrap=document.getElementById('es-due-wrap'), list=document.getElementById('es-due-list');
+  if(!wrap||!list) return;
+  const due=(res&&res.due)||[], soon=(res&&res.upcoming)||[];
+  if(!due.length && !soon.length){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  const rowHtml=(x,isDue)=>{
+    /* Say WHY it is due. "2 years since sale" is a reason a customer accepts;
+       a bare due flag is not. */
+    const why=[];
+    if(x.dueByKm)   why.push(x.vehicleKm+' km against '+x.intervalKm+' km');
+    if(x.dueByDate) why.push(x.vehicleMonths+' months since sale against '+x.intervalMonths+' months');
+    if(!isDue && x.intervalKm) why.push('due at '+x.intervalKm+' km');
+    const name=String(x.item||'').replace(/</g,'&lt;');
+    return '<div class="chip" style="margin-bottom:6px">'
+      +'<span>'+(isDue?'🔧':'🕒')+' <b>'+name+'</b>'
+      +'<span style="display:block;font-size:11px;color:var(--steel)">'+why.join(' · ')+'</span></span>'
+      +'<span><button type="button" class="es-line-act" onclick="esAddDueItem(\''+name.replace(/'/g,"\\'")+'\')">Add</button></span>'
+      +'</div>';
+  };
+  let html='';
+  if(due.length)  html+=due.map(x=>rowHtml(x,true)).join('');
+  if(soon.length) html+='<div class="hint" style="margin:6px 0 4px">Coming up</div>'+soon.slice(0,4).map(x=>rowHtml(x,false)).join('');
+  if(res&&res.note) html+='<div class="hint" style="margin-top:6px">'+res.note+'</div>';
+  list.innerHTML=html;
+}
+/* Puts the item in the demanded/complaint box so it is recorded in the
+   advisor's own words. It does NOT silently price anything. */
+function esAddDueItem(name){
+  const box=document.getElementById('es-add-dem');
+  if(box){
+    const cur=String(box.value||'').trim();
+    if(cur.toLowerCase().indexOf(name.toLowerCase())<0) box.value=(cur?cur+', ':'')+name;
+  }
+  const m=document.getElementById('es-msg');
+  if(m){ m.style.color='var(--ok)'; m.textContent='📖 Added from the owner manual: '+name+'. Price it from the parts list.'; setTimeout(()=>{ if(m.textContent.indexOf('owner manual')>-1) m.textContent=''; },6000); }
+}
+
 function esComputeCurrent(){
   const modelName=val('es-model'); if(!modelName) return null;
   const fam=famFor(modelName);
   const ftype=val('es-type'); if(!ftype) return null;
   const km=+val('es-km')||0, dos=val('es-dos'), freeStage=val('es-freestage');
   const dec=esDecide(fam,ftype,freeStage); if(!dec) return null;
-  const items=esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName);
+  /* esEnforceLinkedLabour_ runs BEFORE anything is summed, so no total, no
+     printed line and no saved record can ever contain labour whose part is gone. */
+  const items=esEnforceLinkedLabour_(esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName));
   if(!items.protection) items.protection=[];
   const sumGross=a=>a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0);
   const sumNet=a=>a.reduce((x,y)=>x+(y.netP!==undefined?+y.netP:(+y.p||0)),0);
@@ -10680,8 +10996,8 @@ function rtAddPart(pn, btn){
     var r=rtResolve(L,rates);
     if(r.ev==='R' || !(r.rate>0)) return;
     if((ES_ADDLAB||[]).some(function(x){ return rtCode(x.code)===code; })) return;
-    ES_ADDLAB.push({l:r.name,p:r.rate,code:code,cc:p[5]||'',_fromPart:p[1],
-                    _fromTree:true,_amber:(r.ev==='A')});
+    ES_ADDLAB.push({l:r.name,p:r.rate,code:code,cc:p[5]||'',_fromPart:p[1],_fromPn:pn||'',
+                    _locked:true,_fromTree:true,_amber:(r.ev==='A')});
     added.push(r.name+(r.ev==='A'?' (rate not proven for this model \u2014 check)':''));
   });
   if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
