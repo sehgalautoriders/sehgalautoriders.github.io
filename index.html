@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 14;
-window.HERO_BUILD = 'R14-2026.07.29';
+window.HERO_RELEASE = 15;
+window.HERO_BUILD = 'R15-2026.07.31';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -184,10 +184,31 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
     } else { proceed(); }
   }
 
+  /* DO NOT RELOAD SOMEBODY MID-JOB.                    (Ravi 31-Jul-2026)
+     "the app refreshes automatically and comes on the first screen in between
+      of some work going on. really problematic"
+
+     He is right and this one is my own doing. On 28-Jul I added skipWaiting()
+     to sw.js so a new build would install silently, and wrote in the comment
+     that "the page already open is NOT reloaded". That was wrong: skipWaiting
+     makes the new worker take control at once, which fires controllerchange,
+     and this listener then reloaded the page immediately — throwing the user
+     back to Home in the middle of a gate entry or an estimate.
+
+     The new build is already downloaded and will be used the next time the app
+     is opened. There is nothing to gain by interrupting anybody now. So: note
+     it, tell them quietly, and let them finish. */
   navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (reloading) return; reloading = true;
-    heroStep('Restarting…');
-    setTimeout(function () { location.reload(); }, 350); // let the word "Restarting" be seen
+    if (reloading) return;
+    /* Flag it and say nothing loud. heroStep() writes into the full-screen
+       "Updating..." card, which is the very interruption being removed here.
+       The top-bar update badge picks this flag up and turns green; the new
+       build applies whenever the app is next opened. */
+    try { sessionStorage.setItem('hero_update_ready', '1'); } catch (e) {}
+    try {
+      var b = document.getElementById('hero-upd-now');
+      if (b) { b.textContent = '⟳ New build ready'; b.className = 'ok'; }
+    } catch (e) {}
   });
 
   window.addEventListener('load', function () {
@@ -379,10 +400,16 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
   .chip .x{color:var(--signal);cursor:pointer;font-weight:700;padding:0 4px}
   /* Fitting labour carried in by a part: shown, priced, and not removable on its own. */
   .chip .lk{color:var(--steel);cursor:default;padding:0 4px;opacity:.75}
-  /* 1:1 parts:labour strip — same visual language as the rest of the top bar */
+  /* 1:1 parts:labour strip — same visual language as the rest of the top bar.
+     OVERFLOW FIX (Ravi 31-Jul-2026): the top bar is a flex row that already has
+     two margin-left:auto children (whobox and netbadge). Adding a third item
+     with white-space:nowrap and no shrink meant the row could not compress and
+     ran off the right edge. It now shrinks, and drops its least important parts
+     first — the rupee gap, then the label — so the ratio itself always fits. */
   .ratiostrip{display:flex;align-items:center;gap:8px;margin-left:10px;padding:5px 12px;
               border:1.5px solid var(--line);border-radius:8px;background:#fff;
-              font-size:12.5px;font-weight:600;white-space:nowrap}
+              font-size:12.5px;font-weight:600;white-space:nowrap;
+              flex:0 1 auto;min-width:0;overflow:hidden}
   .ratiostrip .rlab{color:var(--steel);font-weight:600}
   .ratiostrip .rval{font-family:'Roboto Mono';font-weight:700}
   .ratiostrip .rband{padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700}
@@ -390,6 +417,11 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
   .ratiostrip .rband.close{background:#fef9c3;color:#854d0e}
   .ratiostrip .rband.behind{background:#fee2e2;color:#991b1b}
   .ratiostrip .rgap{color:var(--steel);font-weight:600}
+  /* Shed the optional parts before the bar can overflow. The ratio and its
+     band are the point; the rupee gap and the words are the nice-to-have. */
+  @media(max-width:1180px){ .ratiostrip .rgap{display:none} }
+  @media(max-width:1000px){ .ratiostrip .rlab{display:none} .ratiostrip{padding:5px 9px;gap:6px} }
+  @media(max-width:760px){  .ratiostrip{margin-left:0;font-size:11.5px} }
   .plus{background:var(--ink);color:#fff;border:none;border-radius:7px;padding:0 14px;height:40px;font-size:20px;cursor:pointer;flex:0 0 auto}
   .live{background:var(--ink);color:#fff;border-radius:10px;padding:13px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center}
   .live .l{font-family:'Barlow Condensed';font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:#aab0b8}
@@ -2767,6 +2799,8 @@ function hxPaintRatio(r){
 }
 
 function showView(name){
+  /* Remember where we are, so a reload returns here instead of Home. */
+  try{ if(name && name!=='login') sessionStorage.setItem('hero_view', name); }catch(e){}
   ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder'].forEach(v=>{
     const el = document.getElementById('view-'+v);
     if(el) el.style.display = (v===name) ? 'block' : 'none';
@@ -8602,19 +8636,41 @@ function heroSoftPlaceholder(el, html){
 /* ================= BOOT ================= */
 /* Trap browser back button inside the app instead of leaving to the bare host page */
 history.pushState({app:true}, '', location.href);
-window.addEventListener('popstate', function(){
-  history.pushState({app:true}, '', location.href);
-  if(USER){
-    const homeVisible = document.getElementById('view-home').style.display !== 'none';
-    if(!homeVisible) goHome();
-  }
-});
+/* THE OLD BACK TRAP IS GONE.                          (Ravi 31-Jul-2026)
+   "Still after pressing back, the pop up doesnot go, the screen behind it moves."
+
+   There were TWO popstate listeners. This one ran first and called goHome()
+   whenever the user was not on Home — which moved the screen UNDERNEATH an open
+   popup while the popup itself stayed put. The correct handler, heroBackStep(),
+   was added later to fix exactly this, but the old listener was never removed,
+   so both fired on every back press and the old one won.
+
+   heroBackStep() now owns the back key on its own: it closes the topmost open
+   overlay, then a VIN panel, then falls back to Home only when nothing is open.
+   It is registered further down this file. */
 
 loadUser();
 /* Boot immediately so login and home appear at once. Masters are still served from the
    phone (not re-downloaded) — that waiting now happens only inside jget for master
    tables, not for the whole app. See the jget preload-gate. */
-if(USER){ showView('home'); goHome(); } else { showView('login'); }
+/* COME BACK TO THE SCREEN YOU WERE ON.               (Ravi 31-Jul-2026)
+   "When refresh is triggered by pulling the screen down, it doesnot refresh on
+    the same page. It goes on the first screen."
+
+   Every reload — pull-to-refresh, a crash, a browser restore — landed on Home,
+   because boot always called showView('home'). showView now records where the
+   user is, and boot returns them there.
+
+   Home is still the fallback: if nothing was recorded, or the recorded screen
+   is one that must not be resumed cold (login, or a half-finished gate entry
+   that needs its record loaded first), Home is the safe place to land. */
+if(USER){
+  var _last='';
+  try{ _last=sessionStorage.getItem('hero_view')||''; }catch(e){}
+  var RESUMABLE={home:1,holdup:1,control:1,billing:1,gateout:1,partfinder:1,master:1};
+  if(_last && RESUMABLE[_last]){ showView(_last); if(_last==='home') goHome(); }
+  else { showView('home'); goHome(); }
+} else { showView('login'); }
 </script>
 
 <!-- ========= DOCUMENT UPLOAD / TAGGING MODAL ========= -->
@@ -11517,11 +11573,20 @@ function esPickLab(code, btn){
      Additive. Overrides three s34/s35 functions by re-assignment.
      ========================================================================== -->
 <style>
-  #hero-upd-now{position:fixed;right:12px;bottom:12px;z-index:9400;border:0;border-radius:11px;
-    background:#111827;color:#fff;font:750 12.5px Inter,sans-serif;padding:11px 14px;
-    box-shadow:0 10px 26px rgba(0,0,0,.28);cursor:pointer;display:none}
+  /* MOVED OUT OF THE MIDDLE OF THE SCREEN (Ravi 31-Jul-2026)
+     This used to be position:fixed bottom-right, floating over whatever the
+     user was doing. Ravi: "It is coming in middle of operations." It now sits
+     in the top bar with the other status chips, on the right, next to the
+     build badge — one fixed place, out of the way of the work. */
+  #hero-upd-now{border:1.5px solid rgba(255,255,255,.22);border-radius:8px;
+    background:transparent;color:#fff;font:700 11.5px Inter,sans-serif;
+    padding:5px 10px;cursor:pointer;display:none;white-space:nowrap;
+    flex:0 0 auto;margin-left:8px}
+  #hero-upd-now:hover{background:rgba(255,255,255,.10)}
   #hero-upd-now:active{transform:translateY(1px)}
   #hero-upd-now.busy{opacity:.65}
+  #hero-upd-now.ok{border-color:#16a34a;color:#86efac}
+  @media(max-width:900px){ #hero-upd-now{font-size:11px;padding:4px 8px} }
   .pt-tier{margin:14px 0 6px;display:flex;align-items:baseline;gap:8px}
   .pt-tier b{font-size:12px;font-weight:850;letter-spacing:.02em}
   .pt-tier span{font-size:11px;color:var(--steel)}
@@ -11592,29 +11657,81 @@ function heroUpdateNow(){
      The green "App updated · now on <build>" bar after the reload is what tells you
      which one you landed on — and that bar cannot lie, because it is written by the
      code that is actually running. */
-  if(!confirm('Reinstall the app from GitHub now?\n\nAny unsent work is saved first. Takes about three seconds.')) return;
-  heroUpdSay('Saving pending work\u2026', true);
-  var go=function(){
-    heroUpdSay('Reinstalling\u2026', true);
-    try{ localStorage.setItem('hero_updating_from', window.HERO_BUILD||''); }catch(e){}
-    setTimeout(heroWipeAndReload, 300);
+  /* NOW IT CAN ACTUALLY TELL YOU (Ravi 31-Jul-2026)
+     "It should just check and say already on updated module when clicked.
+      That confirms the app is updated. Just like android."
+
+     The note above is right that fetch('./sw.js') can never work \u2014 the running
+     worker intercepts it and hands back its own cached copy. But
+     registration.update() is different: the browser fetches the worker script
+     itself, bypassing the service worker entirely. That is spec behaviour and
+     it is the one honest way to ask "is there a newer build?".
+
+     After update() resolves, a newer build shows up as reg.installing or
+     reg.waiting. Nothing there means we are current, and we can say so
+     truthfully instead of reinstalling three seconds of nothing. */
+  var doReinstall=function(){
+    heroUpdSay('Saving pending work\u2026', true);
+    var go=function(){
+      heroUpdSay('Reinstalling\u2026', true);
+      try{ localStorage.setItem('hero_updating_from', window.HERO_BUILD||''); }catch(e){}
+      setTimeout(heroWipeAndReload, 300);
+    };
+    if(typeof window.flushQueue==='function'){
+      try{ Promise.resolve(window.flushQueue()).then(go, go); }catch(e){ go(); }
+    } else go();
   };
-  if(typeof window.flushQueue==='function'){
-    try{ Promise.resolve(window.flushQueue()).then(go, go); }catch(e){ go(); }
-  } else go();
+  var already=function(){
+    var b=heroUpdBtn();
+    heroUpdSay('\u2713 Already on '+(window.HERO_BUILD||'latest'), false);
+    if(b) b.className='ok';
+    /* back to the normal badge after a few seconds */
+    setTimeout(function(){
+      var x=heroUpdBtn();
+      if(x){ x.className=''; x.textContent='\u27f3 '+String(window.HERO_BUILD||'').replace(/^set/,''); }
+    }, 4000);
+  };
+
+  if(!('serviceWorker' in navigator)){ doReinstall(); return; }
+  heroUpdSay('Checking\u2026', true);
+  navigator.serviceWorker.getRegistration().then(function(reg){
+    if(!reg){ doReinstall(); return; }
+    return Promise.resolve(reg.update()).then(function(){
+      /* update() resolves as soon as the fetch completes; give the new worker
+         a moment to appear as installing/waiting before deciding. */
+      return new Promise(function(res){ setTimeout(res, 1200); });
+    }).then(function(){
+      var pending = reg.installing || reg.waiting;
+      if(!pending){ already(); return; }
+      heroUpdSay('\u27f3 New build found', false);
+      if(confirm('A newer build is available.\n\nInstall it now? Any unsent work is saved first. Takes about three seconds.')) doReinstall();
+      else already();
+    });
+  }).catch(function(){
+    /* If the check itself fails, fall back to the old unconditional behaviour
+       rather than leaving the CEO with no way to update. */
+    if(confirm('Could not check for updates.\n\nReinstall from GitHub anyway?')) doReinstall();
+    else heroUpdSay('\u27f3 '+String(window.HERO_BUILD||'').replace(/^set/,''), false);
+  });
 }
 function heroMountUpdBtn(){
-  if(document.getElementById('hero-upd-now')) { 
-    document.getElementById('hero-upd-now').style.display = heroIsCeo()?'block':'none';
+  if(document.getElementById('hero-upd-now')) {
+    document.getElementById('hero-upd-now').style.display = heroIsCeo()?'inline-block':'none';
     return;
   }
   var b=document.createElement('button');
   b.id='hero-upd-now'; b.type='button';
-  b.textContent='\u27F3 Update \u00B7 '+String(window.HERO_BUILD||'').replace(/^set/,'');
+  b.textContent='\u27F3 '+String(window.HERO_BUILD||'').replace(/^set/,'');
   b.onclick=heroUpdateNow;
-  b.title='Checks GitHub for a newer build and installs it immediately';
-  document.body.appendChild(b);
-  b.style.display=heroIsCeo()?'block':'none';
+  b.title='Check for a newer build. Says so if you are already on the latest.';
+  /* Into the TOP BAR, right side, beside the build/status chips \u2014 not floating
+     over the middle of the screen. Falls back to body only if the bar is gone. */
+  var bar=document.querySelector('.top');
+  var pwd=document.getElementById('topright-pwd-btn');
+  if(bar && pwd) bar.insertBefore(b,pwd);
+  else if(bar) bar.appendChild(b);
+  else document.body.appendChild(b);
+  b.style.display=heroIsCeo()?'inline-block':'none';
 }
 setTimeout(heroMountUpdBtn, 1500);
 setInterval(heroMountUpdBtn, 8000);   /* appears as soon as the CEO logs in */
