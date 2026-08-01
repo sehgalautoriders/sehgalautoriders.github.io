@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 20;
-window.HERO_BUILD = 'R20-2026.08.01';
+window.HERO_RELEASE = 21;
+window.HERO_BUILD = 'R21-2026.08.01';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -497,7 +497,8 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
     #whobox .navbtn:nth-of-type(2){min-width:0!important}
     .net{flex:0 0 auto;margin-left:0!important}       /* first item of row 2; keeps its "Online" word */
     .ratiostrip{margin-left:auto!important;padding:4px 7px}
-    .ratiostrip .rval{display:none}         /* dot only; the number is in the tooltip */
+    /* R21: the VALUE shows on phones too. Row 2 has the space, and a dot with
+       no number told Ravi his 1:1 project had been removed. */
     #backend-status-box{display:none!important}
     #sync-badge{display:none!important}
     /* Row 3: the two controls Ravi asked to keep, full words, side by side.
@@ -2896,7 +2897,16 @@ function hxRenderRatioStrip(force){
 function hxPaintRatio(r){
   const el=document.getElementById('ratiostrip');
   if(!el) return;
-  if(!r||!r.jobs){ el.style.display='none'; return; }   // nothing billed yet this month
+  if(!r||!r.jobs){
+    /* R21 (Ravi 01-Aug-2026): "There is no parts:Labour ratio now anywhere."
+       He was right — on the 1st of a month jobs=0 and this line used to HIDE
+       the chip, so his main project vanished from every screen at each month
+       rollover. It now shows a neutral chip instead of disappearing. */
+    el.style.display='inline-flex';
+    el.innerHTML='<span class="rdot close"></span><span class="rval">P:L —</span>';
+    el.title='Parts : Labour — nothing billed yet this month'+(r&&r.month?' ('+r.month+')':'')+'.\nTarget is 1:1 across the month.';
+    return;
+  }
   const cls = r.band==='ON TARGET' ? 'ok' : (r.band==='CLOSE' ? 'close' : 'behind');
   /* A dot and the number. Everything else is in the tooltip, which costs no
      width. Ratio reads parts:labour - 1.64 means parts are 1.64x labour. */
@@ -8124,7 +8134,12 @@ function showEstimatePreview(est, reg, name, mob){
 function heroKpiCacheKey(boxId){
   var who='';
   try{ who=String((USER&&(USER.empno||USER.personName))||''); }catch(e){}
-  return 'hero_kpi:'+boxId+':'+who;
+  /* R21: the build is part of the key. A cache written by an older build
+     carries that build's onclick strings, and painting them even briefly means
+     a tap in the first seconds after an update still fires retired wiring —
+     which is how "Gate Entries Today" opened 45 days on a phone running the
+     fixed code. A new build now starts with no cache rather than a wrong one. */
+  return 'hero_kpi:'+boxId+':'+who+':'+String(window.HERO_BUILD||'');
 }
 function heroKpiCardHtml(k){
   return '<div class="kpi-card ops" data-k="'+raviEsc(k.key)+'" style="--kpi-color:'+k.color+(k.click?';cursor:pointer':'')+'"'
@@ -8257,8 +8272,8 @@ function heroSoftPlaceholder(el, html){
         cards=[
           {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',click:"raviOpenGateToday()"},
           {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending · tap',color:'#16a34a',click:"openModule('control')"},
-          {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',click:"openModule('control')"},
-          {ic:'₹',n:billing,t:'Estimate Value Today',sub:'Tap to view — value till now',color:'#7c3aed',click:"openModule('control')"},
+          {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',click:"raviOpenEstToday()"},
+          {ic:'₹',n:billing,t:'Estimate Value Today',sub:'Tap to view — value till now',color:'#7c3aed',click:"raviOpenEstToday()"},
           {ic:'⛔',n:hu,t:'Holdup Cases',sub:'Tap to view — Active DMS holdup',color:'#dc2626',click:"openModule('holdup')"},
           {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer · tap',color:'#0891b2',click:"openModule('holdup')"}
         ];
@@ -10721,7 +10736,12 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     if(vin && vin.style.display!=='none'){ vin.style.display='none'; return true; }
     const home=document.getElementById('view-home');
     if(home && home.style.display==='none'){ if(typeof goHome==='function') goHome(); return true; }
-    return false;
+    /* R21: at Home with nothing open, back is consumed — deliberately.
+       Falling through used to hand the press to the browser, which collapses
+       or re-shows its own top bar and can step out of the app entirely
+       ("one more back and the top UI disturbs"). Inside the app, Logout is
+       the way out; the back key never is. */
+    return true;
   };
 
   window.addEventListener('popstate', function(){
@@ -10773,6 +10793,34 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
       }).join('');
       if(typeof heroViewSave==='function') heroViewSave(m.body,'gate_today');
     });
+  };
+
+  /* -------------------------------------------------------- ESTIMATES TODAY
+     R21 (Ravi 01-Aug-2026): "today estimates means today not all" and
+     "Estimate value today opens up the entire Top management control module."
+     Both tiles said Today and opened the whole Control Room. The data they
+     were counting is already on the phone — RAVI_TODAY_EST_CACHE, filtered by
+     workshop and role at paint time — so this shows THAT list, with the total
+     on top. The Control Room stays one tap away for the full picture. */
+  window.raviOpenEstToday = function(){
+    const m={modal:document.getElementById('ravi-kpi-modal'),
+             body:document.getElementById('ravi-kpi-body'),
+             title:document.getElementById('ravi-kpi-title')};
+    if(!m.modal){ openModule('control'); return; }
+    const est=(window.RAVI_TODAY_EST_CACHE||[]).slice().reverse();
+    m.title.textContent='Estimates — Today';
+    const total=est.reduce(function(s,e){ return s+esEntryTotal(e); },0);
+    const head='<div class="ctlitem"><div><div class="big">Total — today</div>'
+      +'<div class="small">'+est.length+' estimate'+(est.length===1?'':'s')+' saved</div></div>'
+      +'<div><span class="badge done">'+inr(total)+'</span></div></div>'
+      +'<button class="btn ghost sm" style="width:100%;margin:8px 0" onclick="openModule(\'control\')">📊 Full Control Room</button>';
+    if(!est.length){ m.body.innerHTML=head+'<div class="hint">No estimates saved yet today.</div>'; }
+    else m.body.innerHTML=head+est.map(function(e,i){
+      return '<div class="ctlitem"><div><div class="big">'+(i+1)+'. '+raviEsc(e.reg||'—')+' · '+raviEsc(e.model||'')+'</div>'
+        +'<div class="small">'+raviEsc(e.name||e.sa||'')+' · '+raviEsc(e.ws||'')+'</div></div>'
+        +'<div><span class="badge done">'+inr(esEntryTotal(e))+'</span></div></div>';
+    }).join('');
+    m.modal.style.display='block';
   };
 
   /* Re-point the tile without touching how tiles are built. */
