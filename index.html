@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 16;
-window.HERO_BUILD = 'R16-2026.07.31';
+window.HERO_RELEASE = 17;
+window.HERO_BUILD = 'R17-2026.08.01';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -438,32 +438,86 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
      One row now. The logo and brand stay. The status box keeps its sync
      control but loses the words. Everything measured, not guessed.
      ========================================================================== */
+  /* ==========================================================================
+     R17 TOP BAR CORRECTION — Ravi 31-Jul-2026: "the App UI is spoiled on the
+     top. Nothing is seen."
+     He is right, and the cause was this very block. R16 forced ONE row with
+     flex-wrap:nowrap plus overflow:hidden, but it only shrank SOME of the
+     controls. Measured on a 412px phone with a logged-in user, the bar's
+     content came to 601px against a 412px screen, so 189px of it was cut off
+     the right edge and could neither be seen nor tapped:
+         #backend-status-box  starts at x=395  — half of it gone
+         #hero-upd-now        x=446 to 476     — completely invisible
+         #topright-pwd-btn    x=494 to 591     — completely invisible (97px:
+                                                 nothing had ever shrunk it)
+     overflow:hidden does not make a bar fit. It deletes whatever does not.
+     Two changes, both deliberate:
+       1. The two controls R16 missed — Password and Logout — are now icons
+          like every other chip, so the row genuinely measures under 412px
+          instead of only appearing to.
+       2. nowrap + overflow:hidden is gone. On anything narrower the bar wraps
+          to a second short row. Two rows of 30px is not pretty; silently
+          losing the Logout and Password buttons is worse.
+     Home keeps its word. It is the one control that must never be a guess.
+     ========================================================================== */
   @media(max-width:640px){
-    .top{padding:8px 10px;gap:8px;flex-wrap:nowrap;overflow:hidden}
+    .top{padding:8px 8px;gap:5px;flex-wrap:wrap;overflow:visible}
     .top img{width:26px;height:26px}
     /* flex:1 1 auto, NOT 0 1 auto. With 0 the brand shrank to zero width and the
-       app name vanished entirely — measured, not assumed. */
-    .brand{font-size:14px;line-height:1.05;flex:1 1 auto!important;min-width:76px;
+       app name vanished entirely — measured, not assumed.
+       The 70px basis (R17) is what lets the whole row pack onto one line before
+       the brand is allowed to take the slack. */
+    .brand{font-size:14px;line-height:1.05;flex:1 1 70px!important;min-width:70px;max-width:150px;
            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .brand .sub{display:none}
     .who{gap:6px;font-size:11px;flex:0 0 auto!important;width:auto!important;margin-left:auto!important}
     .who > span:first-child{display:none}   /* name/role/ws already shown on Home */
     .who .navbtn{padding:5px 8px!important;font-size:11px!important;white-space:nowrap}
+    /* Logout as an icon. Targeted by its onclick, not by :last-child, so a
+       future button added to this box cannot silently steal the rule. */
+    .who .navbtn[onclick="logout()"]{font-size:0!important;padding:5px 7px!important}
+    .who .navbtn[onclick="logout()"]::after{content:'\23FB';font-size:14px}
+    /* And the reason shrinking Logout looked like it did nothing: a V12 rule
+       further down, #whobox .navbtn:nth-of-type(2){min-width:118px}, pins this
+       one button to 118px. Its ID beats every class selector here, so setting
+       font-size to 0 changed the text and not one pixel of the width. That rule
+       exists to stop the DESKTOP bar jumping, so it is left alone above 640px
+       and only released here. 118px -> 30px. */
+    #whobox .navbtn:nth-of-type(2){min-width:0!important}
+    /* The 97px "🔒 Password" button was the single biggest thing hanging off
+       the right edge. Its margin-left is INLINE on the element, so !important
+       is required here to pull it back in. */
+    #topright-pwd-btn{font-size:0!important;padding:5px 7px!important;margin-left:0!important;flex:0 0 auto}
+    #topright-pwd-btn::after{content:'\1F512';font-size:14px}
     .net{flex:0 0 auto;margin-left:0!important}
     .net #nettxt{display:none}              /* the dot alone says online or not */
     /* The status box was 244px of a 412px screen. Its spans carry INLINE
        font-size:12px, so a plain stylesheet rule loses to them — !important is
        required here, not optional. 244px -> 32px. */
-    #backend-status-box{margin-left:6px!important;padding:4px 6px!important;gap:5px!important;flex:0 0 auto}
+    /* margin-left is zeroed on all three chips below. The bar is a flex row with
+       gap:5px — every margin-left these carried from their own rules was being
+       ADDED to that gap, 20px in total, which was the exact amount that pushed
+       the row over the edge on a 393px phone. Measured, not guessed. */
+    #backend-status-box{margin-left:0!important;padding:4px 6px!important;gap:5px!important;flex:0 0 auto}
     #backend-status-box>span{font-size:0!important}
     #backend-status-box #ver-badge::after{content:'\2139';font-size:13px}
     #backend-status-box>span:last-child::after{content:'\21BB';font-size:14px}
     #sync-badge{display:none!important}
-    .ratiostrip{margin-left:6px;padding:4px 7px}
+    .ratiostrip{margin-left:0!important;padding:4px 7px}
     .ratiostrip .rval{display:none}         /* dot only; the number is in the tooltip */
-    #hero-upd-now{font-size:0!important;padding:5px 7px!important;margin-left:6px;
+    #hero-upd-now{font-size:0!important;padding:5px 7px!important;margin-left:0!important;
                   width:30px;box-sizing:border-box;overflow:hidden}
     #hero-upd-now::after{content:'\21BB';font-size:14px}
+  }
+  /* Below 380px the row is genuinely full: logo + name + Home + Logout + ratio
+     + online + backend + update + password cannot all fit, measured. Something
+     has to give, and the app NAME is the only thing in that list that does not
+     do a job — the logo beside it already says whose app this is, and the name
+     is on the login screen and on Home. So on a small phone the name steps
+     aside and the bar stays ONE row instead of eating two.
+     412px (OnePlus 13) and 393px (most current phones) keep the name. */
+  @media(max-width:380px){
+    .brand{display:none}
   }
   .plus{background:var(--ink);color:#fff;border:none;border-radius:7px;padding:0 14px;height:40px;font-size:20px;cursor:pointer;flex:0 0 auto}
   .live{background:var(--ink);color:#fff;border-radius:10px;padding:13px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center}
