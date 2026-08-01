@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 18;
-window.HERO_BUILD = 'R18-2026.08.01';
+window.HERO_RELEASE = 19;
+window.HERO_BUILD = 'R19-2026.08.01';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -460,64 +460,58 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
           losing the Logout and Password buttons is worse.
      Home keeps its word. It is the one control that must never be a guess.
      ========================================================================== */
+  /* Update + Reset Password live together in one box, desktop and phone. */
+  #top-actions{display:flex;align-items:center;gap:8px;margin-left:10px;flex:0 0 auto}
   @media(max-width:640px){
-    .top{padding:8px 8px;gap:5px;flex-wrap:wrap;overflow:visible}
-    .top img{width:26px;height:26px}
-    /* flex:1 1 auto, NOT 0 1 auto. With 0 the brand shrank to zero width and the
-       app name vanished entirely — measured, not assumed.
-       The 70px basis (R17) is what lets the whole row pack onto one line before
-       the brand is allowed to take the slack. */
-    .brand{font-size:14px;line-height:1.05;flex:1 1 70px!important;min-width:70px;max-width:150px;
-           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* R19 PHONE HEADER — rebuilt to the Mobiledesign1 reference (Ravi
+       01-Aug-2026: "half hearted design is not acceptable"). The old bar
+       squeezed every control into an unlabelled 30px icon and ellipsised the
+       app name to "SEHGAL HER…". Now it reads as a header, in rows:
+         row 1  logo · full app name over two lines · Home · Logout
+         row 2  ● Online · ratio chip
+         row 3  「⟳ Update new version」「🔒 Reset Password」 — words, not icons
+       Removed from the phone bar entirely, per Ravi: the Backend Server check
+       and ↻ Sync Now. Safe to remove: flushQueue() already runs every 20s and
+       on the 'online' event, so the queue drains itself; the backend check
+       stays available on desktop, where releases are verified. */
+    .top{padding:8px 10px;gap:6px 8px;flex-wrap:wrap;overflow:visible}
+    .top img{width:30px;height:30px;border-radius:50%}
+    /* The brand takes the whole middle and WRAPS to two lines instead of
+       ellipsising. flex-grow is what fills row 1 and pushes ● Online down to
+       row 2 — remove it and the rows collapse into soup. */
+    .brand{font-size:15px;line-height:1.15;flex:1 1 auto!important;min-width:0;max-width:none;
+           overflow:visible;text-overflow:clip;white-space:normal}
+    .brand-tail{display:block;font-family:'Inter';font-weight:600;font-size:10.5px;
+                color:#9aa0a8;letter-spacing:.02em;text-transform:none}
+    .brand-dash{display:none}               /* the dash belongs to the one-line desktop form */
     .brand .sub{display:none}
     .who{gap:6px;font-size:11px;flex:0 0 auto!important;width:auto!important;margin-left:auto!important}
-    .who > span:first-child{display:none}   /* name/role/ws already shown on Home */
-    .who .navbtn{padding:5px 8px!important;font-size:11px!important;white-space:nowrap}
+    .who > span:first-child{display:none}   /* name/role/ws: the Home greeting says it bigger */
+    .who .navbtn{padding:5px 9px!important;font-size:11px!important;white-space:nowrap}
     /* Logout as an icon. Targeted by its onclick, not by :last-child, so a
        future button added to this box cannot silently steal the rule. */
     .who .navbtn[onclick="logout()"]{font-size:0!important;padding:5px 7px!important}
     .who .navbtn[onclick="logout()"]::after{content:'\23FB';font-size:14px}
-    /* And the reason shrinking Logout looked like it did nothing: a V12 rule
-       further down, #whobox .navbtn:nth-of-type(2){min-width:118px}, pins this
-       one button to 118px. Its ID beats every class selector here, so setting
-       font-size to 0 changed the text and not one pixel of the width. That rule
-       exists to stop the DESKTOP bar jumping, so it is left alone above 640px
-       and only released here. 118px -> 30px. */
+    /* Release the 118px desktop pin (V12) that once made Logout unshrinkable. */
     #whobox .navbtn:nth-of-type(2){min-width:0!important}
-    /* The 97px "🔒 Password" button was the single biggest thing hanging off
-       the right edge. Its margin-left is INLINE on the element, so !important
-       is required here to pull it back in. */
-    #topright-pwd-btn{font-size:0!important;padding:5px 7px!important;margin-left:0!important;flex:0 0 auto}
-    #topright-pwd-btn::after{content:'\1F512';font-size:14px}
-    .net{flex:0 0 auto;margin-left:0!important}
-    .net #nettxt{display:none}              /* the dot alone says online or not */
-    /* The status box was 244px of a 412px screen. Its spans carry INLINE
-       font-size:12px, so a plain stylesheet rule loses to them — !important is
-       required here, not optional. 244px -> 32px. */
-    /* margin-left is zeroed on all three chips below. The bar is a flex row with
-       gap:5px — every margin-left these carried from their own rules was being
-       ADDED to that gap, 20px in total, which was the exact amount that pushed
-       the row over the edge on a 393px phone. Measured, not guessed. */
-    #backend-status-box{margin-left:0!important;padding:4px 6px!important;gap:5px!important;flex:0 0 auto}
-    #backend-status-box>span{font-size:0!important}
-    #backend-status-box #ver-badge::after{content:'\2139';font-size:13px}
-    #backend-status-box>span:last-child::after{content:'\21BB';font-size:14px}
-    #sync-badge{display:none!important}
-    .ratiostrip{margin-left:0!important;padding:4px 7px}
+    .net{flex:0 0 auto;margin-left:0!important}       /* first item of row 2; keeps its "Online" word */
+    .ratiostrip{margin-left:auto!important;padding:4px 7px}
     .ratiostrip .rval{display:none}         /* dot only; the number is in the tooltip */
-    #hero-upd-now{font-size:0!important;padding:5px 7px!important;margin-left:0!important;
-                  width:30px;box-sizing:border-box;overflow:hidden}
-    #hero-upd-now::after{content:'\21BB';font-size:14px}
+    #backend-status-box{display:none!important}
+    #sync-badge{display:none!important}
+    /* Row 3: the two controls Ravi asked to keep, full words, side by side.
+       flex-basis:100% is what guarantees them their own row. When the CEO-only
+       update button is hidden, Reset Password alone takes the full width. */
+    #top-actions{flex:1 1 100%;display:flex;gap:8px;margin-left:0!important}
+    #top-actions .navbtn,#top-actions #hero-upd-now{flex:1 1 0;margin-left:0!important;
+      padding:7px 10px!important;font-size:12px!important;text-align:center;border-radius:8px}
   }
-  /* Below 380px the row is genuinely full: logo + name + Home + Logout + ratio
-     + online + backend + update + password cannot all fit, measured. Something
-     has to give, and the app NAME is the only thing in that list that does not
-     do a job — the logo beside it already says whose app this is, and the name
-     is on the login screen and on Home. So on a small phone the name steps
-     aside and the bar stays ONE row instead of eating two.
-     412px (OnePlus 13) and 393px (most current phones) keep the name. */
+  /* Below 380px the two-line brand still fits (measured at 320px: the name
+     needs ~110px and gets ~190px), so unlike the old bar the name is never
+     hidden — Ravi: "Sehgal hero is blocked. Now nothing is visible." It only
+     steps down a size. */
   @media(max-width:380px){
-    .brand{display:none}
+    .brand{font-size:13.5px}
   }
   .plus{background:var(--ink);color:#fff;border:none;border-radius:7px;padding:0 14px;height:40px;font-size:20px;cursor:pointer;flex:0 0 auto}
   .live{background:var(--ink);color:#fff;border-radius:10px;padding:13px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center}
@@ -736,6 +730,7 @@ body { font-size:14px; }
 .home-greeting .hg-name{font-family:'Barlow Condensed';font-weight:700;font-size:28px;letter-spacing:.02em}
 .home-greeting .hg-sub{font-size:12px;color:var(--steel);margin-top:2px}
 .home-greeting .hg-date{font-size:12px;color:var(--steel);text-align:right}
+@media(max-width:480px){.home-greeting{align-items:flex-start;gap:2px}.home-greeting .hg-name{font-size:22px;line-height:1.2}.home-greeting .hg-date{width:100%;text-align:left}}
 
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:22px}
 .kpi-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;cursor:default}
@@ -1128,6 +1123,17 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
   .ravi-doc-row{grid-template-columns:1fr}
   .ops-quick-grid{grid-template-columns:repeat(3,1fr)}
 }
+/* Phone KPI cards: the 54px icon gutter left only 83px of text in a 155px card,
+   so every title wrapped to 2 lines and every sub-label to 3. Below 480px the
+   icon moves out of the gutter and sits beside the number, giving the text the
+   full 129px. Comfort View only — Compact View keeps its own layout. */
+@media(max-width:480px){
+  body:not(.compact-home) .kpi-card.ops{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:8px;row-gap:2px;padding:12px;min-height:0}
+  body:not(.compact-home) .kpi-card.ops .kpi-ic{position:static;grid-column:1;grid-row:1;width:30px;height:30px;font-size:15px;border-radius:8px}
+  body:not(.compact-home) .kpi-card.ops .kpi-n{grid-column:2;grid-row:1;margin-bottom:0}
+  body:not(.compact-home) .kpi-card.ops .kpi-t{grid-column:1/-1;grid-row:2;line-height:1.25}
+  body:not(.compact-home) .kpi-card.ops .kpi-sub{grid-column:1/-1;grid-row:3;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}
+}
 </style>
 
 
@@ -1251,7 +1257,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 <div id="global-progress" style="position:fixed;top:0;left:0;height:3px;width:0%;background:var(--signal);z-index:9999;transition:width .2s ease;display:none"></div>
 <div class="top">
   <img src="data:image/jpeg;base64,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" alt="Sehgal Autoriders">
-  <div class="brand">SEHGAL <b>HERO</b> APP - Operations Hub<div class="sub" id="topsub">Sehgal Autoriders</div></div>
+  <div class="brand">SEHGAL <b>HERO</b> APP<span class="brand-tail"><span class="brand-dash"> - </span>Operations Hub</span><div class="sub" id="topsub">Sehgal Autoriders</div></div>
   <div class="who" id="whobox" style="display:none">
     <span><b id="who-name"></b> · <span id="who-role"></span> · <span id="who-ws"></span></span>
     <button class="navbtn" onclick="goHome()">Home</button>
@@ -1268,7 +1274,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
     <span id="sync-badge" onclick="globalSyncNow()" style="display:none;cursor:pointer;font-size:11px;font-weight:800;color:#fff;background:var(--signal-d);border-radius:12px;padding:3px 10px" title="Tap to retry sending now"></span>
     <span onclick="globalSyncNow()" style="cursor:pointer;font-size:12px;font-weight:800;color:var(--ink)" title="Refresh all master data and retry any pending updates">↻ Sync Now</span>
   </div>
-  <button class="navbtn" id="topright-pwd-btn" onclick="openChangePassword()" style="margin-left:10px;display:none" title="Change Password">🔒 Password</button>
+  <div id="top-actions"><button class="navbtn" id="topright-pwd-btn" onclick="openChangePassword()" style="display:none" title="Reset your password">🔒 Reset Password</button></div>
 </div>
 
 <!-- ================= LOGIN VIEW ================= -->
@@ -4354,7 +4360,7 @@ function heroIncrementalPrice(modelName, serviceType){
        can never zero-out pricing. ₹0 floors are ignored for the same reason.
    The sheet is fetched on estimate boot (cached by jget, so it also works offline with
    the last-synced copy). Editing the sheet + tapping ↻ Sync Now in the app applies new
-   prices WITHOUT touching the HTML or spending a Netlify deploy. */
+   prices WITHOUT touching the HTML or spending a GitHub Pages deploy. */
 const HERO_SVC_TYPES=['free','paid','general','joyride','accidental'];
 let HERO_PRICES_FROM_MASTER=false;
 function heroNum(v){ const n=parseFloat(String(v==null?'':v).replace(/[₹,\s]/g,'')); return isNaN(n)?null:n; }
@@ -8187,7 +8193,7 @@ function heroSoftPlaceholder(el, html){
         const todayN=mine.reduce((s,L)=>s+Number(L.today||0),0);
         const allN=mine.reduce((s,L)=>s+Number(L.allDays||0),0);
         const cardsG=[
-          {ic:'🚗',n:todayN,t:'Gate Entries Today',sub:'All guards combined · tap to view',color:'#2563eb',click:"raviOpenGateHistory()"},
+          {ic:'🚗',n:todayN,t:'Gate Entries Today',sub:'All guards combined · tap to view',color:'#2563eb',click:"raviOpenGateToday()"},
           {ic:'📅',n:allN,t:'All Entries — All days',sub:'Every guard · tap to see by month & date',color:'#16a34a',click:"raviOpenGateHistory()"},
           {ic:'↻',n:getQueue().length,t:'Pending Sync',sub:'Offline saves waiting',color:'#7c3aed'}
         ];
@@ -8242,7 +8248,7 @@ function heroSoftPlaceholder(el, html){
         ];
       } else {
         cards=[
-          {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',click:"raviOpenGateHistory()"},
+          {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',click:"raviOpenGateToday()"},
           {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending · tap',color:'#16a34a',click:"openModule('control')"},
           {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',click:"openModule('control')"},
           {ic:'₹',n:billing,t:'Estimate Value Today',sub:'Tap to view — value till now',color:'#7c3aed',click:"openModule('control')"},
@@ -11951,7 +11957,7 @@ function heroUpdateNow(){
     /* back to the normal badge after a few seconds */
     setTimeout(function(){
       var x=heroUpdBtn();
-      if(x){ x.className=''; x.textContent='\u27f3 '+String(window.HERO_BUILD||'').replace(/^set/,''); }
+      if(x){ x.className=''; x.textContent='\u27f3 Update new version'; }
     }, 4000);
   };
 
@@ -11974,7 +11980,7 @@ function heroUpdateNow(){
     /* If the check itself fails, fall back to the old unconditional behaviour
        rather than leaving the CEO with no way to update. */
     if(confirm('Could not check for updates.\n\nReinstall from GitHub anyway?')) doReinstall();
-    else heroUpdSay('\u27f3 '+String(window.HERO_BUILD||'').replace(/^set/,''), false);
+    else heroUpdSay('\u27f3 Update new version', false);
   });
 }
 function heroMountUpdBtn(){
@@ -11984,14 +11990,15 @@ function heroMountUpdBtn(){
   }
   var b=document.createElement('button');
   b.id='hero-upd-now'; b.type='button';
-  b.textContent='\u27F3 '+String(window.HERO_BUILD||'').replace(/^set/,'');
+  b.textContent='\u27F3 Update new version';
   b.onclick=heroUpdateNow;
-  b.title='Check for a newer build. Says so if you are already on the latest.';
-  /* Into the TOP BAR, right side, beside the build/status chips \u2014 not floating
-     over the middle of the screen. Falls back to body only if the bar is gone. */
+  b.title='Check for a newer build. Says so if you are already on the latest. Current: '+String(window.HERO_BUILD||'');
+  /* Into the top-actions box beside Reset Password (Ravi 01-Aug-2026: labels,
+     not icons). Falls back to the bar, then body, if the box is gone. */
+  var box=document.getElementById('top-actions');
   var bar=document.querySelector('.top');
   var pwd=document.getElementById('topright-pwd-btn');
-  if(bar && pwd) bar.insertBefore(b,pwd);
+  if(box && pwd) box.insertBefore(b,pwd);
   else if(bar) bar.appendChild(b);
   else document.body.appendChild(b);
   b.style.display=heroIsCeo()?'inline-block':'none';
