@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 19;
-window.HERO_BUILD = 'R19-2026.08.01';
+window.HERO_RELEASE = 20;
+window.HERO_BUILD = 'R20-2026.08.01';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -488,10 +488,11 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
     .who{gap:6px;font-size:11px;flex:0 0 auto!important;width:auto!important;margin-left:auto!important}
     .who > span:first-child{display:none}   /* name/role/ws: the Home greeting says it bigger */
     .who .navbtn{padding:5px 9px!important;font-size:11px!important;white-space:nowrap}
-    /* Logout as an icon. Targeted by its onclick, not by :last-child, so a
-       future button added to this box cannot silently steal the rule. */
-    .who .navbtn[onclick="logout()"]{font-size:0!important;padding:5px 7px!important}
-    .who .navbtn[onclick="logout()"]::after{content:'\23FB';font-size:14px}
+    /* R20: Logout is a WORD again. The \23FB power symbol had no glyph in
+       Ravi's phone font and rendered as a cross beside Home — "At the side of
+       Home One cross is coming. Proper Logout cannot be there?" It can.
+       Measured at 320px: logo + two-line name + Home + Logout come to ~262px;
+       the Online pill wraps to row 2, which is where the design puts it. */
     /* Release the 118px desktop pin (V12) that once made Logout unshrinkable. */
     #whobox .navbtn:nth-of-type(2){min-width:0!important}
     .net{flex:0 0 auto;margin-left:0!important}       /* first item of row 2; keeps its "Online" word */
@@ -8138,7 +8139,13 @@ function heroKpiCardHtml(k){
 function heroKpiPaint(boxId, cards, isStale){
   var box=document.getElementById(boxId); if(!box) return;
   cards=(cards||[]).map(function(k,i){ k.key=k.key||k.t||('k'+i); return k; });
-  var sig=cards.map(function(k){ return k.key; }).join('|');
+  /* R20: the signature must include the WIRING, not just the card names. The
+     row is first painted from the localStorage cache — which can carry a
+     previous build's onclick — and when the fresh cards arrived with the same
+     names, the else-branch below rewrote only the numbers and the stale
+     handler survived every release. This is why "Gate Entries Today" kept
+     opening the 45-day history after being re-pointed at raviOpenGateToday(). */
+  var sig=cards.map(function(k){ return k.key+'@'+(k.click||''); }).join('|');
   if(box.getAttribute('data-sig')!==sig){
     box.innerHTML=cards.map(heroKpiCardHtml).join('');
     box.setAttribute('data-sig',sig);
@@ -10719,7 +10726,15 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
 
   window.addEventListener('popstate', function(){
     try{ history.pushState({app:true},'',location.href); }catch(e){}
-    if(window.USER) heroBackStep();
+    /* R20 (Ravi 01-Aug-2026): this guard used to be `if(window.USER)`, and it
+       was ALWAYS false — USER is a top-level `let`, and let/const globals are
+       not properties of window. Proven live: typeof USER === 'object' while
+       window.USER === undefined. Which means heroBackStep has NEVER run from a
+       real back press since the day it shipped: popups stayed open, the screen
+       moved underneath them, and Chrome's history intervention exited the app
+       after two presses. The one weakness of a fix verified by calling
+       heroBackStep() directly is that the direct call skips this guard. */
+    if(typeof USER!=='undefined' && USER) heroBackStep();
   });
 
   /* ------------------------------------------------------- GATE ENTRIES TODAY
