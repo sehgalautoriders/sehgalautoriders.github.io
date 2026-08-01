@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 17;
-window.HERO_BUILD = 'R17-2026.08.01';
+window.HERO_RELEASE = 18;
+window.HERO_BUILD = 'R18-2026.08.01';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10633,27 +10633,75 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      the screen UNDERNEATH the window, the window stayed put, and the next press
      left the app. Back now closes the topmost thing that is open, and only
      falls through to Home when nothing is open. */
-  const OVERLAYS = ['ravi-kpi-modal','ge-model-modal','ravi-doc-modal','preview-modal','hu-cm-modal'];
+  /* R18 (Ravi 01-Aug-2026): "If a popup is there on the screen, how can a back
+     screen move." It still could, for two reasons, and both were in this block.
+
+     1. Detection read e.style.display — the INLINE attribute only. Any popup not
+        opened by writing that exact attribute was invisible to it.
+     2. The hand-kept id list had drifted away from the app. Checked against the
+        running page:
+          'hu-cm-modal'      — NO SUCH ELEMENT. The holdup contact popup is
+                               'hu-contact-modal'. That entry had never matched
+                               anything.
+          'fp-modal'         (forgot password)     — in no list, no .modal class
+          'es-model-modal'   (estimate model pick) — in no list, no .modal class
+          'chgpass-modal'    (change password)     — in no list
+          'modal-newtable'   (master data)         — in no list
+          'modal-addcolumn'  (master data)         — in no list
+        Six popups where back skipped straight past and moved the screen behind
+        them, which is exactly what he is describing.
+
+     So it does not keep a list any more. It ASKS THE PAGE what is on top: every
+     element that is actually painted, actually positioned, highest z-index wins.
+     A popup added next month is covered without anyone remembering to edit this.
+
+     Verified on the live page: all 13 popups report position:fixed, so the
+     position test below includes every one of them and excludes ordinary
+     in-flow content. #global-progress is fixed at z-index 9999 and WOULD
+     outrank every popup, so it is named as not-a-popup. It does not match the
+     selector today; the guard is there so it cannot start matching later. */
+  const POPUP_SEL = '.modal,.ravi-modal-overlay,[id$="-modal"],[id$="-sheet"],[id$="-popup"],[id$="-overlay"]';
+
+  /* Fixed, high z-index, and deliberately NOT closable with the back key.
+     hero-updcover is the compulsory update screen — back must never dismiss it. */
+  const NOT_A_POPUP = {'global-progress':1,'hero-updcover':1};
+
+  /* Close through the popup's own function where it has one, so its cleanup runs.
+     Anything not listed falls back to hiding, which is all the old code ever did. */
+  const CLOSERS = {
+    'ravi-kpi-modal':'raviCloseKpiModal', 'ge-model-modal':'geCloseModelModal',
+    'es-model-modal':'esCloseModelModal', 'ravi-doc-modal':'raviCloseDocModal',
+    'preview-modal':'closePreview',       'fp-modal':'fpClose'
+  };
 
   function topOpenOverlay(){
-    for(let i=0;i<OVERLAYS.length;i++){
-      const e=document.getElementById(OVERLAYS[i]);
-      if(e && e.style.display && e.style.display!=='none') return e;
-    }
-    // any other .modal left visible
-    const all=document.querySelectorAll('.modal');
+    const all=document.querySelectorAll(POPUP_SEL);
+    let best=null, bestZ=-1;
     for(let i=0;i<all.length;i++){
-      if(all[i].style.display && all[i].style.display!=='none') return all[i];
+      const e=all[i];
+      if(NOT_A_POPUP[e.id]) continue;
+      const cs=getComputedStyle(e);
+      if(cs.display==='none'||cs.visibility==='hidden'||cs.opacity==='0') continue;
+      if(cs.position!=='fixed'&&cs.position!=='absolute') continue;
+      if(!e.getClientRects().length) continue;   // present in the DOM is not the same as on the screen
+      const z=parseInt(cs.zIndex,10)||0;
+      if(z>=bestZ){ bestZ=z; best=e; }           // equal z-index: later in the DOM is the one on top
     }
-    return null;
+    return best;
+  }
+
+  function closeOverlay(ov){
+    const fn=CLOSERS[ov.id];
+    if(fn && typeof window[fn]==='function'){ try{ window[fn](); return; }catch(e){} }
+    ov.style.display='none';
   }
 
   window.heroBackStep = function(){
+    /* One press closes ONE thing — the topmost. A popup opened from inside
+       another popup must not take the one underneath with it. */
     const ov=topOpenOverlay();
     if(ov){
-      if(ov.id==='ravi-kpi-modal' && typeof raviCloseKpiModal==='function') raviCloseKpiModal();
-      else if(ov.id==='ge-model-modal' && typeof geCloseModelModal==='function') geCloseModelModal();
-      else ov.style.display='none';
+      closeOverlay(ov);
       return true;                       // handled — do not move the screen behind it
     }
     const vin=document.getElementById('ge-vin-panel');
