@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 22;
-window.HERO_BUILD = 'R22-2026.08.03.3';
+window.HERO_BUILD = 'R22-2026.08.03.5';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1576,7 +1576,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
             </div>
 
             <div class="sec">Vehicle</div>
-            <div class="fld"><label>Model *</label><select id="es-model"></select><div id="es-model-flag" style="display:none;font-size:11px;margin-top:3px"></div></div>
+            <div class="fld"><label>Model *</label><select id="es-model"></select><div id="es-model-flag" style="display:none;font-size:11px;margin-top:3px"></div><div id="es-model-src" style="display:none;font-size:11px;margin-top:3px;font-weight:700"></div></div>
             <div class="row2">
               <div class="fld"><label>Odometer (km) *</label><input id="es-km" inputmode="numeric" placeholder="e.g. 5800"></div>
               <div class="fld"><label>Date of sale</label><input id="es-dos" class="date-dmy" type="text" inputmode="numeric" placeholder="dd-mm-yyyy" maxlength="10" autocomplete="off"></div>
@@ -2330,7 +2330,7 @@ function heroCustFind(query, cb){
         const v=r.result;
         if(v){ cb({found:true, how:t[2], fuzzy:t[2].indexOf('last6')>-1, vehicle:{
           reg:v.reg||'', vin:v.vin||'', model:v.mdl||'', name:v.nm||'',
-          mob:v.mob||'', alt:v.alt||'', location:v.loc||''}}); }
+          mob:v.mob||'', alt:v.alt||'', location:v.loc||'', saleDate:v.dos||''}}); }
         else next();
       };
       r.onerror=function(){ next(); };
@@ -2364,7 +2364,7 @@ function custWriteBatch(db, rows){
       const reg=custNormReg(r.r), vin=custNormReg(r.v);
       try{ st.put({ reg:reg, vin:vin, vt:vin?vin.slice(-6):'',
         mob:custNormMob(r.p), alt:custNormMob(r.a),
-        mdl:r.m||'', nm:r.n||'', loc:r.l||'' }); }catch(e){}
+        mdl:r.m||'', nm:r.n||'', loc:r.l||'', dos:r.d||'' }); }catch(e){}
     });
     tx.oncomplete=function(){ res(true); };
     tx.onerror=function(){ res(false); };
@@ -5915,6 +5915,17 @@ function esOnGatePick(g){
     document.getElementById('es-out').innerHTML='<div class="empty"><div class="cond">No estimate yet</div><p style="margin-top:8px">Enter the vehicle details and press <b>Generate estimate</b>.</p></div>';
     document.getElementById('es-msg').textContent='';
   }
+  /* ODOMETER COMES FROM THE GATE (Ravi 03-Aug-2026). The guard already
+     photographs and reads the meter at the gate; this screen was clearing it and
+     making the SA type it again, which is why it still felt manual. Prefilled
+     here, still editable, and 📷 Scan re-reads the meter and warns if the new
+     reading disagrees with what the gate recorded. */
+  ES_GATE_KM = +String(g.km||'').replace(/[^0-9]/g,'') || 0;
+  if(ES_GATE_KM){
+    const kmEl2=document.getElementById('es-km');
+    if(kmEl2 && !kmEl2.value.trim()){ kmEl2.value=ES_GATE_KM; }
+    try{ esKmHint('Odometer '+ES_GATE_KM.toLocaleString('en-IN')+' km taken from the gate entry. Tap 📷 Scan to re-read it.',''); }catch(e){}
+  }
   document.getElementById('es-name').value=g.name||'';
   document.getElementById('es-mob').value=g.mob||'';
   document.getElementById('es-reg').value=(typeof raviNormalizeReg==='function'?raviNormalizeReg(g.reg||''):(g.reg||''));
@@ -5926,11 +5937,15 @@ function esOnGatePick(g){
   try{
     heroCustLookup(g.reg,function(res){   /* phone first, server fallback (Ravi 26-Jul-2026) */
       const v=(res&&res.found&&res.vehicle)||null; if(!v) return;
-      const pd=v['Purchase Date']||v['Date of Sale']||v['Sale Date']||'';
+      /* v.saleDate / v.dos are the fields the backend actually sends (03-Aug-2026).
+         The three title-case keys below never existed in the response, which is
+         why Date of Sale always came back blank and had to be typed by hand. */
+      const pd=v.saleDate||v.dos||v['Purchase Date']||v['Date of Sale']||v['Sale Date']||'';
       const dosEl=document.getElementById('es-dos');
       if(pd && dosEl && !dosEl.value.trim()){
-        const d=new Date(pd);
-        dosEl.value=isNaN(d.getTime())?String(pd):(('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+d.getFullYear());
+        const s=String(pd).trim();
+        if(/^\d{2}-\d{2}-\d{4}$/.test(s)){ dosEl.value=s; }   // already dd-mm-yyyy from the server
+        else { const d=new Date(s); dosEl.value=isNaN(d.getTime())?s:(('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+d.getFullYear()); }
         esUpdateLive();
       }
     });
@@ -11703,6 +11718,7 @@ function esKmCandidates(text){
   });
   return out;
 }
+var ES_GATE_KM=0;   /* odometer the gate recorded for the picked vehicle */
 function esKmHint(msg, kind){
   var el=document.getElementById('es-km-hint'); if(!el) return;
   el.style.display=msg?'block':'none';
@@ -11753,10 +11769,21 @@ function esOnKmPhoto(e){
         el.value=km;
         try{ esUpdateLive(); }catch(err){}
         var extra = (cands.length>1) ? (' Other numbers seen: '+cands.filter(function(x){return x!==km;}).join(', ')+'.') : '';
+        /* Compare against what the gate recorded (Ravi 03-Aug-2026). A reading
+           BELOW the gate figure cannot be right on the same visit, and a wild
+           jump usually means a trip meter or a misread digit. Warn, never block \u2014
+           the SA is standing at the vehicle and is the final judge. */
+        var gateWarn='';
+        if(ES_GATE_KM){
+          if(km < ES_GATE_KM) gateWarn=' \u26a0\ufe0f <b>Lower than the gate reading ('+ES_GATE_KM.toLocaleString('en-IN')+' km)</b> \u2014 check the meter.';
+          else if(km - ES_GATE_KM > 50) gateWarn=' \u26a0\ufe0f Gate recorded '+ES_GATE_KM.toLocaleString('en-IN')+' km \u2014 that is a '+(km-ES_GATE_KM).toLocaleString('en-IN')+' km difference.';
+          else gateWarn=' \u2713 Matches the gate reading.';
+        }
         esKmHint('\u2705 Read <b>'+km.toLocaleString('en-IN')+' km</b>'
                 +(r.engine==='vision'?' by scan':' by AI')
-                +'. Confirm against the meter before generating.'+extra
-                +(prev&&prev!==km?(' <b>Replaced '+prev.toLocaleString('en-IN')+'.</b>'):''), 'ok');
+                +'.'+gateWarn+' Confirm against the meter before generating.'+extra
+                +(prev&&prev!==km?(' <b>Replaced '+prev.toLocaleString('en-IN')+'.</b>'):''),
+                gateWarn.indexOf('\u26a0')>-1 ? 'warn' : 'ok');
       })
       .catch(function(){ esKmHint('Reading failed \u2014 type the odometer.','warn'); });
   };
@@ -12039,7 +12066,10 @@ function esPickLab(code, btn){
         if(g && g.reg && typeof heroCustLookup==='function'){
           heroCustLookup(g.reg, function(res){
             var v=(res&&res.found&&res.vehicle)||null;
-            var dm=v ? String(v['Model']||v['MODEL']||'').trim() : '';
+            /* customerFind returns lowercase `model`; the two title-case keys
+               below never existed in that response, so dm was always blank and
+               the DMS model lock could never engage. (Ravi 03-Aug-2026) */
+            var dm=v ? String(v.model||v['Model']||v['MODEL']||'').trim() : '';
             if(!dm) return;                       /* no record model -> stays editable */
             var sel=document.getElementById('es-model'), hit='';
             for(var i=0;i<sel.options.length;i++){
@@ -12972,13 +13002,21 @@ const INS_SCRIPTS={
   mr:(r)=>`नमस्कार ${r.customer||'सर/मॅडम'}, मी सहगल ऑटोरायडर्स (हिरो मोटोकॉर्प), चिंचवड मधून बोलत आहे — आपल्या ${r.reg}${r.model?' ('+r.model+')':''} गाडीच्या विम्याबद्दल.\n\nआधी सांगा — मी आपली काय मदत करू शकते? पॉलिसीबद्दल आपला काही विचार आहे का?\n\nआपली पॉलिसी${r.company?' ('+r.company+')':''} ${r.daysToExpiry<0?'संपली आहे ('+r.expiry+')':r.expiry+' रोजी संपत आहे'}। वेळेत नूतनीकरण केल्याचे फायदे:\n• गाडीची तपासणी लागत नाही — पॉलिसी संपल्यावर तपासणी व जास्त प्रीमियम लागतो\n• आपला नो-क्लेम बोनस सुरक्षित राहतो\n• विम्याशिवाय गाडी चालवल्यास ₹2,000 दंड, आणि अपघाताचा संपूर्ण खर्च आपल्यावर\n• आमच्या वर्कशॉपमध्ये कॅशलेस क्लेमची सोय\n\nआजच एका कॉलमध्ये नूतनीकरण होऊ शकते. मी WhatsApp वर कोटेशन पाठवू का?`
 };
 function insBootMod(force){
-  const el=document.getElementById('ins-list'); if(el&&(force||!INS_ROWS.length)) el.innerHTML='<div class="hint">Loading renewal worklist…</div>';
-  jget('inscrm_worklist',{owner:(USER&&USER.empno)||''},function(res){
+  /* Always open on the whole book. Chrome restores the previously chosen option
+     on reload, and landing on "My customers" showed 0 rows to someone who had
+     simply not claimed anyone yet. (Ravi 03-Aug-2026) */
+  const f0=document.getElementById('ins-filter'); if(f0 && !force) f0.value='';
+  const el=document.getElementById('ins-list'); if(el&&(force||!INS_ROWS.length)) el.innerHTML='<div class="hint">Loading the renewal worklist… the first open of the day takes a few seconds.</div>';
+  /* jgetRaw with a 90s ceiling, not jget. The renewal book is built from a
+     100,000-row sheet; the first request after the server cache expires is
+     genuinely slow, and the default 25s gave up and reported "network" —
+     which is what showed 0 customers to every insurance login. (03-Aug-2026) */
+  jgetRaw('inscrm_worklist',{owner:(USER&&USER.empno)||''},function(res){
     if(!res||res.ok===false){ if(el) el.innerHTML='<div class="hint">'+((res&&res.error)||'Backend not reachable')+'</div>'; return; }
     INS_ROWS=res.rows||[];
     if(res.note&&!INS_ROWS.length&&el){ el.innerHTML='<div class="hint">'+raviEsc(res.note)+'</div>'; const c=document.getElementById('ins-count'); if(c) c.textContent=''; return; }
     insRenderList();
-  });
+  }, 90000);
 }
 function insTempSuggest(r){ const d=r.daysToExpiry; return d<=1?'HOT':(d<=30?'WARM':'COLD'); }
 function insRenderList(){
