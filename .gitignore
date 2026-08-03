@@ -3,7 +3,19 @@
 # This is deliberate: it makes it structurally impossible for a customer
 # spreadsheet, a .gs backend file or a credential to reach this public repo,
 # even by accident, even with "git add -A".
+#
+# R22 (03-Aug-2026): manifest.json + the four PNG icons were added so the app can
+# be packaged as an installable APK. A TWA/APK generator fetches the manifest by
+# URL and requires PNG icons — the old inline data: URI manifest with JPEG icons
+# could not be packaged. These are app assets with no customer data in them, so
+# the whitelist is widened by NAME, one file at a time, never by pattern.
+#
 *
 !.gitignore
 !index.html
 !sw.js
+!manifest.json
+!icon-192.png
+!icon-512.png
+!icon-maskable-192.png
+!icon-maskable-512.png
