@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 27;
-window.HERO_BUILD = 'R27-2026.08.03.1';
+window.HERO_BUILD = 'R27-2026.08.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15629,6 +15629,17 @@ function psxPaintScans(rows, all){
 <style>
 #es-dos-src,#es-model-src{font-size:11px;margin-top:3px;font-weight:700;line-height:1.4}
 #es-dos-src a,#es-model-src a{font-weight:800}
+/* A frozen field has to LOOK frozen. s35 already styled #es-model.es-locked,
+   but a later rule outranked it and the locked select still rendered plain
+   white — so the DMS model lock has never actually looked locked on screen.
+   Both are set here at #view-estimate #id.es-locked so nothing outranks them. */
+#view-estimate #es-model.es-locked,
+#view-estimate #es-dos.es-locked{
+  background:#f1f5f9;color:#334155;font-weight:750;border-color:#cbd5e1;cursor:not-allowed}
+@media (prefers-color-scheme:dark){
+  #view-estimate #es-model.es-locked,
+  #view-estimate #es-dos.es-locked{background:rgba(148,163,184,.16);color:#e2e8f0;border-color:rgba(148,163,184,.35)}
+}
 .es-r27-wait{font-size:11px;font-weight:700;color:var(--steel);margin-top:3px;display:flex;gap:6px;align-items:center}
 .es-r27-wait:before{content:'';width:11px;height:11px;border-radius:50%;flex:0 0 11px;
   border:2px solid #cbd5e1;border-top-color:#0f172a;animation:esR27Spin .7s linear infinite}
@@ -15735,44 +15746,70 @@ function esR27DosLine(html, colour){
   if(!html){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block'; el.style.color=colour||'var(--steel)'; el.innerHTML=html;
 }
+/* FROZEN, like the model (Ravi 03-Aug-2026 — asked for, then confirmed).
+   The record wins. The date of sale decides the free-service stage and what the
+   owner manual says is due, so a typed date that disagrees with DMS changes
+   what the customer is charged for; if it is going to be authoritative it has
+   to be authoritative in one direction only. An <input> takes readOnly
+   natively, so the lock needs no event guard the way the <select> did — but
+   one is added anyway so tapping it explains itself instead of doing nothing.
+   WM / GM / CEO can unlock, exactly as with the model. */
+var ES_R27_DOS_LOCKED='';
+function esR27FreezeDos(dmy, source, replaced){
+  var el=document.getElementById('es-dos'); if(!el) return;
+  el.value=dmy;
+  el.readOnly=true;
+  el.classList.add('es-locked');
+  el.setAttribute('data-locked','1');
+  ES_R27_DOS_LOCKED=dmy;
+  esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from '
+    +(source==='phone'?'the customer master on this phone':'DMS records')
+    +' — not editable.'
+    + (replaced ? ' It replaced <b>'+String(replaced).replace(/</g,'&lt;')+'</b>.' : '')
+    + (esR27CanUnlock() ? ' <a href="#" onclick="esR27UnlockDos();return false">Unlock</a>' : ''), '#047857');
+  try{ el.dispatchEvent(new Event('change')); }catch(e){}
+  try{ esUpdateLive(); }catch(e){}
+  try{ esLoadServiceDue(); }catch(e){}
+}
+function esR27UnlockDos(){
+  if(!esR27CanUnlock()){ alert('Only the WM, GM or CEO can change a date of sale that came from DMS records.'); return; }
+  esR27UnfreezeDos();
+  esR27DosLine('🔓 Unlocked — a change here overrides the DMS record.', '#b45309');
+}
+function esR27UnfreezeDos(){
+  var el=document.getElementById('es-dos'); if(!el) return;
+  el.readOnly=false;
+  el.classList.remove('es-locked');
+  el.removeAttribute('data-locked');
+  ES_R27_DOS_LOCKED='';
+}
 function esR27FillDos(v, source){
   var el=document.getElementById('es-dos'); if(!el) return false;
   var dmy=esR27Dmy(esR27SaleDate(v));
   if(!dmy){
+    esR27UnfreezeDos();
     esR27DosLine('⚠️ No date of sale on record for this vehicle — type it if the customer knows it. '
       +'It decides the free-service stage and what the owner manual says is due.', '#b45309');
     return false;
   }
-  /* Anything the SA has already typed for THIS vehicle wins — they are looking
-     at the customer's book and the record can be stale. An earlier fill that
-     already agrees with the record still gets its provenance said out loud;
-     one that disagrees gets offered the record's date, never given it. */
-  if(esR27Str(el.value)){
-    if(esR27Str(el.value)===dmy){
-      esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from '
-        +(source==='phone'?'the customer master on this phone':'DMS records')
-        +'. Editable if the record is wrong.', '#047857');
-    } else {
-      esR27DosLine('ℹ️ Records say <b>'+dmy+'</b>. '
-        +'<a href="#" onclick="esR27UseDos(\''+dmy+'\');return false">Use that</a>', '#b45309');
-    }
-    return false;
-  }
-  el.value=dmy;
-  esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from '
-    +(source==='phone'?'the customer master on this phone':'DMS records')
-    +'. Editable if the record is wrong.', '#047857');
-  try{ el.dispatchEvent(new Event('change')); }catch(e){}
-  try{ esUpdateLive(); }catch(e){}
-  try{ esLoadServiceDue(); }catch(e){}
+  /* Anything already in the box came either from the original pick's own
+     lookup (same record, same value) or from the SA typing inside the second
+     it took records to answer. Either way the record is what stands — and if
+     it displaced something different, the line says so rather than swapping
+     it silently. */
+  var had=esR27Str(el.value);
+  esR27FreezeDos(dmy, source, (had && had!==dmy) ? had : '');
   return true;
 }
-function esR27UseDos(dmy){
+/* An input honours readOnly on its own; this only makes the refusal audible. */
+(function(){
   var el=document.getElementById('es-dos'); if(!el) return;
-  el.value=dmy;
-  esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from DMS records.', '#047857');
-  try{ el.dispatchEvent(new Event('change')); esUpdateLive(); esLoadServiceDue(); }catch(e){}
-}
+  el.addEventListener('click', function(){
+    if(this.getAttribute('data-locked')!=='1') return;
+    alert('This date of sale came from DMS records and cannot be changed here.'
+      +(esR27CanUnlock()?'\n\nUse Unlock below the field if the record is genuinely wrong.':''));
+  });
+})();
 
 /* --------------------------------------------------------------------------
    3.  FREEZE the model when the records supplied it — and don't ask.
@@ -15875,7 +15912,7 @@ function esR27ReleaseAsk(){
   var OLD_PICK=window.esOnGatePick;
   if(typeof OLD_PICK==='function') window.esOnGatePick=function(g){
     ES_R27_HOLD=true; ES_R27_PENDING=null;
-    esR27DosLine('');
+    esR27DosLine(''); esR27UnfreezeDos();
     var r=OLD_PICK.apply(this, arguments);          /* fills name/mob/reg/km, holds the ask */
     try{ esR27WaitLine(true); }catch(e){}
 
@@ -15887,6 +15924,7 @@ function esR27ReleaseAsk(){
        left staring at a spinner — a slow master must not stop a job card. */
     var giveUp=setTimeout(function(){
       if(settled) return; settled=true;
+      esR27UnfreezeDos();
       esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309');
       esR27GateLine(g);
       esR27ReleaseAsk();
@@ -15898,10 +15936,10 @@ function esR27ReleaseAsk(){
 
       /* DATE OF SALE — the whole point of the resolver */
       if(v) esR27FillDos(v, res.source);
-      else if(res && res.found===false)
-        esR27DosLine('ℹ️ This vehicle is not in the customer master — type the date of sale.', '#b45309');
-      else
-        esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309');
+      else if(res && res.found===false){ esR27UnfreezeDos();
+        esR27DosLine('ℹ️ This vehicle is not in the customer master — type the date of sale.', '#b45309'); }
+      else { esR27UnfreezeDos();
+        esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309'); }
 
       /* MODEL — frozen when records have it, asked about when they do not */
       var hit=v ? esR27MatchModel(esR27Model(v)) : '';
@@ -15922,7 +15960,8 @@ function esR27ReleaseAsk(){
   if(typeof OLD_NEW==='function') window.esNewEstimate=function(){
     var r=OLD_NEW.apply(this, arguments);
     try{ ES_R27_HOLD=false; ES_R27_PENDING=null;
-         esR27DosLine(''); esR27ModelLine(''); esR27UnfreezeModel(); }catch(e){}
+         esR27DosLine(''); esR27ModelLine('');
+         esR27UnfreezeModel(); esR27UnfreezeDos(); }catch(e){}
     return r;
   };
 })();
