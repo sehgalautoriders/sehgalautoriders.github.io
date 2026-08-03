@@ -30,3 +30,6 @@
 # /.well-known/assetlinks.json the installed APK shows a browser URL bar.
 !.well-known/
 !.well-known/assetlinks.json
+# .nojekyll: Pages' Jekyll build silently DROPS dot-folders, so without this
+# file /.well-known/assetlinks.json 404s and the APK grows a browser URL bar.
+!.nojekyll
