@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.sehgalautoriders.twa",
+        "sha256_cert_fingerprints": ["09:3C:EE:8E:72:16:49:69:57:9A:F5:E1:9E:05:33:AA:03:A7:B5:57:05:BE:55:A8:56:B5:34:87:8F:9E:5D:FB"]
+      }
+    }]
