@@ -19,3 +19,10 @@
 !icon-512.png
 !icon-maskable-192.png
 !icon-maskable-512.png
+#
+# R22.2 (03-Aug-2026): the cartoon character/badge PNGs (Sehgal_Hero_Extracted_
+# Assets) now ship with the app under assets/. The unignore is restricted to
+# *.png inside that one folder — a spreadsheet, .gs or credential file dropped
+# there would still be ignored, so the structural guarantee holds.
+!assets/
+!assets/*.png

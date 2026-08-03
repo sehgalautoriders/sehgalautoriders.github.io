@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 22;
-window.HERO_BUILD = 'R22-2026.08.03.1';
+window.HERO_BUILD = 'R22-2026.08.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1332,9 +1332,12 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 <div id="view-home" style="display:none">
   <div class="wrap">
     <div class="home-greeting">
-      <div class="hg-left">
-        <div class="hg-name">Welcome back, <span id="hg-name-val">—</span> 👋</div>
-        <div class="hg-sub" id="hg-sub">Here's what's happening in your workshop today.</div>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <img src="assets/24_white_red_superhero_thumbs_up.png" alt="" style="width:54px;height:54px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
+        <div class="hg-left">
+          <div class="hg-name">Welcome back, <span id="hg-name-val">—</span> 👋</div>
+          <div class="hg-sub" id="hg-sub">Here's what's happening in your workshop today.</div>
+        </div>
       </div>
       <div class="hg-date" id="hg-date"></div>
     </div>
@@ -1923,7 +1926,10 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       <button class="btn ghost sm" onclick="showView('home')">‹ Home</button>
     </div>
     <div class="card" style="margin-bottom:14px">
-      <div class="hint" style="margin-bottom:10px">Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads part no, description, price, barcode and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy %.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+        <img src="assets/19_parts_box_robot.png" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
+        <div class="hint" style="margin:0">Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads part no, description, price, barcode and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy %.</div>
+      </div>
       <button class="btn" id="ps-shoot-btn" onclick="psPickPhoto()">📷 Scan a Part (camera or gallery)</button>
       <div id="ps-preview" style="margin-top:12px;display:none"><img id="ps-img" style="max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line)"></div>
       <div id="ps-status" class="hint" style="margin-top:8px"></div>
@@ -1965,7 +1971,10 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
         <button class="btn ghost sm" onclick="insBootMod(true)">↻ Refresh</button>
         <span id="ins-count" class="hint"></span>
       </div>
-      <div class="hint" style="margin-top:6px">Same-day expiry converts best — the list is ranked nearest-expiry first. First caller owns the customer. Ask the customer what they want first; the script is a help, not a cage.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+        <img src="assets/01_human_advisor_thumbs_up.png" alt="" style="width:56px;height:56px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
+        <div class="hint" style="margin:0">Same-day expiry converts best — the list is ranked nearest-expiry first. First caller owns the customer. Ask the customer what they want first; the script is a help, not a cage.</div>
+      </div>
     </div>
     <div id="ins-list"><div class="hint">Loading…</div></div>
   </div>
@@ -12799,24 +12808,28 @@ function psPickPhoto(){
   inp.click();
 }
 async function psAnalyze(dataUrl){
-  const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
-  if(!key){ psStatus('No AI key set. Ask admin to save the Gemini key in App Settings, then Sync Now.','err'); return; }
-  psStatus('🤖 Reading the part label…');
+  /* Cloud Vision, NOT Gemini (Ravi 03-Aug-2026). VISION_API_KEY comes from App
+     Settings the same way the Gemini key does; geVisionKey() falls back to the
+     Gemini key only if no Vision key is set. */
+  const key=(typeof geVisionKey==='function')?geVisionKey():'';
+  if(!key){ psStatus('No Vision key set. Ask admin to save the Cloud Vision key in App Settings, then Sync Now.','err'); return; }
+  psStatus('🔍 Reading the part label…');
   try{
     const b64=await geCompressForAi(dataUrl);
-    const prompt=`You are looking at a motorcycle/scooter SPARE PART at an Indian Hero MotoCorp (and old Hero Honda) dealership parts store. The photo may show a printed sticker/label/plate on the part or its box, possibly old, faded or partly torn.
-1. If a label is readable: extract EVERY printed field. Standard ones: part number (like 17220KVSV00 or similar), description/name, MRP or price in rupees, barcode digits. ANY OTHER printed field (batch, date, vendor code, HSN, qty, colour code, anything) goes into "extra" as {"FIELD NAME":"value"}.
-2. If NO label/sticker is readable at all: identify what the part IS (e.g. "clutch plate set", "air filter element"), list probable Hero/HeroHonda models it fits, and your confidence 0-100.
-Return ONLY JSON:
-{"label_found":true,"part_no":"","description":"","mrp":"","barcode":"","extra":{},"part_guess":"","probable_models":[],"confidence_percent":0}`;
-    const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
-    const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],generationConfig:{temperature:0,response_mime_type:'application/json'}};
-    let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.status===429){ psStatus('⏳ AI busy, retrying…'); await new Promise(s=>setTimeout(s,4000)); r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
-    if(!r.ok) throw new Error('AI error '+r.status);
+    const url='https://vision.googleapis.com/v1/images:annotate?key='+encodeURIComponent(key);
+    const body={requests:[{image:{content:b64},features:[
+      {type:'DOCUMENT_TEXT_DETECTION'},
+      {type:'LABEL_DETECTION',maxResults:6},
+      {type:'WEB_DETECTION',maxResults:6}
+    ]}]};
+    const call=()=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    let r=await call();
+    if(r.status===429){ psStatus('⏳ AI busy, retrying…'); await new Promise(s=>setTimeout(s,4000)); r=await call(); }
+    if(!r.ok) throw new Error('Vision error '+r.status);
     const j=await r.json();
-    const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
-    let g={}; { let s=txt.trim().replace(/^```json\s*/i,'').replace(/```$/,''); const a=s.indexOf('{'),b=s.lastIndexOf('}'); if(a>=0)s=s.slice(a,b+1); g=JSON.parse(s); }
+    const resp=(j.responses||[])[0]||{};
+    if(resp.error) throw new Error(resp.error.message||'Vision error');
+    const g=psParseVision_(resp);
     PS_LAST.guess=g; PS_LAST.extra=g.extra&&typeof g.extra==='object'?g.extra:{};
     document.getElementById('ps-partno').value=String(g.part_no||'');
     document.getElementById('ps-desc').value=String(g.description||g.part_guess||'');
@@ -12838,6 +12851,64 @@ Return ONLY JSON:
     psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err');
   }
 }
+/* Turns a Cloud Vision annotate response into the same object shape the old
+   Gemini call returned, so the UI and save flow needed no changes at all.
+   Label present  -> DOCUMENT_TEXT_DETECTION text, parsed field by field.
+   No label       -> WEB_DETECTION / LABEL_DETECTION identify the part, shown
+                     with a confidence % exactly like before. */
+function psParseVision_(resp){
+  const g={label_found:false,part_no:'',description:'',mrp:'',barcode:'',extra:{},part_guess:'',probable_models:[],confidence_percent:0};
+  const text=(resp.fullTextAnnotation&&resp.fullTextAnnotation.text)||'';
+  const lines=String(text).split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  if(lines.length){
+    g.label_found=true;
+    const flat=text.replace(/\n/g,' ');
+    /* MRP: number that follows MRP / M.R.P / Rs / ₹ / PRICE */
+    const mrp=flat.match(/(?:M\.?\s?R\.?\s?P|₹|\bRS\b|\bPRICE\b|\bINR\b)[^0-9]{0,8}([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i);
+    if(mrp) g.mrp=mrp[1].replace(/,/g,'');
+    /* Barcode: the longest pure-digit run of 8+ (EAN/UPC etc.) */
+    const digitRuns=(flat.replace(/\s+/g,'').match(/\d{8,}/g)||[]).sort((a,b)=>b.length-a.length);
+    if(digitRuns.length) g.barcode=digitRuns[0];
+    /* Part no: Hero pattern (5 digits + letter/digit tail, e.g. 17220KVSV00),
+       else any mixed letters+digits token of 8-14 chars that isn't the barcode */
+    for(const ln of lines){
+      const c=ln.replace(/[\s.]/g,'').toUpperCase();
+      let m=c.match(/\d{5}[A-Z]{1,4}[A-Z0-9]{2,6}/);
+      if(!m) m=c.match(/(?=[A-Z0-9]{8,14}$)(?=.*\d)(?=.*[A-Z])[A-Z0-9]{8,14}/);
+      if(m&&m[0]!==g.barcode){ g.part_no=m[0]; break; }
+    }
+    /* KEY: VALUE lines become extra fields (-> new sheet columns) */
+    const skip=/M\.?R\.?P|PRICE|PART\s*NO|₹/i;
+    lines.forEach(ln=>{
+      const kv=ln.match(/^([A-Za-z][A-Za-z .\/#&()-]{1,24})\s*[:\-]\s*(\S.*)$/);
+      if(kv&&!skip.test(kv[1])) g.extra[kv[1].trim().toUpperCase()]=kv[2].trim();
+    });
+    /* Description: longest mostly-letters line not already used elsewhere */
+    let best='';
+    lines.forEach(ln=>{
+      if(skip.test(ln)) return;
+      if(g.part_no&&ln.replace(/[\s.]/g,'').toUpperCase().indexOf(g.part_no)>=0) return;
+      if(/^[\d\s.,-]+$/.test(ln)) return;
+      if(ln.indexOf(':')>=0) return;
+      const letters=(ln.match(/[A-Za-z]/g)||[]).length;
+      if(letters/ln.length>=0.55&&ln.length>best.length) best=ln;
+    });
+    g.description=best;
+    /* Nothing on the label is ever lost: full raw text goes to one column */
+    g.extra['LABEL FULL TEXT']=lines.join(' | ').slice(0,500);
+    return g;
+  }
+  /* No readable text: identify the part from web/label detection */
+  const ents=(((resp.webDetection||{}).webEntities)||[]).filter(e=>e.description&&e.score);
+  const labs=(resp.labelAnnotations||[]).filter(l=>l.description&&l.score);
+  const best=ents[0]||labs[0];
+  if(best){
+    g.part_guess=best.description;
+    g.confidence_percent=Math.max(1,Math.min(99,Math.round(Number(best.score)*100)));
+    g.probable_models=ents.slice(1,4).map(e=>e.description).filter(d=>/hero|honda|splendor|passion|glamour|hf|xtreme|karizma|maestro|pleasure|destini|xoom/i.test(d));
+  }
+  return g;
+}
 function psSaveScan(){
   const g=PS_LAST.guess||{};
   const extra={};
@@ -12855,8 +12926,10 @@ function psSaveScan(){
     remarks:document.getElementById('ps-remarks').value||'', extra:JSON.stringify(extra)};
   if(!payload.partNo && !payload.desc){ psStatus('Nothing to save — need at least a part no or a description.','err'); return; }
   psStatus('Saving…');
+  /* jpost queues durably and resolves undefined — undefined is SUCCESS here,
+     not failure (the old check showed "Save failed" on every good save). */
   jpost(payload).then(function(res){
-    if(res&&res.ok!==false){ psStatus('✔ Saved to the backend sheet.','ok'); document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none'; psLoadRecent(); }
+    if(!res||res.ok!==false){ psStatus('✔ Saved to the backend sheet.','ok'); document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none'; setTimeout(psLoadRecent,1500); }
     else psStatus('Save failed: '+((res&&res.error)||'unknown'),'err');
   }).catch(function(e){ psStatus('Save failed: '+String(e).slice(0,120),'err'); });
 }
@@ -12865,7 +12938,7 @@ function psLoadRecent(){
   jget('ps_recent',{limit:20},function(res){
     if(!res||res.ok===false){ el.innerHTML='<div class="hint">'+((res&&res.error)||'Backend not reachable')+'</div>'; return; }
     const rows=res.rows||[];
-    if(!rows.length){ el.innerHTML='<div class="hint">No scans saved yet. Scan the first part above.</div>'; return; }
+    if(!rows.length){ el.innerHTML='<div style="text-align:center;padding:10px"><img src="assets/16_parts_box_character.png" alt="" style="width:84px;height:84px;object-fit:contain" onerror="this.style.display=\'none\'"><div class="hint" style="margin-top:6px">No scans saved yet. Scan the first part above.</div></div>'; return; }
     el.innerHTML=rows.map(r=>`<div class="ctlitem"><div><div class="big">${raviEsc(r['Part No']||r['AI Guess']||'—')} · ${raviEsc(r['Description']||'')}</div>
       <div class="small">${r['MRP']?'₹'+raviEsc(r['MRP'])+' · ':''}${r['Barcode']?'▮ '+raviEsc(r['Barcode'])+' · ':''}${raviEsc(r['Scanned By']||'')} · ${raviEsc(r['Timestamp']||'')}${r['Confidence %']?' · AI '+raviEsc(r['Confidence %'])+'%':''}</div></div></div>`).join('');
   });
@@ -12947,9 +13020,13 @@ function insFillScript(idx,lang){
 }
 function insClaim(idx,how){
   const r=INS_ROWS[idx]; if(!r) return;
+  /* jpost resolves undefined (queued+sent) — claim optimistically; the backend
+     keeps the real first-caller rule and the next worklist load reconciles. */
   jpost({type:'inscrm_call',reg:r.reg,customer:r.customer,mobile:r.mobile,expiry:r.expiry,
     by:(USER&&USER.empno)||'',byName:(USER&&USER.personName)||'',called:'1'}).then(function(res){
-    if(res&&res.owner){ r.owner=res.owner; r.ownerName=res.ownerName; r.calls=(r.calls||0)+1; insRenderList(); if(how!=='call') insOpenScript(idx); }
+    if(res&&res.owner){ r.owner=res.owner; r.ownerName=res.ownerName; }
+    else if(!r.owner){ r.owner=(USER&&USER.empno)||''; r.ownerName=(USER&&USER.personName)||''; }
+    r.calls=(r.calls||0)+1; insRenderList(); if(how!=='call') insOpenScript(idx);
   }).catch(function(){});
 }
 function insWaSendScript(idx){
@@ -12964,7 +13041,8 @@ function insSaveOutcome(idx){
   const rem=(document.getElementById('ins-rem-'+idx)||{}).value||'';
   jpost({type:'inscrm_call',reg:r.reg,customer:r.customer,mobile:r.mobile,expiry:r.expiry,
     by:(USER&&USER.empno)||'',byName:(USER&&USER.personName)||'',temp:temp,remarks:rem}).then(function(res){
-    if(res&&res.ok!==false){ r.temp=temp||r.temp; r.remarks=rem; if(res.owner){r.owner=res.owner;r.ownerName=res.ownerName;} insRenderList(); }
+    /* undefined = queued+sent by jpost — that is success, not failure */
+    if(!res||res.ok!==false){ r.temp=temp||r.temp; r.remarks=rem; if(res&&res.owner){r.owner=res.owner;r.ownerName=res.ownerName;} insRenderList(); }
     else alert('Save failed: '+((res&&res.error)||'unknown'));
   }).catch(function(e){ alert('Save failed: '+String(e).slice(0,120)); });
 }
