@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 22;
-window.HERO_BUILD = 'R22-2026.08.03.5';
+window.HERO_RELEASE = 24;
+window.HERO_BUILD = 'R24-2026.08.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1938,7 +1938,11 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       <div id="ps-status" class="hint" style="margin-top:8px"></div>
       <div id="ps-result" style="display:none;margin-top:12px">
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-bottom:6px">Check &amp; correct before saving</div>
-        <div class="fld"><label>Part No</label><input id="ps-partno" style="text-transform:uppercase"></div>
+        <div class="fld"><label>Part No</label><input id="ps-partno" style="text-transform:uppercase" onchange="psVerifyPart()"></div>
+        <!-- R24: the scanned number checked against the all-India Hero parts
+             master (55,681 parts), not against the 8,239 the dealer has billed.
+             Stays hidden until there is something true to say. -->
+        <div id="ps-verify" style="display:none;border-radius:8px;padding:9px 10px;margin:0 0 8px;font-size:12.5px"></div>
         <div class="fld"><label>Description</label><input id="ps-desc"></div>
         <div class="fld"><label>MRP / Price (₹)</label><input id="ps-mrp" inputmode="decimal"></div>
         <div class="fld"><label>Barcode</label><input id="ps-barcode"></div>
@@ -1955,33 +1959,222 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
   </div>
 </div>
 
-<!-- ================= R22: INSURANCE RENEWAL CRM (Insurance SMRE) ================= -->
+<!-- ============ R23: INSURANCE RENEWAL CRM  (redesigned 03-Aug-2026) ============
+     Replaces the R22 screen. Every style is scoped under .ins2 so nothing here
+     can leak into Gate Entry, Estimate or Holdup. The R22 markup is gone but
+     its JS is still in the file below and still works against the old routes,
+     so this screen can be reverted by swapping which boot function runs.
+     ========================================================================= -->
 <div id="view-insurance" style="display:none">
-  <div class="wrap">
-    <div class="hu-topbar">
-      <h2>🛡 Insurance Renewals</h2>
-      <button class="btn ghost sm" onclick="showView('home')">‹ Home</button>
-    </div>
-    <div class="card" style="margin-bottom:12px">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <select id="ins-filter" onchange="insRenderList()" style="border:1.5px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px">
-          <option value="">All in window (−30 to +90 days)</option>
-          <option value="today">🔥 Expiring today / just expired</option>
-          <option value="week">This week</option>
-          <option value="HOT">HOT</option><option value="WARM">WARM</option><option value="COLD">COLD</option>
-          <option value="mine">My customers</option>
-        </select>
-        <button class="btn ghost sm" onclick="insBootMod(true)">↻ Refresh</button>
-        <span id="ins-count" class="hint"></span>
+  <div class="ins2">
+
+    <!-- hero strip: who is working, what the day looks like -->
+    <div class="ins2-hero">
+      <button class="ins2-back" onclick="showView('home')">‹</button>
+      <img class="ins2-mascot" src="assets/23_white_red_superhero_jump.png" alt="" onerror="this.style.display='none'">
+      <div class="ins2-hero-txt">
+        <div class="ins2-hero-hi" id="ins2-greet">Insurance Renewals</div>
+        <div class="ins2-hero-sub" id="ins2-hero-sub">Loading your renewal book…</div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
-        <img src="assets/01_human_advisor_thumbs_up.png" alt="" style="width:56px;height:56px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
-        <div class="hint" style="margin:0">Same-day expiry converts best — the list is ranked nearest-expiry first. First caller owns the customer. Ask the customer what they want first; the script is a help, not a cage.</div>
+      <div class="ins2-ring" id="ins2-ring" title="Policies closed today"></div>
+    </div>
+
+    <!-- KPI tiles. Each one is a real day range answered by the server. -->
+    <div class="ins2-kpis" id="ins2-kpis"></div>
+
+    <!-- charts -->
+    <div class="ins2-charts" id="ins2-charts" style="display:none">
+      <div class="ins2-card ins2-chart">
+        <div class="ins2-ch-h">Where the book stands<span class="ins2-ch-sub" id="ins2-donut-sub"></span></div>
+        <div id="ins2-donut"></div>
+      </div>
+      <div class="ins2-card ins2-chart">
+        <div class="ins2-ch-h">Calls &amp; closures · last 14 days</div>
+        <div id="ins2-trend"></div>
+      </div>
+      <div class="ins2-card ins2-chart">
+        <div class="ins2-ch-h">Why customers say no</div>
+        <div id="ins2-reasons"></div>
+      </div>
+      <div class="ins2-card ins2-chart">
+        <div class="ins2-ch-h">Team board 🏆</div>
+        <div id="ins2-board"></div>
       </div>
     </div>
-    <div id="ins-list"><div class="hint">Loading…</div></div>
+
+    <!-- sticky control bar -->
+    <div class="ins2-bar">
+      <div class="ins2-search">
+        <span>🔎</span>
+        <input id="ins2-q" placeholder="Name, reg no or mobile…" oninput="ins2QueueSearch()">
+        <button class="ins2-x" onclick="ins2ClearQ()" title="Clear">✕</button>
+      </div>
+      <div class="ins2-chips" id="ins2-chips"></div>
+      <div class="ins2-chips ins2-chips2">
+        <button class="ins2-chip sm" data-f="mine"    onclick="ins2Toggle('mine')">👤 Mine</button>
+        <button class="ins2-chip sm" data-f="car"     onclick="ins2Toggle('car')">🚗 Car owners</button>
+        <button class="ins2-chip sm" data-f="REGULAR" onclick="ins2Toggle('loyalty','REGULAR')">⭐ Regulars</button>
+        <button class="ins2-chip sm" data-f="HOT"     onclick="ins2Toggle('temp','HOT')">🔥 Hot</button>
+        <button class="ins2-chip sm" data-f="OPEN"    onclick="ins2Toggle('status','OPEN')">📞 Open</button>
+        <button class="ins2-chip sm" data-f="UNTOUCHED" onclick="ins2Toggle('status','UNTOUCHED')">🆕 Never called</button>
+        <button class="ins2-chip sm ins2-reset" onclick="ins2ResetFilters()">Reset</button>
+      </div>
+      <div class="ins2-barfoot">
+        <span id="ins2-count" class="ins2-count"></span>
+        <span class="ins2-spacer"></span>
+        <span id="ins2-fresh" class="ins2-fresh"></span>
+        <button class="ins2-mini" onclick="ins2Load(true)">↻</button>
+        <button class="ins2-mini" id="ins2-xls" style="display:none" onclick="ins2Export()">⬇ Excel</button>
+        <label class="ins2-mini" id="ins2-carupload" style="display:none" title="Upload Customer_Master_Hero_Maruti_Common.xlsx">🚗 Load car list
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="ins2MarutiUpload(this)">
+        </label>
+      </div>
+    </div>
+
+    <div id="ins2-list"></div>
+    <div id="ins2-more"></div>
   </div>
 </div>
+
+<style>
+/* ---- Insurance CRM v2. All scoped under .ins2 — additive, nothing global. ---- */
+.ins2{max-width:1100px;margin:0 auto;padding:0 12px 90px}
+.ins2-hero{position:relative;display:flex;align-items:center;gap:12px;margin:10px 0 14px;padding:14px 16px;border-radius:20px;
+  background:linear-gradient(135deg,#e11d2f 0%,#b3121f 55%,#7f0c16 100%);color:#fff;overflow:hidden;
+  box-shadow:0 12px 30px rgba(190,18,31,.28)}
+.ins2-hero:after{content:'';position:absolute;right:-40px;top:-60px;width:190px;height:190px;border-radius:50%;background:rgba(255,255,255,.09)}
+.ins2-back{flex:0 0 auto;width:34px;height:34px;border:0;border-radius:11px;background:rgba(255,255,255,.18);color:#fff;font-size:19px;font-weight:800;cursor:pointer}
+.ins2-mascot{width:58px;height:58px;object-fit:contain;flex:0 0 auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.25))}
+.ins2-hero-txt{flex:1;min-width:0;z-index:1}
+.ins2-hero-hi{font-size:17px;font-weight:850;letter-spacing:-.2px}
+.ins2-hero-sub{font-size:12px;opacity:.92;margin-top:2px;line-height:1.45}
+.ins2-ring{flex:0 0 auto;width:56px;height:56px;z-index:1}
+
+.ins2-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:12px}
+.ins2-kpi{position:relative;border:0;text-align:left;cursor:pointer;padding:12px 13px;border-radius:16px;background:var(--card,#fff);
+  box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid transparent;transition:transform .12s,box-shadow .12s,border-color .12s;font-family:inherit}
+.ins2-kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(15,23,42,.13)}
+.ins2-kpi.on{border-color:currentColor;box-shadow:0 8px 22px rgba(15,23,42,.15)}
+.ins2-kpi-n{font-size:23px;font-weight:850;line-height:1.05;letter-spacing:-.6px}
+.ins2-kpi-l{font-size:11px;font-weight:700;color:var(--steel);margin-top:3px;text-transform:uppercase;letter-spacing:.03em}
+
+.ins2-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px}
+.ins2-card{background:var(--card,#fff);border-radius:16px;padding:13px 14px;box-shadow:0 2px 10px rgba(15,23,42,.07)}
+.ins2-ch-h{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);margin-bottom:9px;display:flex;justify-content:space-between;gap:6px}
+.ins2-ch-sub{font-weight:700;text-transform:none;letter-spacing:0;color:#94a3b8}
+.ins2-bar-row{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:11.5px}
+.ins2-bar-lab{flex:0 0 108px;color:var(--steel);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins2-bar-track{flex:1;height:9px;border-radius:5px;background:#eef2f7;overflow:hidden}
+.ins2-bar-fill{height:100%;border-radius:5px}
+.ins2-bar-n{flex:0 0 32px;text-align:right;font-weight:800;color:#334155}
+.ins2-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:11px;font-weight:600;color:var(--steel)}
+.ins2-legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:4px;vertical-align:-1px}
+.ins2-board-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;border-bottom:1px dashed #eef2f7}
+.ins2-board-row:last-child{border-bottom:0}
+.ins2-board-av{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:#f1f5f9}
+.ins2-board-n{flex:1;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins2-board-v{font-weight:850;color:#166534}
+
+.ins2-bar{position:sticky;top:0;z-index:30;background:var(--bg,#f6f8fb);padding:8px 0 6px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.ins2-search{display:flex;align-items:center;gap:7px;background:var(--card,#fff);border:1.5px solid var(--line);border-radius:13px;padding:8px 11px;margin-bottom:7px}
+.ins2-search span{opacity:.55;font-size:14px}
+.ins2-search input{flex:1;border:0;outline:0;font-size:14.5px;background:transparent;color:inherit;font-family:inherit}
+.ins2-x{border:0;background:transparent;color:#94a3b8;font-size:14px;cursor:pointer;padding:0 2px}
+.ins2-chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.ins2-chips::-webkit-scrollbar{display:none}
+.ins2-chips2{margin-top:5px}
+.ins2-chip{flex:0 0 auto;border:1.5px solid var(--line);background:var(--card,#fff);color:var(--steel);border-radius:999px;
+  padding:7px 13px;font-size:12.5px;font-weight:750;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .12s}
+.ins2-chip.sm{padding:5px 11px;font-size:11.5px}
+.ins2-chip b{font-weight:850;margin-left:5px;opacity:.75}
+.ins2-chip.on{background:#0f172a;border-color:#0f172a;color:#fff}
+.ins2-chip.on b{opacity:.85}
+.ins2-reset{color:#b91c1c;border-style:dashed}
+.ins2-barfoot{display:flex;align-items:center;gap:7px;margin-top:6px}
+.ins2-count{font-size:11.5px;font-weight:750;color:var(--steel)}
+.ins2-spacer{flex:1}
+.ins2-fresh{font-size:10.5px;font-weight:700;color:#94a3b8}
+.ins2-mini{border:1.5px solid var(--line);background:var(--card,#fff);border-radius:9px;padding:5px 10px;font-size:11.5px;font-weight:750;
+  cursor:pointer;color:var(--steel);font-family:inherit;white-space:nowrap}
+
+/* ---- the deck. The WHOLE card is the tap target (Ravi 03-Aug-2026) ---- */
+.ins2-deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
+.ins2-c{position:relative;background:var(--card,#fff);border-radius:18px;padding:13px 14px 12px;cursor:pointer;
+  box-shadow:0 2px 10px rgba(15,23,42,.07);border-left:5px solid #cbd5e1;transition:transform .13s,box-shadow .13s;
+  -webkit-tap-highlight-color:transparent}
+.ins2-c:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(15,23,42,.14)}
+.ins2-c.open{transform:none;box-shadow:0 12px 34px rgba(15,23,42,.18);grid-column:1/-1}
+.ins2-c.locked{opacity:.72;background:repeating-linear-gradient(135deg,var(--card,#fff),var(--card,#fff) 10px,#fafafa 10px,#fafafa 20px)}
+.ins2-c-top{display:flex;gap:9px;align-items:flex-start}
+.ins2-c-main{flex:1;min-width:0}
+.ins2-c-name{font-size:15px;font-weight:850;letter-spacing:-.2px;line-height:1.25;word-break:break-word}
+.ins2-c-reg{font-size:12px;font-weight:750;color:var(--steel);font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:1px}
+.ins2-c-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.ins2-b{font-size:10px;font-weight:800;padding:2.5px 7px;border-radius:6px;letter-spacing:.02em;white-space:nowrap}
+.ins2-c-exp{text-align:right;flex:0 0 auto}
+.ins2-c-days{font-size:19px;font-weight:850;line-height:1;letter-spacing:-.6px}
+.ins2-c-dl{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-top:2px}
+.ins2-c-date{font-size:10.5px;color:#94a3b8;font-weight:650;margin-top:2px}
+.ins2-c-facts{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:9px;font-size:11.5px;color:var(--steel)}
+.ins2-c-facts b{color:#334155;font-weight:750}
+.ins2-c-foot{display:flex;align-items:center;gap:6px;margin-top:10px}
+.ins2-act{flex:0 0 auto;width:36px;height:36px;border:0;border-radius:11px;font-size:15px;cursor:pointer;display:inline-flex;
+  align-items:center;justify-content:center;text-decoration:none;font-family:inherit}
+.ins2-act.call{background:#dbeafe;color:#1d4ed8}
+.ins2-act.wa{background:#dcfce7;color:#15803d}
+.ins2-act.wide{width:auto;padding:0 13px;font-size:12.5px;font-weight:800;gap:5px}
+.ins2-lockpill{font-size:10.5px;font-weight:800;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:7px;padding:3px 8px}
+.ins2-hintrow{flex:1;font-size:10.5px;color:#94a3b8;font-weight:650;text-align:right}
+
+/* ---- expanded detail ---- */
+.ins2-det{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;cursor:default}
+.ins2-sec{font-size:10.5px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:10px 0 6px}
+.ins2-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px}
+.ins2-fact{background:#f8fafc;border-radius:10px;padding:7px 10px}
+.ins2-fact-l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8}
+.ins2-fact-v{font-size:13px;font-weight:750;margin-top:1px;word-break:break-word}
+.ins2-dispwrap{display:flex;flex-direction:column;gap:8px}
+.ins2-dispgrp{border:1.5px solid var(--line);border-radius:12px;padding:8px 10px}
+.ins2-dispgrp-h{font-size:10.5px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.ins2-disps{display:flex;flex-wrap:wrap;gap:5px}
+.ins2-disp{border:1.5px solid var(--line);background:var(--card,#fff);border-radius:9px;padding:6px 10px;font-size:11.5px;
+  font-weight:700;cursor:pointer;font-family:inherit;color:inherit;text-align:left;transition:all .1s}
+.ins2-disp:hover{border-color:#94a3b8}
+.ins2-disp.on{color:#fff;border-color:transparent}
+.ins2-inrow{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;align-items:center}
+.ins2-in{border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;font-family:inherit;background:var(--card,#fff);color:inherit}
+.ins2-in.grow{flex:1;min-width:150px}
+.ins2-save{border:0;border-radius:11px;background:#0f172a;color:#fff;font-weight:800;font-size:13px;padding:10px 18px;cursor:pointer;font-family:inherit}
+.ins2-save[disabled]{opacity:.5;cursor:default}
+.ins2-langs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+.ins2-lang{border:1.5px solid var(--line);background:var(--card,#fff);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:750;cursor:pointer;font-family:inherit;color:inherit}
+.ins2-lang.on{background:#0f172a;border-color:#0f172a;color:#fff}
+.ins2-script{width:100%;min-height:130px;border:1.5px solid var(--line);border-radius:11px;padding:10px;font-size:12.5px;
+  font-family:inherit;line-height:1.5;background:var(--card,#fff);color:inherit;resize:vertical}
+
+.ins2-empty{text-align:center;padding:30px 16px}
+.ins2-empty img{width:110px;height:110px;object-fit:contain;opacity:.92}
+.ins2-empty-t{font-size:14.5px;font-weight:800;margin-top:8px}
+.ins2-empty-s{font-size:12.5px;color:var(--steel);margin-top:4px;line-height:1.5}
+.ins2-skel{height:104px;border-radius:18px;background:linear-gradient(90deg,#eef2f7 25%,#f8fafc 50%,#eef2f7 75%);
+  background-size:200% 100%;animation:ins2sk 1.3s infinite}
+@keyframes ins2sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.ins2-toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);z-index:9600;background:#0f172a;color:#fff;
+  font-size:13px;font-weight:700;padding:11px 18px;border-radius:13px;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:90vw}
+.ins2-toast.bad{background:#b91c1c}
+.ins2-toast.good{background:#166534}
+@media (max-width:520px){
+  .ins2-deck{grid-template-columns:1fr}
+  .ins2-hero{padding:12px 13px;border-radius:17px}
+  .ins2-mascot{width:46px;height:46px}
+  .ins2-kpis{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-color-scheme:dark){
+  .ins2-fact{background:rgba(148,163,184,.12)}
+  .ins2-bar-track{background:rgba(148,163,184,.2)}
+  .ins2-c.locked{background:var(--card,#111827)}
+}
+</style>
 
 <div id="view-partfinder" style="display:none">
   <div class="wrap">
@@ -3264,7 +3457,13 @@ function openModule(id){
   if(id==='partfinder') pfBoot();
   if(id==='gateout') goBoot();
   if(id==='partscan' && typeof psBootMod==='function') psBootMod();
-  if(id==='insurance' && typeof insBootMod==='function') insBootMod();
+  /* R23: the redesigned Insurance CRM. insBootMod (R22) is still in the file and
+     still works against the old inscrm_* routes — swap this line back to fall
+     back to the old screen without touching anything else. */
+  if(id==='insurance'){
+    if(typeof ins2Boot==='function') ins2Boot();
+    else if(typeof insBootMod==='function') insBootMod();
+  }
   showView(id);
 }
 /* dead loadHomeStats() removed 22-Jul-2026 (s15a). Live version is the window.loadHomeStats override in a later patch block. */
@@ -9683,9 +9882,28 @@ function pfSearch(){
   jgetRaw('find_part_stock',{pn:pn},function(res){
     if(!res||res.ok===false){ pfInfo('Search failed — check connection.','error'); return; }
     PF_RESULT=res;
-    if(!res.rows.length){ pfInfo('No stock found for '+pn+' in the uploaded data. Try the live Power BI fetch below for all-India availability.','warn'); }
+    if(!res.rows.length){ pfInfo('No stock found for '+pn+' in the uploaded data. Try the live Power BI fetch below for all-India availability.','warn'); pfIdentify(pn); }
     else pfInfo('Found '+pn+(res.summary.desc?' — '+res.summary.desc:'')+' at '+res.summary.dealers+' dealers.','ok');
     pfBuildFilters(); pfRender();
+  },20000);
+}
+
+/* ---- R24: "no stock" and "no such part" are different answers -------------
+   Zero stock rows used to be the end of the conversation, and it read to the
+   advisor as "this part does not exist". It usually does exist — it is just not
+   in anybody's uploaded stock. part_lookup answers from the all-India parts
+   master (55,681 parts), so the customer can be told the part is real, what it
+   is called, whether it has been superseded, and only then that nobody nearby
+   is holding one. Additive: if the route is not deployed, nothing is shown and
+   the screen behaves exactly as before. ------------------------------------- */
+function pfIdentify(pn){
+  jgetRaw('part_lookup',{pn:pn},function(res){
+    if(!res||res.ok===false||!res.found) return;
+    const p=res.current||res.part;
+    let m='📗 '+pn+' IS a genuine Hero part — '+(p.desc||'')+(p.category?' ('+p.category+')':'')
+      +(p.hasPrice?' · MRP ₹'+p.mrp:' · no price on record')+'. It is simply not in the uploaded stock.';
+    if(res.superseded) m='⚠ '+pn+' is superseded — Hero now supplies '+p.part+' ('+(p.desc||'')+'). Search that number instead.';
+    pfInfo(m,'warn');
   },20000);
 }
 
@@ -9700,12 +9918,23 @@ function pfLiveAuto(){
     if(!res){ pfInfo('No response — check connection and retry.','error'); return; }
     if(res.ok===false){
       let msg='Live fetch failed: '+(res.error||'unknown');
+      /* R24: the heading used to say "Live auto-login not available yet" for
+         EVERY failure, which sent the reader after a login problem when the
+         login had in fact worked and the workbook parse had failed. Heading and
+         icon now follow the actual stage that failed. */
+      let head='Live auto-login not available yet', ic='🔐';
       if(res.error==='LOGIN_FAILED') msg='Auto-login not enabled/allowed yet. Run pbiLoginTest() in Apps Script once to see why, or use the manual fallback below.';
       else if(res.error==='TOKEN_REJECTED') msg='Power BI rejected the login token. Re-run pbiLoginTest() in Apps Script.';
       else if(String(res.error).indexOf('SETUP')>-1) msg=res.error;
+      else if(res.error==='XLSX_PARSE_FAILED'){ head='Logged in, but the stock file could not be read'; ic='📄';
+        msg='Power BI answered and the login worked — the workbook it returned could not be parsed. '+(res.detail||''); }
+      else if(String(res.error).indexOf('EXPORT_')===0){ head='Power BI refused the export'; ic='📉';
+        msg='Login worked; the export request came back '+res.error.replace('EXPORT_','HTTP ')+'. '+(res.detail||''); }
       else if(res.detail) msg+=' — '+res.detail;
       pfInfo(msg,'error');
-      document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:36px;color:var(--steel)"><div style="font-size:30px">🔐</div><div style="font-weight:700;margin-top:6px">Live auto-login not available yet</div><div style="font-size:12px;margin-top:4px;max-width:460px;margin-left:auto;margin-right:auto">'+msg+'</div></div>';
+      document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:36px;color:var(--steel)"><div style="font-size:30px">'+ic+'</div><div style="font-weight:700;margin-top:6px">'+head+'</div><div style="font-size:12px;margin-top:4px;max-width:460px;margin-left:auto;margin-right:auto">'+raviEsc(msg)+'</div></div>';
+      /* the part may still be identifiable even when live stock is unreachable */
+      pfIdentify(pn);
       return;
     }
     PF_RESULT=res;
@@ -11554,7 +11783,65 @@ function rtSearchHtml(q){
     var P=RT.parts.filter(function(p){ return p[0].toUpperCase().indexOf(Q)>-1 || String(p[1]).toUpperCase().indexOf(Q)>-1; }).slice(0,20);
     if(P.length){ h+='<div class="rt-sec">Parts</div>'+P.map(rtPartRow).join(''); n+=P.length; }
   } else { rtLoadParts(function(){ if(RT_VIEW.q) rtDraw(); }); }
-  return n ? h : '<div class="rt-empty">Nothing matches \u201C'+rtEsc(q)+'\u201D.</div>';
+  /* R24 \u2014 the tree holds 8,239 parts; Hero makes 55,575. Everything above is a
+     local filter over what is already on the phone; this placeholder is filled
+     from the server for the other 47,442, so a part the dealer has never billed
+     can still be named, priced and put on an estimate. Filled async because it
+     is a network call and the local answer must never wait for it. */
+  h+='<div id="rt-ai-wrap"></div>';
+  rtAllIndia(q);
+  return n ? h : h+'<div class="rt-empty" id="rt-ai-empty">Nothing in the dealer\u2019s own tree matches \u201C'+rtEsc(q)+'\u201D.</div>';
+}
+
+/* All-India parts search. Never returns labour \u2014 a part found only here still
+   makes eeForPart() say "advisor must add labour manually", which is exactly
+   what it said before, so the parts->labour rule is not weakened. */
+var RT_AI_SEQ=0, RT_AI={};
+function rtAllIndia(q){
+  if(!q || q.length<3) return;
+  var my=++RT_AI_SEQ;
+  jgetRaw('part_search',{q:q,limit:20},function(res){
+    if(my!==RT_AI_SEQ) return;
+    var w=document.getElementById('rt-ai-wrap'); if(!w) return;
+    if(!res||res.ok===false||!res.rows||!res.rows.length) return;
+    /* drop anything the local tree already showed \u2014 inTree rows are up there */
+    var rows=res.rows.filter(function(p){ return !p.inTree; });
+    if(!rows.length) return;
+    var e=document.getElementById('rt-ai-empty'); if(e) e.style.display='none';
+    RT_AI={};
+    w.innerHTML='<div class="rt-sec">All-India Hero parts \u00B7 not in the dealer tree</div>'
+      +rows.map(function(p){
+        RT_AI[p.key]=p;
+        return '<div class="rt-row"><div class="rt-main"><div class="rt-name">'+rtEsc(p.desc||p.part)+'</div>'
+          +'<div class="rt-meta"><span class="rt-code">'+rtEsc(p.part)+'</span>'
+          +(p.category?' \u00B7 '+rtEsc(p.category):'')
+          +' \u00B7 '+(p.hasPrice?rtMoney(p.mrp):'no MRP on record')
+          +(p.supersededBy?' \u00B7 \u26A0 superseded by '+rtEsc(p.supersededBy):'')
+          +' \u00B7 labour not linked</div></div>'
+          +'<button type="button" class="rt-add" onclick="rtAddAiPart(\''+rtEsc(p.key)+'\',this)">\uFF0B</button></div>';
+      }).join('');
+  },20000);
+}
+function rtAddAiPart(key, btn){
+  var p=RT_AI[key]; if(!p) return;
+  if(p.supersededBy && !confirm(p.part+' is superseded by '+p.supersededBy+'.\n\nAdd it anyway?')) return;
+  if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===p.part; })){ alert('Already on this estimate.'); return; }
+  /* mrp arrives as null, never 0, when no price is on record \u2014 so a missing
+     price is asked for, never silently billed as zero. */
+  var price=Number(p.mrp)||0;
+  if(!(price>0)){
+    var t=prompt('No MRP on record for '+(p.desc||p.part)+'. Type the price:','');
+    price=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(price>0)) return;
+  }
+  ES_ADDPART.push({l:p.desc||p.part, p:price, pn:p.part, _fromTree:true, _fromAllIndia:true});
+  if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
+  try{ esDrawChips(); }catch(e){}
+  rtRenderStrip();
+  var m=document.getElementById('es-msg');
+  if(m){ m.style.color='var(--warn)';
+         m.textContent='\u2139 '+p.part+' added from the all-India master. No labour is linked to it \u2014 add the fitment labour by hand.';
+         setTimeout(function(){ if(m.textContent.indexOf('all-India master')>-1) m.textContent=''; },9000); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -12848,6 +13135,7 @@ function psPickPhoto(mode){
     const rd=new FileReader();
     rd.onload=function(e){
       PS_LAST={photo:e.target.result,extra:{},guess:null};
+      PS_VERIFY=null; PS_VSEQ++; psVerifyBox('');   /* last photo's verdict must not survive into this one */
       const pv=document.getElementById('ps-preview'); pv.style.display='block';
       document.getElementById('ps-img').src=e.target.result;
       document.getElementById('ps-result').style.display='none';
@@ -12897,6 +13185,7 @@ async function psAnalyze(dataUrl){
     } else gw.style.display='none';
     document.getElementById('ps-result').style.display='block';
     psStatus(g.label_found?'✔ Label read. Check the fields, correct anything, then save.':'No label found — AI identification shown. Add what you know and save.','ok');
+    psVerifyPart();   /* R24 — see below. Never blocks the save. */
   }catch(e){
     psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err');
   }
@@ -12959,6 +13248,87 @@ function psParseVision_(resp){
   }
   return g;
 }
+/* ---------------------------------------------------------------------------
+   R24 — MATCH THE SCANNED NUMBER AGAINST THE REAL PART LIST.
+
+   Ravi, 03-Aug-2026: "it does not match the captured part numbers against the
+   real part list or the June stock export."
+
+   Both halves are answered by one call. part_lookup binary-searches
+   MD_Parts_AllIndia (55,681 parts — every part Hero makes, not the 8,239 the
+   dealer has already billed) and, with stock:'1', joins the same findPartStock
+   the Part Finder uses, so the two screens can never disagree about where a
+   part is.
+
+   Three rules this obeys:
+     1. It NEVER overwrites what the advisor sees. The official description and
+        MRP are offered on a button; the read stays until she takes them.
+     2. It NEVER blocks a save. Backend missing, route not deployed, timeout —
+        the box just stays hidden and the scanner behaves exactly as it did
+        before this existed.
+     3. "Not found" is stated as not found, with the nearest numbers offered. A
+        wrong digit in an OCR read is the common case and the near list is what
+        fixes it in one tap.
+   --------------------------------------------------------------------------- */
+let PS_VERIFY=null, PS_VSEQ=0;
+function psVerifyBox(html, bg, bd, fg){
+  const el=document.getElementById('ps-verify'); if(!el) return;
+  if(!html){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block'; el.style.background=bg; el.style.border='1px solid '+bd;
+  el.style.color=fg; el.innerHTML=html;
+}
+function psVerifyPart(){
+  const pn=((document.getElementById('ps-partno')||{}).value||'').trim();
+  PS_VERIFY=null;
+  if(!pn){ psVerifyBox(''); return; }
+  const my=++PS_VSEQ;
+  psVerifyBox('Checking '+raviEsc(pn)+' against the all-India Hero parts master…','#f8fafc','#e2e8f0','var(--steel)');
+  jgetRaw('part_lookup',{pn:pn,stock:'1'},function(res){
+    if(my!==PS_VSEQ) return;                      /* a newer read already won */
+    if(!res||res.ok===false){
+      /* Silent on purpose when the route is simply not deployed yet — the
+         scanner still works, and an error nobody can act on is noise. */
+      psVerifyBox(''); return;
+    }
+    PS_VERIFY=res;
+    if(!res.found){
+      const near=(res.near||[]).filter(n=>n.shared>=4).slice(0,5);
+      psVerifyBox('✖ <b>'+raviEsc(pn)+' is not in the all-India Hero parts master.</b>'
+        +'<div style="margin-top:3px">Check the reading — or it may be a local / non-Hero part, which is fine to save.</div>'
+        +(near.length?'<div style="margin-top:6px;font-weight:700">Closest numbers:</div>'
+          +near.map(n=>'<div style="margin-top:3px"><a href="#" onclick="psTakePart(\''+raviEsc(n.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800">'+raviEsc(n.part)+'</a> · '+raviEsc(n.desc||'')+'</div>').join(''):''),
+        '#fef2f2','#fecaca','#b91c1c');
+      return;
+    }
+    const p=res.current||res.part;
+    let h='✔ <b>Matched in the Hero parts master</b>';
+    if(res.superseded) h+='<div style="margin-top:4px;color:#b45309;font-weight:700">⚠ '+raviEsc(res.part.part)+' is superseded — Hero now supplies '+raviEsc(p.part)+'.</div>';
+    h+='<div style="margin-top:4px"><b>'+raviEsc(p.desc||'—')+'</b>'
+      +(p.category?' · '+raviEsc(p.category):'')+(p.subcategory?' / '+raviEsc(p.subcategory):'')+'</div>';
+    /* mrp is null, never 0, when no price is on record. Say which it is. */
+    h+='<div style="margin-top:3px">'+(p.hasPrice?'MRP on record ₹'+raviEsc(String(p.mrp)):'<span style="color:#b45309">No price on record for this part</span>')+'</div>';
+    if(res.stock&&res.stock.summary&&res.stock.summary.rows)
+      h+='<div style="margin-top:3px">📦 In stock: '+raviEsc(String(res.stock.summary.totalQty))+' at '+raviEsc(String(res.stock.summary.dealers))+' dealer(s)</div>';
+    else if(res.stock) h+='<div style="margin-top:3px;color:var(--steel)">No stock anywhere in the uploaded stock export.</div>';
+    if(!res.labourLinked) h+='<div style="margin-top:3px;color:var(--steel)">No labour linked to this part yet — an estimate will need labour added by hand.</div>';
+    h+='<div style="margin-top:7px"><button class="btn ghost sm" onclick="psUseOfficial()">Use this description'+(p.hasPrice?' &amp; MRP':'')+'</button></div>';
+    psVerifyBox(h,'#f0fdf4','#bbf7d0','#166534');
+  },20000);
+}
+function psTakePart(pn){
+  const el=document.getElementById('ps-partno'); if(!el) return;
+  el.value=String(pn||'').toUpperCase(); psVerifyPart();
+}
+function psUseOfficial(){
+  if(!PS_VERIFY||!PS_VERIFY.found) return;
+  const p=PS_VERIFY.current||PS_VERIFY.part;
+  if(p.part) document.getElementById('ps-partno').value=p.part;
+  if(p.desc) document.getElementById('ps-desc').value=p.desc;
+  if(p.hasPrice) document.getElementById('ps-mrp').value=String(p.mrp);
+  psStatus('Official description'+(p.hasPrice?' and MRP':'')+' taken from the parts master.','ok');
+  psVerifyPart();
+}
+
 function psSaveScan(){
   const g=PS_LAST.guess||{};
   const extra={};
@@ -12966,6 +13336,20 @@ function psSaveScan(){
     const el=document.getElementById('ps-extra-'+i);
     extra[k]=el?el.value:String(PS_LAST.extra[k]);
   });
+  /* R24: record the verdict, not just the reading. psSave() turns any unknown
+     key into a real column, so this needs no backend change — and it means the
+     PartsScanned sheet can later be filtered to "everything the master did not
+     recognise", which is the list worth a human's time. Only written when the
+     check actually ran; a silent backend leaves these columns out entirely. */
+  if(PS_VERIFY){
+    const v=PS_VERIFY.current||PS_VERIFY.part||{};
+    extra['MASTER MATCH']=PS_VERIFY.found?(PS_VERIFY.superseded?'SUPERSEDED -> '+(v.part||''):'MATCHED'):'NOT IN MASTER';
+    if(PS_VERIFY.found){
+      extra['MASTER DESCRIPTION']=v.desc||'';
+      extra['MASTER MRP']=v.hasPrice?String(v.mrp):'';
+      extra['LABOUR LINKED']=PS_VERIFY.labourLinked?'Y':'N';
+    }
+  }
   const payload={type:'parts_scan_save',
     by:(USER&&(USER.personName||USER.empno))||'', ws:(USER&&USER.ws)||'',
     partNo:(document.getElementById('ps-partno').value||'').toUpperCase().trim(),
@@ -13103,6 +13487,742 @@ function insSaveOutcome(idx){
     if(!res||res.ok!==false){ r.temp=temp||r.temp; r.remarks=rem; if(res&&res.owner){r.owner=res.owner;r.ownerName=res.ownerName;} insRenderList(); }
     else alert('Save failed: '+((res&&res.error)||'unknown'));
   }).catch(function(e){ alert('Save failed: '+String(e).slice(0,120)); });
+}
+</script>
+
+<script>
+/* ================================================================================
+   ===== R23 (03-Aug-2026) — INSURANCE RENEWAL CRM v2 =============================
+
+   Ravi's list, and what each item became:
+
+   "Today shows today and tomo. Next week shows today and tomo. -30 to +90 also
+    shows only today and tomorrow."
+        Not a filter bug. The server ranked the whole book by |days to expiry|
+        and returned the top 200; with ~158 customers expiring every day the
+        nearest 200 ARE today and tomorrow, and the dropdown then filtered those
+        same 200 rows on the phone. Now the phone asks for a DAY RANGE and the
+        server answers with that range (inscrm2_worklist, ModulesR23.gs).
+
+   "The car customers common between Hero and Maruti has not come."
+        MD_HeroMarutiCommon, joined into the book by mobile. A car owner gets a
+        🚗 badge, a filter chip of their own, and their car renewal date on the
+        card — it is a second policy to quote on the same call.
+
+   "There is no standard reason to update... it is asking if the customer is hot
+    but there is no clickable button."
+        26 standard dispositions in four groups, defined once on the server. The
+        disposition sets the temperature, so nobody types hot/warm/cold at all.
+
+   "The customer opens only from a Green button... make it open from the entire
+    tab like a deck."
+        The whole card is the tap target.
+
+   "WhatsApp... ensure it opens in web.whatsapp.com and installed whatsapp both."
+        ins2Wa(): auto (wa.me), app (whatsapp:// with a timed web fallback), and
+        web (web.whatsapp.com) are three explicit choices.
+
+   "the information coming about the customer is very less. Regular customer or
+    not. Last service done when. His mobile nos if multiple."
+        Loyalty badge, last/next service, last bill, city, both mobiles.
+
+   "downloadable in excel for the Insurance Manager only and not the SMREs."
+        Gated on the SERVER in insCrmExport2 against MD_Login, not by hiding a
+        button.
+
+   "if an SMRE is working on 1 customer, will that customer be visible to another
+    SMRE at the same time?"
+        Yes it stays visible — hiding it would lose the row if she closed the
+        app. Instead opening a customer takes a 10-minute soft lock, everyone
+        else sees "Priya is on this call" with a countdown and cannot save over
+        it, and the lock expires by itself.
+
+   "Loading is still taking a lot of time... it is not like appsheet where the
+    next time is super fast. Also optimistic save is pending."
+        Every page is cached in localStorage and painted instantly on the next
+        open while a fresh copy loads behind it (stale-while-revalidate). Saves
+        apply to the screen first and reconcile after.
+   ================================================================================ */
+
+const INS2 = {
+  rows:[], total:0, windowTotal:0, bookTotal:0, counts:{}, meta:null, stats:null,
+  bucket:'today', page:0, limit:60,
+  q:'', temp:'', status:'', loyalty:'', mine:false, car:false,
+  openIdx:-1, loading:false, manager:false, lang:'en', seq:0, qTimer:null
+};
+const INS2_TEMPC = {HOT:'#dc2626', WARM:'#d97706', COLD:'#2563eb'};
+const INS2_LOYC  = {REGULAR:'#166534', LAPSED:'#b45309', LOST:'#b91c1c', NEW:'#2563eb', PROSPECT:'#7c3aed'};
+const INS2_LOYL  = {REGULAR:'⭐ REGULAR', LAPSED:'⏳ LAPSED', LOST:'✖ LOST', NEW:'🆕 NEW', PROSPECT:'👀 PROSPECT'};
+const INS2_GRPC  = {'Not reached':'#64748b','In progress':'#d97706','Lost':'#b91c1c','Won':'#166534'};
+
+function ins2Esc(s){ return (typeof raviEsc==='function') ? raviEsc(s==null?'':s)
+  : String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function ins2Me(){ return (typeof USER!=='undefined' && USER && USER.empno) ? String(USER.empno) : ''; }
+function ins2MyName(){ return (typeof USER!=='undefined' && USER && USER.personName) ? String(USER.personName) : ins2Me(); }
+
+function ins2Toast(msg, kind){
+  const old=document.getElementById('ins2-toast'); if(old) old.remove();
+  const t=document.createElement('div');
+  t.id='ins2-toast'; t.className='ins2-toast'+(kind?' '+kind:'');
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ if(t.parentNode) t.remove(); }, kind==='bad'?4200:2400);
+}
+
+/* ------------------------------ boot + loading ---------------------------- */
+function ins2Boot(force){
+  const g=document.getElementById('ins2-greet');
+  if(g){ const h=new Date().getHours();
+    g.textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+(ins2MyName()?', '+ins2MyName().split(' ')[0]:'');
+  }
+  ins2PaintChips();
+  ins2Load(force);
+  ins2LoadStats();
+  ins2CheckManager();
+}
+
+/* stale-while-revalidate. The same key the request is made with, so switching
+   buckets back and forth is instant after the first visit of the day. */
+function ins2Key(){
+  return 'ins2:'+(typeof BACKEND_NS!=='undefined'?BACKEND_NS:'x')+':'+JSON.stringify({
+    b:INS2.bucket, p:INS2.page, l:INS2.limit, q:INS2.q, t:INS2.temp,
+    s:INS2.status, y:INS2.loyalty, m:INS2.mine?1:0, c:INS2.car?1:0, u:ins2Me()
+  });
+}
+function ins2ReadCache(k){
+  try{ const j=JSON.parse(localStorage.getItem(k)||'null');
+    if(j && (Date.now()-j.t) < 30*60*1000) return j; }catch(e){}
+  return null;
+}
+function ins2WriteCache(k, res){
+  try{ localStorage.setItem(k, JSON.stringify({t:Date.now(), r:res})); }catch(e){}
+}
+
+function ins2Params(){
+  const p={ bucket:INS2.bucket, page:INS2.page, limit:INS2.limit, owner:ins2Me() };
+  if(INS2.q) p.q=INS2.q;
+  if(INS2.temp) p.temp=INS2.temp;
+  if(INS2.status) p.status=INS2.status;
+  if(INS2.loyalty) p.loyalty=INS2.loyalty;
+  if(INS2.mine) p.mine='1';
+  if(INS2.car) p.car='1';
+  return p;
+}
+
+function ins2Load(force){
+  const key=ins2Key(), my=++INS2.seq;
+  const cached = force ? null : ins2ReadCache(key);
+  if(cached){ ins2Apply(cached.r, true); ins2Fresh('updating…'); }
+  else { ins2Skeleton(); ins2Fresh('loading…'); }
+  INS2.loading=true;
+  jgetRaw('inscrm2_worklist', ins2Params(), function(res){
+    if(my!==INS2.seq) return;                 /* a newer request already won */
+    INS2.loading=false;
+    if(!res || res.ok===false){
+      ins2Fresh('');
+      if(!cached) ins2Empty('😕','Could not load the worklist',
+        (res&&(res.error||res.detail))||'The server did not answer. Check the connection and tap ↻.');
+      else ins2Toast((res&&res.error)||'Could not refresh — showing the last copy','bad');
+      return;
+    }
+    ins2WriteCache(key,res);
+    ins2Apply(res,false);
+    ins2Fresh('updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+  }, 60000);
+}
+
+function ins2Apply(res, fromCache){
+  INS2.rows = res.rows||[];
+  INS2.total = res.total||0;
+  INS2.windowTotal = res.windowTotal||0;
+  INS2.bookTotal = res.bookTotal||0;
+  INS2.counts = res.counts||{};
+  if(res.meta) INS2.meta = res.meta;
+  INS2.openIdx = -1;
+  ins2PaintChips(); ins2PaintKpis(); ins2Render();
+  const sub=document.getElementById('ins2-hero-sub');
+  if(sub){
+    if(res.note) sub.textContent=res.note;
+    else sub.innerHTML = '<b>'+(INS2.bookTotal||0).toLocaleString('en-IN')+'</b> policies in the renewal book · '
+      + '<b>'+(INS2.counts.today||0).toLocaleString('en-IN')+'</b> expiring today · <b>'
+      + (INS2.counts.overdue||0).toLocaleString('en-IN')+'</b> already expired'
+      + (fromCache?' · <i>from cache</i>':'');
+  }
+}
+function ins2Fresh(t){ const e=document.getElementById('ins2-fresh'); if(e) e.textContent=t||''; }
+function ins2Skeleton(){
+  const el=document.getElementById('ins2-list'); if(!el) return;
+  el.innerHTML='<div class="ins2-deck">'+Array(6).fill('<div class="ins2-skel"></div>').join('')+'</div>';
+  const m=document.getElementById('ins2-more'); if(m) m.innerHTML='';
+}
+function ins2Empty(icon, title, sub, mascot){
+  const el=document.getElementById('ins2-list'); if(!el) return;
+  el.innerHTML='<div class="ins2-empty">'
+    +'<img src="assets/'+(mascot||'21_gift_star_mascot.png')+'" alt="" onerror="this.style.display=\'none\'">'
+    +'<div class="ins2-empty-t">'+icon+' '+ins2Esc(title)+'</div>'
+    +'<div class="ins2-empty-s">'+ins2Esc(sub)+'</div></div>';
+  const m=document.getElementById('ins2-more'); if(m) m.innerHTML='';
+}
+
+/* --------------------------------- filters -------------------------------- */
+function ins2PaintChips(){
+  const wrap=document.getElementById('ins2-chips'); if(!wrap) return;
+  const buckets=(INS2.meta&&INS2.meta.buckets)||[
+    {code:'overdue',label:'Already expired',icon:'⚠'},{code:'today',label:'Expiring today',icon:'🔥'},
+    {code:'tomorrow',label:'Tomorrow',icon:'⏰'},{code:'week',label:'Next 7 days',icon:'📅'},
+    {code:'fortnight',label:'Next 15 days',icon:'📆'},{code:'month',label:'Next 30 days',icon:'🗓'},
+    {code:'quarter',label:'Next 90 days',icon:'📊'},{code:'all',label:'Whole window',icon:'📋'}];
+  wrap.innerHTML=buckets.map(function(b){
+    const n=INS2.counts[b.code];
+    return '<button class="ins2-chip'+(INS2.bucket===b.code?' on':'')+'" onclick="ins2SetBucket(\''+b.code+'\')">'
+      + b.icon+' '+ins2Esc(b.label) + (n==null?'':'<b>'+n.toLocaleString('en-IN')+'</b>') + '</button>';
+  }).join('');
+  document.querySelectorAll('.ins2-chips2 .ins2-chip').forEach(function(c){
+    const f=c.getAttribute('data-f');
+    const on = (f==='mine'&&INS2.mine)||(f==='car'&&INS2.car)||(f===INS2.temp)||(f===INS2.status)||(f===INS2.loyalty);
+    c.classList.toggle('on', !!on);
+  });
+}
+function ins2SetBucket(code){ INS2.bucket=code; INS2.page=0; ins2PaintChips(); ins2Load(); }
+function ins2Toggle(kind, val){
+  if(kind==='mine') INS2.mine=!INS2.mine;
+  else if(kind==='car') INS2.car=!INS2.car;
+  else INS2[kind] = (INS2[kind]===val ? '' : val);
+  INS2.page=0; ins2PaintChips(); ins2Load();
+}
+function ins2ResetFilters(){
+  INS2.q=''; INS2.temp=''; INS2.status=''; INS2.loyalty=''; INS2.mine=false; INS2.car=false; INS2.page=0;
+  const q=document.getElementById('ins2-q'); if(q) q.value='';
+  ins2PaintChips(); ins2Load();
+}
+function ins2ClearQ(){ const q=document.getElementById('ins2-q'); if(q) q.value=''; INS2.q=''; INS2.page=0; ins2Load(); }
+function ins2QueueSearch(){
+  clearTimeout(INS2.qTimer);
+  INS2.qTimer=setTimeout(function(){
+    const q=document.getElementById('ins2-q');
+    INS2.q=q?q.value.trim():''; INS2.page=0; ins2Load();
+  }, 420);
+}
+
+/* ---------------------------------- KPIs ---------------------------------- */
+function ins2PaintKpis(){
+  const el=document.getElementById('ins2-kpis'); if(!el) return;
+  const s=INS2.stats||{};
+  const tiles=[
+    {k:'today',    n:INS2.counts.today||0,    l:'Expiring today',  c:'#dc2626', go:'today'},
+    {k:'overdue',  n:INS2.counts.overdue||0,  l:'Already expired', c:'#b45309', go:'overdue'},
+    {k:'week',     n:INS2.counts.week||0,     l:'Next 7 days',     c:'#2563eb', go:'week'},
+    {k:'month',    n:INS2.counts.month||0,    l:'Next 30 days',    c:'#7c3aed', go:'month'},
+    {k:'won',      n:s.won||0,                l:'Policies closed', c:'#166534', go:null, filter:'WON'},
+    {k:'followup', n:s.dueToday||0,           l:'Follow-ups today',c:'#0891b2', go:null}
+  ];
+  el.innerHTML=tiles.map(function(t){
+    const on = t.go && INS2.bucket===t.go;
+    return '<button class="ins2-kpi'+(on?' on':'')+'" style="color:'+t.c+'" onclick="'+
+      (t.go?('ins2SetBucket(\''+t.go+'\')'):(t.filter?('ins2Toggle(\'status\',\''+t.filter+'\')'):'ins2ScrollCharts()'))+'">'
+      +'<div class="ins2-kpi-n">'+Number(t.n).toLocaleString('en-IN')+'</div>'
+      +'<div class="ins2-kpi-l">'+t.l+'</div></button>';
+  }).join('');
+}
+function ins2ScrollCharts(){ const c=document.getElementById('ins2-charts'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }
+
+/* --------------------------------- the deck -------------------------------- */
+function ins2Render(){
+  const el=document.getElementById('ins2-list'); if(!el) return;
+  const cEl=document.getElementById('ins2-count');
+  if(cEl){
+    cEl.textContent = INS2.total
+      ? (INS2.total.toLocaleString('en-IN')+' customer'+(INS2.total===1?'':'s')
+         + (INS2.windowTotal && INS2.windowTotal!==INS2.total ? ' of '+INS2.windowTotal.toLocaleString('en-IN')+' in this range' : ''))
+      : '';
+  }
+  if(!INS2.rows.length){
+    const filtered = INS2.q||INS2.temp||INS2.status||INS2.loyalty||INS2.mine||INS2.car;
+    ins2Empty(filtered?'🔍':'✅',
+      filtered?'Nothing matches these filters':'Nothing to chase in this range',
+      filtered?'Tap Reset to see the whole range again.':'Pick another date range above — the counts on each chip are live.',
+      filtered?'22_standalone_star_mascot.png':'04_trophy_confetti.png');
+    return;
+  }
+  el.innerHTML='<div class="ins2-deck">'+INS2.rows.map(ins2Card).join('')+'</div>';
+  ins2PaintMore();
+}
+
+function ins2PaintMore(){
+  const m=document.getElementById('ins2-more'); if(!m) return;
+  const pages=Math.ceil((INS2.total||0)/INS2.limit);
+  if(pages<=1){ m.innerHTML=''; return; }
+  m.innerHTML='<div style="display:flex;gap:8px;align-items:center;justify-content:center;padding:14px 0">'
+    +'<button class="ins2-mini" '+(INS2.page<=0?'disabled':'')+' onclick="ins2Page(-1)">‹ Previous</button>'
+    +'<span style="font-size:12px;font-weight:750;color:var(--steel)">Page '+(INS2.page+1)+' of '+pages+'</span>'
+    +'<button class="ins2-mini" '+(INS2.page>=pages-1?'disabled':'')+' onclick="ins2Page(1)">Next ›</button></div>';
+}
+function ins2Page(d){
+  const pages=Math.ceil((INS2.total||0)/INS2.limit);
+  INS2.page=Math.max(0, Math.min(pages-1, INS2.page+d));
+  ins2Load();
+  const b=document.querySelector('.ins2-bar'); if(b) b.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function ins2Card(r, i){
+  const temp = r.temp || r.tempSuggest || '';
+  const tc = INS2_TEMPC[temp] || '#64748b';
+  const d = r.daysToExpiry;
+  /* "0 / expires today" read as a zero on the card, so today gets a word, not a
+     number. Overdue counts up in days, upcoming counts down. */
+  const dNum = d==null ? '—' : (d===0 ? 'TODAY' : Math.abs(d));
+  const dLab = d==null ? '' : (d<0 ? (d===-1?'day overdue':'days overdue')
+                                   : d===0 ? 'last day to renew' : d===1 ? 'day left' : 'days left');
+  const dc = d==null ? '#64748b' : (d<0 ? '#b45309' : d<=1 ? '#dc2626' : d<=7 ? '#d97706' : d<=30 ? '#2563eb' : '#64748b');
+  const mine = r.owner && r.owner===ins2Me();
+  const lockedByOther = r.lockedBy && r.lockedBy!==ins2Me();
+  const open = INS2.openIdx===i;
+
+  const badges=[];
+  if(r.loyalty) badges.push('<span class="ins2-b" style="background:'+(INS2_LOYC[r.loyalty]||'#64748b')+'18;color:'+(INS2_LOYC[r.loyalty]||'#64748b')+'">'+(INS2_LOYL[r.loyalty]||r.loyalty)+'</span>');
+  if(r.car==='Y') badges.push('<span class="ins2-b" style="background:#7c3aed18;color:#7c3aed" title="'+ins2Esc(r.carModels||'')+(r.carDue?' · car policy due '+ins2Esc(r.carDue):'')+'">🚗 CAR OWNER</span>');
+  badges.push('<span class="ins2-b" style="background:'+tc+'18;color:'+tc+'">'+(r.temp?temp:temp+' ?')+'</span>');
+  if(r.statusLabel) badges.push('<span class="ins2-b" style="background:#0f172a12;color:#334155">'+ins2Esc(r.statusLabel)+'</span>');
+  if(r.expirySrc==='DERIVED') badges.push('<span class="ins2-b" style="background:#94a3b818;color:#64748b" title="No policy date in the DMS — this is the sale anniversary, treat it as an estimate">~ ESTIMATED DATE</span>');
+  if(mine) badges.push('<span class="ins2-b" style="background:#16653418;color:#166534">👤 MINE</span>');
+  else if(r.owner) badges.push('<span class="ins2-b" style="background:#64748b18;color:#64748b">👤 '+ins2Esc(r.ownerName||r.owner)+'</span>');
+
+  const facts=[];
+  if(r.model) facts.push('<span>'+ins2Esc(r.model)+'</span>');
+  if(r.lastService) facts.push('<span>Last service <b>'+ins2Esc(r.lastService)+'</b></span>');
+  else facts.push('<span style="color:#b45309">Never serviced here</span>');
+  if(r.calls) facts.push('<span><b>'+r.calls+'</b> call'+(r.calls===1?'':'s')+(r.lastCall?' · last '+ins2Esc(r.lastCall):'')+'</span>');
+  if(r.nextFollowUp) facts.push('<span>Follow up <b>'+ins2Esc(r.nextFollowUp)+'</b></span>');
+
+  return '<div class="ins2-c'+(open?' open':'')+(lockedByOther?' locked':'')+'" style="border-left-color:'+dc+'" '
+    +'onclick="ins2Open('+i+',event)">'
+    +'<div class="ins2-c-top">'
+      +'<div class="ins2-c-main">'
+        +'<div class="ins2-c-name">'+ins2Esc(r.customer||'(no name on file)')+'</div>'
+        +'<div class="ins2-c-reg">'+ins2Esc(r.reg||'—')+(r.city?' · '+ins2Esc(r.city):'')+'</div>'
+        +'<div class="ins2-c-badges">'+badges.join('')+'</div>'
+      +'</div>'
+      +'<div class="ins2-c-exp">'
+        +'<div class="ins2-c-days" style="color:'+dc+'">'+dNum+'</div>'
+        +'<div class="ins2-c-dl">'+dLab+'</div>'
+        +'<div class="ins2-c-date">'+ins2Esc(r.expiry||'')+'</div>'
+      +'</div>'
+    +'</div>'
+    +(facts.length?'<div class="ins2-c-facts">'+facts.join('')+'</div>':'')
+    +'<div class="ins2-c-foot">'
+      +(r.mobile?'<a class="ins2-act call" href="tel:+91'+r.mobile+'" onclick="event.stopPropagation();ins2Claim('+i+')" title="Call '+r.mobile+'">📞</a>':'')
+      +(r.mobile?'<button class="ins2-act wa" onclick="event.stopPropagation();ins2Wa('+i+',\'auto\')" title="WhatsApp">🟢</button>':'')
+      +(lockedByOther?'<span class="ins2-lockpill">🔒 '+ins2Esc(r.lockedByName||r.lockedBy)+' is on this call</span>':'')
+      +'<span class="ins2-hintrow">'+(open?'tap anywhere to close':'tap the card to open')+'</span>'
+    +'</div>'
+    +(open?ins2Detail(r,i):'')
+    +'</div>';
+}
+
+/* ------------------------------ expanded card ------------------------------ */
+function ins2Detail(r,i){
+  const dispositions=(INS2.meta&&INS2.meta.dispositions)||[];
+  const groups={};
+  dispositions.forEach(function(d){ (groups[d.group]=groups[d.group]||[]).push(d); });
+
+  const facts=[
+    ['Mobile', r.mobile?('<a href="tel:+91'+r.mobile+'" onclick="event.stopPropagation()">'+ins2Esc(r.mobile)+'</a>'):'—'],
+    ['Second mobile', r.altMobile?('<a href="tel:+91'+r.altMobile+'" onclick="event.stopPropagation()">'+ins2Esc(r.altMobile)+'</a>'):'—'],
+    ['Model', ins2Esc(r.model||'—')],
+    ['Bought on', ins2Esc(r.dos||'—')],
+    ['Last service', ins2Esc(r.lastService||'never here')],
+    ['Next service due', ins2Esc(r.nextService||'—')],
+    ['Last bill', r.lastBill?('₹'+Number(r.lastBill).toLocaleString('en-IN')+(r.lastBillDate?' · '+ins2Esc(r.lastBillDate):'')):'—'],
+    ['Free services used', ins2Esc(r.freeServices||'—')],
+    ['Insurer', ins2Esc(r.company||'not on file')],
+    ['Policy no', ins2Esc(r.policy||'not on file')],
+    ['Relationship', ins2Esc(r.relationship||r.loyalty||'—')],
+    ['Calls so far', String(r.calls||0)+(r.lastCall?' · last '+ins2Esc(r.lastCall):'')]
+  ];
+  if(r.car==='Y') facts.push(['🚗 Also owns', ins2Esc(r.carModels||'a Maruti car')+(r.carDue?'<br>Car policy due '+ins2Esc(r.carDue):'')]);
+
+  return '<div class="ins2-det" onclick="event.stopPropagation()">'
+
+    +'<div class="ins2-sec">Everything on file</div>'
+    +'<div class="ins2-grid">'+facts.map(function(f){
+        return '<div class="ins2-fact"><div class="ins2-fact-l">'+f[0]+'</div><div class="ins2-fact-v">'+f[1]+'</div></div>';
+      }).join('')+'</div>'
+
+    +'<div class="ins2-sec">What happened on the call?</div>'
+    +'<div class="ins2-dispwrap">'+Object.keys(groups).map(function(g){
+        const c=INS2_GRPC[g]||'#64748b';
+        return '<div class="ins2-dispgrp"><div class="ins2-dispgrp-h" style="color:'+c+'">'+ins2Esc(g)+'</div>'
+          +'<div class="ins2-disps">'+groups[g].map(function(d){
+              const on = r.status===d.code;
+              return '<button class="ins2-disp'+(on?' on':'')+'" '+(on?'style="background:'+c+'"':'')
+                +' onclick="ins2PickDisp('+i+',\''+d.code+'\')">'+ins2Esc(d.label)+'</button>';
+            }).join('')+'</div></div>';
+      }).join('')+'</div>'
+
+    +'<div class="ins2-inrow">'
+      +'<input class="ins2-in grow" id="ins2-rem-'+i+'" placeholder="Anything the customer said…" value="'+ins2Esc(r.remarks||'')+'">'
+      +'<input class="ins2-in" id="ins2-fu-'+i+'" type="date" title="Follow up on" value="'+ins2Iso(r.nextFollowUp)+'">'
+      +'<input class="ins2-in" id="ins2-prem-'+i+'" type="number" inputmode="numeric" placeholder="₹ premium" style="width:120px" value="'+(r.premium||'')+'">'
+      +'<button class="ins2-save" onclick="ins2Save('+i+')">💾 Save</button>'
+    +'</div>'
+
+    +'<div class="ins2-sec">Call script</div>'
+    +'<div class="ins2-langs">'
+      +['en','hi','mr'].map(function(l){
+        return '<button class="ins2-lang'+(INS2.lang===l?' on':'')+'" onclick="ins2Lang('+i+',\''+l+'\')">'
+          +({en:'English',hi:'हिंदी',mr:'मराठी'}[l])+'</button>'; }).join('')
+    +'</div>'
+    +'<textarea class="ins2-script" id="ins2-script-'+i+'">'+ins2Esc(ins2Script(r,INS2.lang))+'</textarea>'
+    +'<div class="ins2-inrow">'
+      +(r.mobile?'<button class="ins2-act wa wide" onclick="ins2Wa('+i+',\'app\')">📱 WhatsApp app</button>':'')
+      +(r.mobile?'<button class="ins2-act wa wide" onclick="ins2Wa('+i+',\'web\')">💻 WhatsApp Web</button>':'')
+      +(r.mobile?'<a class="ins2-act call wide" href="tel:+91'+r.mobile+'" onclick="ins2Claim('+i+')">📞 Call now</a>':'<span class="ins2-empty-s">No mobile number on file for this customer.</span>')
+    +'</div>'
+  +'</div>';
+}
+function ins2Iso(dmy){
+  const m=String(dmy||'').match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  return m ? (m[3]+'-'+m[2]+'-'+m[1]) : '';
+}
+
+/* --------------------------- open / lock / close --------------------------- */
+/* Opening takes the soft lock. If somebody else already holds it the card still
+   opens — she can read it and call if she wants — but Save is refused by the
+   server, so two people can never overwrite each other's outcome. */
+function ins2Open(i, ev){
+  if(ev && ev.target && ev.target.closest && ev.target.closest('.ins2-det')) return;
+  const was=INS2.openIdx;
+  if(was===i){ ins2Release(i); INS2.openIdx=-1; ins2Render(); return; }
+  if(was>=0) ins2Release(was);
+  INS2.openIdx=i;
+  /* Snapshot taken on OPEN, not on save. Tapping a disposition mutates the row
+     immediately so the button can light up, so a snapshot taken inside ins2Save
+     would already contain the user's unsaved edits and a rejected save could
+     not undo them. This is the state to return to if the server refuses. */
+  INS2.draftBase = JSON.parse(JSON.stringify(INS2.rows[i]||{}));
+  ins2Render();
+  const r=INS2.rows[i]; if(!r) return;
+  jgetRaw('inscrm2_lock', {reg:r.reg, by:ins2Me(), byName:ins2MyName(), act:'take',
+                           customer:r.customer, mobile:r.mobile, expiry:r.expiry}, function(res){
+    if(res && res.ok===false && res.error==='locked'){
+      r.lockedBy=res.lockedBy; r.lockedByName=res.lockedByName;
+      ins2Toast('🔒 '+(res.lockedByName||res.lockedBy)+' is working on this customer right now. You can look, but saving is blocked for '
+                + Math.ceil((res.secondsLeft||0)/60) + ' more minute(s).','bad');
+      if(INS2.openIdx===i) ins2Render();
+    } else if(res && res.ok){ r.lockedBy=''; r.lockedByName=''; }
+  }, 20000);
+}
+function ins2Release(i){
+  const r=INS2.rows[i]; if(!r||!r.reg) return;
+  jgetRaw('inscrm2_lock', {reg:r.reg, by:ins2Me(), act:'release'}, function(){}, 15000);
+}
+/* leaving the screen or closing the tab must not strand a lock */
+window.addEventListener('beforeunload', function(){ if(INS2.openIdx>=0) ins2Release(INS2.openIdx); });
+
+function ins2Lang(i, l){
+  INS2.lang=l;
+  const t=document.getElementById('ins2-script-'+i);
+  if(t) t.value=ins2Script(INS2.rows[i], l);
+  document.querySelectorAll('.ins2-lang').forEach(function(b){ b.classList.toggle('on', b.textContent===({en:'English',hi:'हिंदी',mr:'मराठी'}[l])); });
+}
+
+/* --------------------------------- saving ---------------------------------- */
+function ins2PickDisp(i, code){
+  const r=INS2.rows[i]; if(!r) return;
+  const d=((INS2.meta&&INS2.meta.dispositions)||[]).filter(function(x){ return x.code===code; })[0];
+  r.status = (r.status===code ? '' : code);
+  if(r.status && d){ r.temp=d.temp; r.statusLabel=d.label; }
+  else { r.statusLabel=''; }
+  ins2Render();
+}
+
+/* Optimistic: the card updates before the server is asked. If the server says
+   somebody else holds the lock, the change is rolled back and said out loud. */
+function ins2Save(i){
+  const r=INS2.rows[i]; if(!r) return;
+  const before = (INS2.openIdx===i && INS2.draftBase) ? INS2.draftBase : JSON.parse(JSON.stringify(r));
+  const rem=(document.getElementById('ins2-rem-'+i)||{}).value||'';
+  const fu=(document.getElementById('ins2-fu-'+i)||{}).value||'';
+  const prem=(document.getElementById('ins2-prem-'+i)||{}).value||'';
+  const d=((INS2.meta&&INS2.meta.dispositions)||[]).filter(function(x){ return x.code===r.status; })[0];
+
+  if(d && d.code==='IP_CALLBACK' && !fu){ ins2Toast('Pick the call-back date first.','bad'); return; }
+
+  r.remarks=rem;
+  if(prem!=='') r.premium=Number(prem)||'';
+  if(fu){ const p=fu.split('-'); r.nextFollowUp=p[2]+'-'+p[1]+'-'+p[0]; }
+  if(d){ r.temp=d.temp; r.statusLabel=d.label; r.closed=!!d.closes; r.won=!!d.won; r.converted=!!d.won; }
+  if(!r.owner){ r.owner=ins2Me(); r.ownerName=ins2MyName(); }
+  ins2Render();
+  ins2Toast(d && d.won ? '🎉 Policy closed — well done!' : '✔ Saved', d && d.won ? 'good' : '');
+
+  const payload={ reg:r.reg, customer:r.customer, mobile:r.mobile, expiry:r.expiry,
+    by:ins2Me(), byName:ins2MyName(), status:r.status||'', temp:r.temp||'',
+    remarks:rem, nextFollowUp:fu, premium:prem, called:'1' };
+
+  jgetRaw('inscrm2_save', payload, function(res){
+    if(res && res.ok===false){
+      INS2.rows[i]=before; ins2Render();
+      ins2Toast(res.error==='locked'
+        ? ('🔒 Not saved — '+(res.lockedByName||res.lockedBy)+' has this customer open. Try again in '+Math.ceil((res.secondsLeft||0)/60)+' minute(s).')
+        : ('Save failed: '+(res.error||'unknown')), 'bad');
+      return;
+    }
+    if(res && res.owner){ r.owner=res.owner; r.ownerName=res.ownerName; }
+    r.calls=(before.calls||0)+1;
+    /* this IS the saved state now — a later rejected save must come back here,
+       not to how the card looked before it was ever opened */
+    if(INS2.openIdx===i) INS2.draftBase = JSON.parse(JSON.stringify(r));
+    /* the cached page is now stale — drop it so the next visit re-reads */
+    try{ localStorage.removeItem(ins2Key()); }catch(e){}
+    ins2LoadStats();
+  }, 30000);
+}
+
+/* Claiming = "I called this person". Fire-and-forget through the durable queue,
+   so a call made on a bad signal is still recorded when the network returns. */
+function ins2Claim(i){
+  const r=INS2.rows[i]; if(!r) return;
+  r.calls=(r.calls||0)+1;
+  if(!r.owner){ r.owner=ins2Me(); r.ownerName=ins2MyName(); }
+  jpost({type:'inscrm2_call', reg:r.reg, customer:r.customer, mobile:r.mobile, expiry:r.expiry,
+         by:ins2Me(), byName:ins2MyName(), called:'1'}).catch(function(){});
+}
+
+/* -------------------------------- WhatsApp --------------------------------
+   Ravi: "ensure that it should open in Web.whatsapp.com and installed whatsapp
+   both." Three explicit paths rather than one guess:
+     auto  wa.me — the phone picks the installed app, the desktop picks web
+     app   whatsapp:// deep link, falling back to web if nothing handles it
+     web   web.whatsapp.com, forced                                          */
+function ins2Wa(i, mode){
+  const r=INS2.rows[i]; if(!r||!r.mobile) return;
+  const t=document.getElementById('ins2-script-'+i);
+  const txt=(t&&t.value) || ins2Script(r, INS2.lang);
+  const phone='91'+r.mobile, enc=encodeURIComponent(txt);
+  const web='https://web.whatsapp.com/send?phone='+phone+'&text='+enc;
+  ins2Claim(i);
+  if(mode==='web'){ window.open(web,'_blank','noopener'); return; }
+  if(mode==='app'){
+    let done=false;
+    const timer=setTimeout(function(){ if(!done && !document.hidden){ done=true; window.open(web,'_blank','noopener'); } }, 1500);
+    const hide=function(){ if(document.hidden){ done=true; clearTimeout(timer); document.removeEventListener('visibilitychange',hide); } };
+    document.addEventListener('visibilitychange',hide);
+    try{ window.location.href='whatsapp://send?phone='+phone+'&text='+enc; }
+    catch(e){ clearTimeout(timer); window.open(web,'_blank','noopener'); }
+    return;
+  }
+  window.open('https://wa.me/'+phone+'?text='+enc,'_blank','noopener');
+}
+
+function ins2Script(r, lang){
+  r=r||{};
+  try{ if(typeof INS_SCRIPTS!=='undefined' && INS_SCRIPTS[lang||'en']) return INS_SCRIPTS[lang||'en'](r); }catch(e){}
+  return 'Hello '+(r.customer||'Sir/Madam')+', calling from Sehgal Autoriders (Hero MotoCorp), Chinchwad about the insurance of your vehicle '+(r.reg||'')+'.';
+}
+
+/* ------------------------------ charts (inline SVG) ------------------------
+   Drawn by hand rather than pulled from a chart library: the app must work with
+   no network on a workshop phone, and 2 MB of chart JS for four small pictures
+   is exactly the kind of weight the lazy-loading work removed. */
+function ins2LoadStats(){
+  jgetRaw('inscrm2_stats', {owner:ins2Me()}, function(res){
+    if(!res || res.ok===false) return;
+    INS2.stats=res;
+    if(res.counts && Object.keys(res.counts).length){ INS2.counts=res.counts; ins2PaintChips(); }
+    ins2PaintKpis(); ins2PaintCharts();
+    const ring=document.getElementById('ins2-ring');
+    if(ring){
+      const won=res.won||0, target=Math.max(10, Math.ceil(won/10)*10);
+      ring.innerHTML=ins2Ring(won, target);
+    }
+  }, 45000);
+}
+
+function ins2Ring(v, max){
+  const pct=Math.max(0, Math.min(1, max? v/max : 0)), R=24, C=2*Math.PI*R;
+  return '<svg viewBox="0 0 56 56" width="56" height="56">'
+    +'<circle cx="28" cy="28" r="'+R+'" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="6"/>'
+    +'<circle cx="28" cy="28" r="'+R+'" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"'
+    +' stroke-dasharray="'+C+'" stroke-dashoffset="'+(C*(1-pct))+'" transform="rotate(-90 28 28)"/>'
+    +'<text x="28" y="31" text-anchor="middle" font-size="15" font-weight="800" fill="#fff">'+v+'</text></svg>';
+}
+
+function ins2PaintCharts(){
+  const wrap=document.getElementById('ins2-charts'); const s=INS2.stats;
+  if(!wrap||!s) return;
+  wrap.style.display='';
+
+  /* donut — won / lost / open / never called */
+  const parts=[
+    {l:'Closed',      v:s.won||0,       c:'#16a34a'},
+    {l:'Lost',        v:s.lost||0,      c:'#dc2626'},
+    {l:'In progress', v:s.open||0,      c:'#f59e0b'},
+    {l:'Never called',v:s.untouched||0, c:'#cbd5e1'}
+  ];
+  const tot=parts.reduce(function(a,p){ return a+p.v; },0)||1;
+  let off=0, segs='';
+  const R=32, C=2*Math.PI*R;
+  parts.forEach(function(p){
+    const frac=p.v/tot;
+    segs+='<circle cx="45" cy="45" r="'+R+'" fill="none" stroke="'+p.c+'" stroke-width="17"'
+       +' stroke-dasharray="'+(C*frac)+' '+(C*(1-frac))+'" stroke-dashoffset="'+(-C*off)+'"'
+       +' transform="rotate(-90 45 45)"><title>'+p.l+': '+p.v+'</title></circle>';
+    off+=frac;
+  });
+  const conv = (s.won+s.lost) ? Math.round(100*s.won/(s.won+s.lost)) : 0;
+  document.getElementById('ins2-donut').innerHTML=
+    '<div style="display:flex;align-items:center;gap:12px">'
+    +'<svg viewBox="0 0 90 90" width="104" height="104" style="flex:0 0 auto">'+segs
+    +'<text x="45" y="42" text-anchor="middle" font-size="17" font-weight="850" fill="currentColor">'+conv+'%</text>'
+    +'<text x="45" y="55" text-anchor="middle" font-size="8" font-weight="700" fill="#94a3b8">CONVERSION</text></svg>'
+    +'<div class="ins2-legend" style="flex-direction:column;gap:5px">'
+    + parts.map(function(p){ return '<div><i style="background:'+p.c+'"></i>'+p.l+' · <b>'+p.v.toLocaleString('en-IN')+'</b></div>'; }).join('')
+    +'</div></div>';
+  const ds=document.getElementById('ins2-donut-sub');
+  if(ds) ds.textContent = (s.premium?'₹'+Number(s.premium).toLocaleString('en-IN')+' premium':'');
+
+  /* 14-day trend */
+  const tr=s.trend||[];
+  const maxT=Math.max(1, ...tr.map(function(d){ return d.calls; }));
+  document.getElementById('ins2-trend').innerHTML=
+    '<div style="display:flex;align-items:flex-end;gap:3px;height:96px">'
+    + tr.map(function(d){
+        const h=Math.round(76*d.calls/maxT), wh=d.calls?Math.round(76*d.won/maxT):0;
+        return '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px" title="'
+          +d.day+' · '+d.calls+' calls, '+d.won+' closed">'
+          +'<div style="width:100%;background:#bfdbfe;border-radius:3px 3px 0 0;height:'+Math.max(2,h)+'px;position:relative">'
+          +(wh?'<div style="position:absolute;bottom:0;left:0;right:0;background:#16a34a;border-radius:3px 3px 0 0;height:'+wh+'px"></div>':'')
+          +'</div>'
+          +'<div style="font-size:8px;color:#94a3b8;font-weight:700">'+d.day.slice(0,2)+'</div></div>';
+      }).join('')
+    +'</div><div class="ins2-legend"><div><i style="background:#bfdbfe"></i>Calls</div><div><i style="background:#16a34a"></i>Closed</div></div>';
+
+  /* reasons */
+  const rs=Object.keys(s.byReason||{}).map(function(k){ return {l:k, v:s.byReason[k]}; })
+            .sort(function(a,b){ return b.v-a.v; }).slice(0,7);
+  const maxR=Math.max(1, ...rs.map(function(x){ return x.v; }));
+  document.getElementById('ins2-reasons').innerHTML = rs.length
+    ? rs.map(function(x){
+        return '<div class="ins2-bar-row"><div class="ins2-bar-lab" title="'+ins2Esc(x.l)+'">'+ins2Esc(x.l)+'</div>'
+          +'<div class="ins2-bar-track"><div class="ins2-bar-fill" style="width:'+Math.round(100*x.v/maxR)+'%;background:#f59e0b"></div></div>'
+          +'<div class="ins2-bar-n">'+x.v+'</div></div>'; }).join('')
+    : '<div class="ins2-empty-s">No outcomes recorded yet — they appear here as soon as calls are saved with a reason.</div>';
+
+  /* team board */
+  const avatars=['30_avatar_header_advisor.png','32_avatar_header_redshirt.png','33_avatar_header_manager.png','31_avatar_header_ceo.png'];
+  const ag=Object.keys(s.byAgent||{}).map(function(k){ return Object.assign({name:k}, s.byAgent[k]); })
+            .sort(function(a,b){ return (b.won-a.won)||(b.calls-a.calls); }).slice(0,6);
+  document.getElementById('ins2-board').innerHTML = ag.length
+    ? ag.map(function(a,i){
+        return '<div class="ins2-board-row">'
+          +'<img class="ins2-board-av" src="assets/'+avatars[i%avatars.length]+'" alt="" onerror="this.style.visibility=\'hidden\'">'
+          +'<div class="ins2-board-n">'+(i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'')+ins2Esc(a.name)+'</div>'
+          +'<div style="font-size:11px;color:var(--steel);font-weight:700">'+a.calls+' calls</div>'
+          +'<div class="ins2-board-v">'+a.won+' ✓</div></div>'; }).join('')
+    : '<div class="ins2-empty-s">The board fills up as the team saves call outcomes.</div>';
+}
+
+/* ------------------------------ manager extras ----------------------------- */
+function ins2CheckManager(){
+  jgetRaw('inscrm2_manager', {owner:ins2Me()}, function(res){
+    INS2.manager = !!(res && res.manager);
+    const x=document.getElementById('ins2-xls'); if(x) x.style.display=INS2.manager?'':'none';
+    const c=document.getElementById('ins2-carupload'); if(c) c.style.display=INS2.manager?'':'none';
+  }, 20000);
+}
+
+/* The button is hidden for an SMRE, but that is only politeness — insCrmExport2
+   re-checks MD_Login on the server and returns nothing to a non-manager. */
+function ins2Export(){
+  ins2Toast('Preparing the download…');
+  jgetRaw('inscrm2_export', {owner:ins2Me(), bucket:INS2.bucket, cap:8000}, function(res){
+    if(!res || res.ok===false){ ins2Toast((res&&res.error)||'Export failed','bad'); return; }
+    const rows=res.rows||[];
+    if(!rows.length){ ins2Toast('Nothing to export in this range','bad'); return; }
+    heroEnsureLibs('xlsx', function(ok){
+      if(!ok || typeof XLSX==='undefined'){ ins2Toast('Could not load the Excel library — check the connection','bad'); return; }
+      const cols=[
+        ['Reg No','reg'],['Customer','customer'],['Mobile','mobile'],['Second Mobile','altMobile'],
+        ['Model','model'],['City','city'],['Bought On','dos'],
+        ['Insurance Expiry','expiry'],['Days To Expiry','daysToExpiry'],['Expiry Source','expirySrc'],
+        ['Insurer','company'],['Policy No','policy'],
+        ['Loyalty','loyalty'],['Relationship','relationship'],
+        ['Last Service','lastService'],['Next Service Due','nextService'],
+        ['Last Bill','lastBill'],['Last Bill Date','lastBillDate'],['Free Services Used','freeServices'],
+        ['Car Owner','car'],['Car Models','carModels'],['Car Policy Due','carDue'],
+        ['Owner Emp','owner'],['Owner Name','ownerName'],
+        ['Temperature','temp'],['Status','statusLabel'],['Remarks','remarks'],
+        ['Calls','calls'],['Last Call','lastCall'],['Next Follow Up','nextFollowUp'],
+        ['Premium Quoted','premium'],['Converted','converted'],['Policy Sold No','policySold']
+      ];
+      const aoa=[cols.map(function(c){ return c[0]; })].concat(rows.map(function(r){
+        return cols.map(function(c){ const v=r[c[1]]; return v===true?'YES':(v===false?'':(v==null?'':v)); });
+      }));
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=cols.map(function(c){ return {wch:Math.max(10, Math.min(28, c[0].length+6))}; });
+      ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:cols.length-1}})};
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Renewals');
+      const d=new Date(), stamp=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      XLSX.writeFile(wb, 'Insurance_Renewals_'+INS2.bucket+'_'+stamp+'.xlsx');
+      ins2Toast('✔ '+rows.length.toLocaleString('en-IN')+' rows downloaded'+(res.truncated?' (capped — narrow the range for the rest)':''),'good');
+    });
+  }, 90000);
+}
+
+/* One-shot loader for Customer_Master_Hero_Maruti_Common.xlsx. Manager only,
+   uploaded from the app so nobody has to run a script on a desktop. Posted in
+   chunks because a single doPost body has a size ceiling. */
+function ins2MarutiUpload(inp){
+  const f=inp.files&&inp.files[0]; if(!f) return;
+  inp.value='';
+  ins2Toast('Reading the file…');
+  heroEnsureLibs('xlsx', function(ok){
+    if(!ok || typeof XLSX==='undefined'){ ins2Toast('Could not load the Excel library','bad'); return; }
+    const rd=new FileReader();
+    rd.onload=function(ev){
+      let aoa;
+      try{
+        const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array',cellDates:true});
+        aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''});
+      }catch(e){ ins2Toast('Could not read that file: '+String(e.message||e).slice(0,80),'bad'); return; }
+      if(!aoa||aoa.length<2){ ins2Toast('That sheet looks empty','bad'); return; }
+      const hdr=aoa[0].map(function(h){ return String(h||'').trim(); });
+      const ix=function(n){ return hdr.indexOf(n); };
+      const iMob=ix('Mobile No'), iHN=ix('Customer Name (Hero)'), iMN=ix('Customer Name (Maruti)'),
+            iCity=ix('City'), iMod=ix('Maruti Models'), iReg=ix('Maruti Reg Nos'),
+            iSvc=ix('Maruti Next Service Due'), iDue=ix('Maruti Next Insurance Due'),
+            iTier=ix('Loyalty Tier'), iCnt=ix('Maruti Vehicle Count');
+      if(iMob<0){ ins2Toast('No "Mobile No" column in that file','bad'); return; }
+      const g=function(r,i){ return i>=0 ? String(r[i]==null?'':r[i]) : ''; };
+      const rows=[];
+      for(let i=1;i<aoa.length;i++){
+        const r=aoa[i];
+        const m=String(g(r,iMob)).replace(/\D/g,'').slice(-10);
+        if(m.length!==10) continue;
+        rows.push([m,g(r,iHN),g(r,iMN),g(r,iCity),g(r,iMod),g(r,iReg),g(r,iSvc),g(r,iDue),g(r,iTier),g(r,iCnt)]);
+      }
+      if(!rows.length){ ins2Toast('No usable mobile numbers found','bad'); return; }
+      const CH=500; let sent=0;
+      (function next(i){
+        if(i>=rows.length){
+          ins2Toast('✔ '+sent.toLocaleString('en-IN')+' car customers uploaded. Rebuilding the book…','good');
+          jgetRaw('inscrm2_rebuild',{},function(rr){
+            ins2Toast(rr&&rr.ok ? ('✔ Book rebuilt — '+(rr.built||0).toLocaleString('en-IN')+' policies, '+(rr.cars||0).toLocaleString('en-IN')+' car owners matched')
+                                : 'Uploaded, but the rebuild failed — run it again from Master Data', rr&&rr.ok?'good':'bad');
+            ins2Load(true);
+          }, 300000);
+          return;
+        }
+        const chunk=rows.slice(i,i+CH);
+        jpost({type:'maruti_import', rows:chunk, replace:(i===0?'1':'')})
+          .then(function(){ sent+=chunk.length; ins2Toast('Uploading… '+sent+'/'+rows.length); next(i+CH); })
+          .catch(function(){ ins2Toast('Upload stopped at row '+i,'bad'); });
+      })(0);
+    };
+    rd.readAsArrayBuffer(f);
+  });
 }
 </script>
 </body></html>
