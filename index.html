@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 24;
-window.HERO_BUILD = 'R24-2026.08.03.1';
+window.HERO_BUILD = 'R24-2026.08.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -13285,9 +13285,14 @@ function psVerifyPart(){
   psVerifyBox('Checking '+raviEsc(pn)+' against the all-India Hero parts master…','#f8fafc','#e2e8f0','var(--steel)');
   jgetRaw('part_lookup',{pn:pn,stock:'1'},function(res){
     if(my!==PS_VSEQ) return;                      /* a newer read already won */
-    if(!res||res.ok===false){
-      /* Silent on purpose when the route is simply not deployed yet — the
-         scanner still works, and an error nobody can act on is noise. */
+    /* An UNDEPLOYED route does not come back as an error. CodeAppEntry's doGet
+       falls through to {ok:true,msg:'Hero backend … live'} for any action it
+       does not recognise, so ok===true proves nothing here. Without the
+       res.found test below, every scan would have shown the red "not in the
+       Hero parts master" box until the backend was deployed — the scanner
+       calling every genuine part fake. Silent on purpose: an error nobody can
+       act on is noise, and the scanner still works without this check. */
+    if(!res || res.ok===false || typeof res.found!=='boolean'){
       psVerifyBox(''); return;
     }
     PS_VERIFY=res;
