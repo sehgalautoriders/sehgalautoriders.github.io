@@ -24,8 +24,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 21;
-window.HERO_BUILD = 'R21-2026.08.01';
+window.HERO_RELEASE = 22;
+window.HERO_BUILD = 'R22-2026.08.03';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -965,6 +965,12 @@ body { font-size:14px; }
 .hu-wa-btn.mail{background:#eff6ff;color:#1d4ed8}
 .hu-wa-btn.mail:hover{background:#2563eb;color:#fff}
 .hu-wa-btn:disabled{opacity:.35;cursor:not-allowed}
+.hu-wa-btn.call{background:#fef3c7;color:#92400e}
+.hu-wa-btn.call:hover{background:#f59e0b;color:#fff}
+.hu-mob-lbl{font-size:11px;font-weight:700;color:#334155;margin-left:5px;white-space:nowrap}
+/* R22: free-service vehicle held &gt;2 days — a red button on the row, not a red column */
+.hu-free-late{display:inline-flex;align-items:center;gap:4px;background:#dc2626;color:#fff;border:none;border-radius:7px;padding:3px 8px;font-size:10px;font-weight:800;letter-spacing:.03em;cursor:default;animation:huFreePulse 1.6s infinite}
+@keyframes huFreePulse{0%,100%{opacity:1}50%{opacity:.65}}
 
 /* Bottom info panels */
 .hu-bottom-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px}
@@ -1904,6 +1910,62 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 </div>
 
 <!-- ================= ALL-INDIA PART FINDER (v11.2) ================= -->
+<!-- ================= R22: PARTS SCANNER (Parts / WM / GM / CEO) ================= -->
+<div id="view-partscan" style="display:none">
+  <div class="wrap">
+    <div class="hu-topbar">
+      <h2>📷 Parts Scanner</h2>
+      <button class="btn ghost sm" onclick="showView('home')">‹ Home</button>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="hint" style="margin-bottom:10px">Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads part no, description, price, barcode and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy %.</div>
+      <button class="btn" id="ps-shoot-btn" onclick="psPickPhoto()">📷 Scan a Part (camera or gallery)</button>
+      <div id="ps-preview" style="margin-top:12px;display:none"><img id="ps-img" style="max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line)"></div>
+      <div id="ps-status" class="hint" style="margin-top:8px"></div>
+      <div id="ps-result" style="display:none;margin-top:12px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-bottom:6px">Check &amp; correct before saving</div>
+        <div class="fld"><label>Part No</label><input id="ps-partno" style="text-transform:uppercase"></div>
+        <div class="fld"><label>Description</label><input id="ps-desc"></div>
+        <div class="fld"><label>MRP / Price (₹)</label><input id="ps-mrp" inputmode="decimal"></div>
+        <div class="fld"><label>Barcode</label><input id="ps-barcode"></div>
+        <div id="ps-extra-wrap"></div>
+        <div id="ps-guess-wrap" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px;margin:8px 0;font-size:12.5px"></div>
+        <div class="fld"><label>Remarks</label><input id="ps-remarks" placeholder="Rack no, condition, anything useful"></div>
+        <button class="btn" onclick="psSaveScan()">💾 Save to Backend Sheet</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Recent Scans</div>
+      <div id="ps-recent"><div class="hint">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= R22: INSURANCE RENEWAL CRM (Insurance SMRE) ================= -->
+<div id="view-insurance" style="display:none">
+  <div class="wrap">
+    <div class="hu-topbar">
+      <h2>🛡 Insurance Renewals</h2>
+      <button class="btn ghost sm" onclick="showView('home')">‹ Home</button>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="ins-filter" onchange="insRenderList()" style="border:1.5px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px">
+          <option value="">All in window (−30 to +90 days)</option>
+          <option value="today">🔥 Expiring today / just expired</option>
+          <option value="week">This week</option>
+          <option value="HOT">HOT</option><option value="WARM">WARM</option><option value="COLD">COLD</option>
+          <option value="mine">My customers</option>
+        </select>
+        <button class="btn ghost sm" onclick="insBootMod(true)">↻ Refresh</button>
+        <span id="ins-count" class="hint"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">Same-day expiry converts best — the list is ranked nearest-expiry first. First caller owns the customer. Ask the customer what they want first; the script is a help, not a cage.</div>
+    </div>
+    <div id="ins-list"><div class="hint">Loading…</div></div>
+  </div>
+</div>
+
 <div id="view-partfinder" style="display:none">
   <div class="wrap">
     <div class="hu-topbar">
@@ -2787,6 +2849,8 @@ const MODULE_ALIASES={
   'PENDINGREPORTS':'PendingReports','PENDING REPORTS':'PendingReports','REPORTS':'PendingReports',
   'PARTSDESK':'PartsDesk','PARTS DESK':'PartsDesk','PARTS':'PartsDesk',
   'CRM':'CRM','CUSTOMERACTIONS':'CRM','CUSTOMER ACTIONS':'CRM',
+  'PARTSSCANNER':'PartsScanner','PARTS SCANNER':'PartsScanner','SCANNER':'PartsScanner',
+  'INSURANCE':'InsuranceCRM','INSURANCECRM':'InsuranceCRM','INSURANCE CRM':'InsuranceCRM','INSURANCE SMRE':'InsuranceCRM',
   'FINANCE':'Finance','ALL':'ALL'
 };
 function canonicalModule(m){
@@ -2808,6 +2872,14 @@ function isPartsPerson(){
   return !seniorLogin && (explicitPartsModule || explicitPartsText);
 }
 function canUseModule(m){ return isAdmin() || hasModule(m); }
+/* R22: the Insurance SMRE login — designation "Insurance SMRE" in MD_Login,
+   or the InsuranceCRM module assigned explicitly. */
+function isInsuranceUser(){
+  const t=(((USER&&USER.designation)||'')+' '+((USER&&USER.level)||'')).toUpperCase();
+  if(/INSURANCE/.test(t)) return true;
+  const mods=((USER&&USER.modules)||[]).map(canonicalModule);
+  return mods.includes('InsuranceCRM');
+}
 /* dead canEditHoldup() removed 22-Jul-2026 (s15a). Live version is the window.canEditHoldup override in a later patch block. */
 function placeholderToast(name){ alert(name+' is a placeholder for the next version. Current live modules are Gate Entry, Estimate, Control Room, Holdup Monitor and Master Data.'); }
 
@@ -2924,7 +2996,7 @@ function hxPaintRatio(r){
 function showView(name){
   /* Remember where we are, so a reload returns here instead of Home. */
   try{ if(name && name!=='login') sessionStorage.setItem('hero_view', name); }catch(e){}
-  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder'].forEach(v=>{
+  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance'].forEach(v=>{
     const el = document.getElementById('view-'+v);
     if(el) el.style.display = (v===name) ? 'block' : 'none';
   });
@@ -3161,6 +3233,8 @@ function openModule(id){
   if(id==='billing') blBoot();
   if(id==='partfinder') pfBoot();
   if(id==='gateout') goBoot();
+  if(id==='partscan' && typeof psBootMod==='function') psBootMod();
+  if(id==='insurance' && typeof insBootMod==='function') insBootMod();
   showView(id);
 }
 /* dead loadHomeStats() removed 22-Jul-2026 (s15a). Live version is the window.loadHomeStats override in a later patch block. */
@@ -4684,11 +4758,29 @@ function esRenderVariable(){
   box.innerHTML=varHtml+wtHtml;
   esUpdateLive();
 }
+/* R22 (Ravi 03-Aug-2026): "Use the coupons properly." The free-service coupon
+   stage is now SUGGESTED from the vehicle itself — odometer + months since sale
+   against the model's schedule — instead of always sitting on coupon I. The SA
+   can still override; a manual pick is respected for the rest of that estimate. */
+let ES_STAGE_MANUAL=false;
+function esSuggestFreeStage(){
+  if(ES_STAGE_MANUAL) return;
+  const sel=document.getElementById('es-freestage'); if(!sel) return;
+  const modelName=val('es-model'); if(!modelName) return;
+  const fam=famFor(modelName), sc=SCHED[fam.sched]; if(!sc) return;
+  const km=+val('es-km')||0, mo=esMonthsSince(val('es-dos'));
+  let pick=sc.free[sc.free.length-1];
+  for(const s of sc.free){ if(km<=s.km && (mo===null||mo<=s.mo)){ pick=s; break; } }
+  if(sel.value!==pick.n){ sel.value=pick.n; }
+}
 document.getElementById('es-type').addEventListener('change',()=>{
   document.getElementById('es-freestage-wrap').style.display=val('es-type')==='free'?'block':'none';
+  ES_STAGE_MANUAL=false;
+  if(val('es-type')==='free'){ try{ esSuggestFreeStage(); }catch(e){} }
   esRenderVariable();
 });
-document.getElementById('es-freestage').addEventListener('change',()=>{ esRenderVariable(); });
+document.getElementById('es-freestage').addEventListener('change',()=>{ ES_STAGE_MANUAL=true; esRenderVariable(); });
+['es-km','es-dos'].forEach(function(id){ const el=document.getElementById(id); if(el) el.addEventListener('change',function(){ if(val('es-type')==='free'){ try{ esSuggestFreeStage(); esRenderVariable(); }catch(e){} } }); });
 document.getElementById('es-model').addEventListener('change',()=>{
   esResetRemoved();
   esLoadLabourForSelectedModel(val('es-model'));
@@ -5193,8 +5285,8 @@ function esPartNo(desc, modelName){
   return '';
 }
 function esAnnotateDmsCodes(L, dec, freeStage, modelName){
-  L.labour.forEach(it=>{ if(!it.code){ const c=esDmsLabourCode(it.l, dec, freeStage, modelName); if(c) it.code=c; } });
-  L.parts.forEach(it=>{ if(!it.pn){ const pn=esPartNo(it.l, modelName); if(pn) it.pn=pn; } });
+  L.labour.forEach(it=>{ if(!it.code){ const c=esDmsLabourCode(it.l, dec, freeStage, modelName); if(c) it.code=c; else if(!it.free) it._noCode=true; } });
+  L.parts.forEach(it=>{ if(!it.pn){ const pn=esPartNo(it.l, modelName); if(pn) it.pn=pn; else it._noPn=true; } });
   return L;
 }
 /* ==========================================================================
@@ -5494,6 +5586,7 @@ function esUpdateLive(){
       bd.innerHTML=`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>🛢 Oil</span><b class="mono">${inr(c.oil)}</b></div>`+
         `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>🔧 Labour${c.topup>0?' <span style=\"font-size:10px;color:#b45309\">(incl. service min)</span>':''}</span><b class="mono">${inr(labTotal)}</b></div>`+
         `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>⚙️ Parts</span><b class="mono">${inr(c.parts)}</b></div>`+
+        `<div style="display:flex;justify-content:space-between;padding:2px 0;color:#6d28d9"><span>⚖ Parts : Labour</span><b class="mono">${c.labour>0?((c.parts+c.oil)/c.labour).toFixed(2)+' : 1':'—'}</b></div>`+
         (c.protection>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:#92400e"><span>🛡 ${c.protectionLabel}</span><b class="mono">${inr(c.protection)}</b></div>`:'')+
         (c.lineDisc>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:#b45309"><span>Line discounts</span><b class="mono">−${inr(c.lineDisc)}</b></div>`:'')+
         (c.expressFee>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--signal-d)"><span>⚡ Express delivery</span><b class="mono">${inr(c.expressFee)}</b></div>`:'')+
@@ -5534,6 +5627,7 @@ function esRenderDraft(c){
       ${c.disc>0?`<div class="trow disc"><span>Discount</span><span class="mono">−${inr(c.disc)}</span></div>`:''}
       <div class="trow"><span>GST @ 18%</span><span class="mono">${inr(c.tax)}</span></div></div>
     <div class="grand"><div class="lab">Running Total (draft)</div><div class="val"><small>₹</small>${Math.round(c.total).toLocaleString('en-IN')}</div></div>
+    <div style="text-align:right;font-size:11.5px;font-weight:800;color:#6d28d9;padding:4px 2px">⚖ Parts : Labour = ${c.labour>0?((c.parts+c.oil)/c.labour).toFixed(2)+' : 1':'—'}</div>
     <div class="e-note">Use Discount, Edit or ✕ against an individual line before generating. Labour linked to a selected part is removed only when that part is removed.</div>
   </div>`;
 }
@@ -5586,6 +5680,11 @@ function esGenerate(){
 function esCodeHtml(x){
   if(x.pn) return `<div style="font-size:11px;color:#0f766e;font-family:'Roboto Mono';font-weight:800;margin-top:2px">PART NO: ${x.pn}</div>`;
   if(x.code) return `<div style="font-size:11px;color:#1d4ed8;font-family:'Roboto Mono';font-weight:800;margin-top:2px">LABOUR CODE: ${x.code}</div>`;
+  /* R22 (Ravi 03-Aug-2026): every line must SHOW its DMS code for bill generation.
+     A line whose code is missing from the masters now says so instead of staying
+     silent, so the gap is seen and fixed in the sheet — not discovered at billing. */
+  if(x._noPn)   return `<div style="font-size:10.5px;color:#b45309;font-family:'Roboto Mono';font-weight:800;margin-top:2px">PART NO: — not in master</div>`;
+  if(x._noCode) return `<div style="font-size:10.5px;color:#b45309;font-family:'Roboto Mono';font-weight:800;margin-top:2px">LABOUR CODE: — not in master</div>`;
   return '';
 }
 function esAmountHtml(x){
@@ -5626,6 +5725,7 @@ function esRender(d){
       ${d.disc>0?`<div class="trow disc"><span>Discount</span><span class="mono">−${inr(d.disc)}</span></div>`:''}
       <div class="trow"><span>GST @ 18%</span><span class="mono">${inr(d.tax)}</span></div></div>
     <div class="grand"><div class="lab">Total Estimate</div><div class="val"><small>₹</small>${Math.round(d.total).toLocaleString('en-IN')}</div></div>
+    <div style="text-align:right;font-size:11.5px;font-weight:800;color:#6d28d9;padding:4px 2px">⚖ Parts : Labour = ${d.labour>0?((d.parts+d.oil)/d.labour).toFixed(2)+' : 1':'—'}</div>
     <div class="sign"><div>Service Advisor</div><div>Customer signature</div></div>
     <div class="e-note">Estimate prepared on the basis of the vehicle's service schedule, odometer reading and date of sale. Final amount may vary depending on the vehicle's condition at the time of service.</div>
   </div>`;
@@ -5642,7 +5742,7 @@ function esNewEstimate(){
   document.getElementById('es-model').value=''; document.getElementById('es-type').value=''; const pcat=document.getElementById('es-add-pcat'); if(pcat) pcat.value='';
   const exch=document.getElementById('es-express'); if(exch) exch.checked=false; // FIX: express fee no longer silently carries into the next estimate
   document.getElementById('es-freestage-wrap').style.display='none';
-  ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; esRenderUndoBtn&&esRenderUndoBtn(); esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
+  ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; ES_STAGE_MANUAL=false; esRenderUndoBtn&&esRenderUndoBtn(); esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
   ES_MODEL_CTX={reg:'',gateModel:''}; const emf=document.getElementById('es-model-flag'); if(emf){ emf.style.display='none'; emf.innerHTML=''; } const emm=document.getElementById('es-gate-photos'); if(emm){ emm.style.display='none'; }
   esRenderVariable(); esUpdateLive();
   document.getElementById('es-out').innerHTML='<div class="empty"><div class="cond">No estimate yet</div><p style="margin-top:8px">Enter the vehicle details and press <b>Generate estimate</b>.</p></div>';
@@ -5777,7 +5877,7 @@ function esOnGatePick(g){
     // Different vehicle chosen mid-way: old parts/labour must not carry over.
     // Clear item state directly (not via esNewEstimate — that reloads the list
     // and would wipe this very selection).
-    ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[];
+    ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; ES_STAGE_MANUAL=false;
     if(typeof esRenderUndoBtn==='function') esRenderUndoBtn();
     esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
     ['es-disc','es-disc-lab','es-disc-parts','es-add-pname','es-add-pamt'].forEach(i=>{const el=document.getElementById(i); if(el) el.value='';});
@@ -6511,7 +6611,12 @@ function huCustomerActionBtns(r, i){
   const mob=enriched&&enriched.mob?String(enriched.mob).replace(/\D/g,''):'';
   // WhatsApp SVG icon button
   const waSvg=`<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
-  return `<button class="hu-wa-btn wa" onclick="huOpenWa(${i})" title="${mob?'WhatsApp +91'+mob:'Enter mobile to send WhatsApp'}">${waSvg}</button><button class="hu-wa-btn mail" onclick="huOpenEmail(${i})" title="Draft email to customer" style="margin-left:3px">✉</button>`;
+  /* R22 (Ravi 03-Aug-2026): the customer's number must be ON the holdup row so
+     anyone — SA, WM, GM — can call or WhatsApp from their own phone. Number
+     shown when on file; 📞 dials it directly. */
+  const call=mob?`<a href="tel:+91${mob.slice(-10)}" class="hu-wa-btn call" onclick="event.stopPropagation()" title="Call +91${mob.slice(-10)}" style="margin-left:3px;text-decoration:none">📞</a>`:'';
+  const numLbl=mob?`<span class="hu-mob-lbl mono">${mob.slice(-10)}</span>`:'';
+  return `<button class="hu-wa-btn wa" onclick="huOpenWa(${i})" title="${mob?'WhatsApp +91'+mob:'Enter mobile to send WhatsApp'}">${waSvg}</button>${call}<button class="hu-wa-btn mail" onclick="huOpenEmail(${i})" title="Draft email to customer" style="margin-left:3px">✉</button>${numLbl}`;
 }
 let HU_CONTACT_ROW=null;
 function huFindEnrichedForRow(r){
@@ -7208,13 +7313,16 @@ function huRender(){
       const etaOpts=HU_ETA_OPTIONS.map(o=>`<option value="${o}"${o===curEta?' selected':''}>${o}</option>`).join('');
       // DRS color badge for read-only view
       const drsColor=huDrsColor(curHS);
+      /* R22 (Ravi 03-Aug-2026): a FREE-SERVICE vehicle held beyond 2 days gets a
+         red pulsing button on its row — not a whole red column. */
+      const isFreeLate=/free/i.test(String(r[HU_COLS.type]||''))&&days>2;
       return `<tr id="hu-tr-${i}" class="${isSel?'hu-selected':''} ${isPartFlag?'hu-row-part-flag':''}" onclick="huRowClick(event,${i})" style="cursor:pointer">
         <td style="width:32px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${isSel?'checked':''} onchange="huToggleRow(${i},this.checked)"></td>
         <td style="width:18px;text-align:center;pointer-events:none"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${dotCls==='green'?'var(--ok)':'var(--signal-d)'}"></span></td>
         <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}</td>
         <td class="hu-wrapcell" style="font-size:12px;min-width:96px">${r[HU_COLS.model]||'—'}</td>
         <td class="td-days ${dClass}">${days>=0?days+'d':'—'}</td>
-        <td class="hu-wrapcell" style="font-size:11px;min-width:72px">${r[HU_COLS.type]||'—'}</td>
+        <td class="hu-wrapcell" style="font-size:11px;min-width:72px">${r[HU_COLS.type]||'—'}${isFreeLate?`<button class="hu-free-late" title="Free-service vehicle pending ${days} days — deliver on priority">⚠ FREE ${days}d</button>`:''}</td>
         <td class="hu-wrapcell" style="font-size:11px;min-width:88px">${r[HU_COLS.status]||'—'}</td>
         <td class="hu-wrapcell" style="font-size:11px;color:var(--steel);min-width:84px">${saName||'—'}</td>
         <td onclick="event.stopPropagation()">${canEdit
@@ -7571,7 +7679,8 @@ function huCustomerActionCell(r){
   const mailSubj=encodeURIComponent(`Vehicle Service Update — ${reg}`);
   const mailBody=encodeURIComponent(`Dear Customer,\n\nYour vehicle ${reg} (${model}) is currently at Sehgal Hero MotoCorp Workshop.\n\nJob Card No: ${jcNo}\nOpen Date: ${jcDate}\nCurrent Status: ${reason}\nExpected ETA: ${eta}\n\nKindly acknowledge this communication or contact us for further details.\n\nRegards,\nTeam Sehgal Autoriders\nChinchwad`);
   const waLink=mob?`https://wa.me/91${mob}?text=${waMsg}`:'#';
-  return `<a href="${waLink}" target="_blank" class="hu-wa-btn wa" title="${mob?'WhatsApp: +91'+mob:'No mobile on file — open WhatsApp'}" ${!mob?'style="opacity:.4"':''}>🟢</a> <a href="mailto:?subject=${mailSubj}&body=${mailBody}" class="hu-wa-btn mail" title="Draft email to customer">✉</a>`;
+  const callBtn=mob?` <a href="tel:+91${mob.slice(-10)}" class="hu-wa-btn call" onclick="event.stopPropagation()" title="Call +91${mob.slice(-10)}" style="text-decoration:none">📞</a> <span class="hu-mob-lbl mono">${mob.slice(-10)}</span>`:'';
+  return `<a href="${waLink}" target="_blank" class="hu-wa-btn wa" title="${mob?'WhatsApp: +91'+mob:'No mobile on file — open WhatsApp'}" ${!mob?'style="opacity:.4"':''}>🟢</a> <a href="mailto:?subject=${mailSubj}&body=${mailBody}" class="hu-wa-btn mail" title="Draft email to customer">✉</a>${callBtn}`;
 }
 
 /* ===== SOFT VALIDATION WARNING (#2) ===== */
@@ -8043,6 +8152,8 @@ function showEstimatePreview(est, reg, name, mob){
       {key:'BillingComparison',id:'billing',ic:'₹',tt:isSA?'My Estimates & Billing':'Estimates & Billing',dd:isSA?'All your estimates, actual billing done and your deviation %.':'All estimates of all dates + actual DMS billing comparison & deviation %.',c:'#7c3aed',bg:'#f5f3ff',live:true,force:isSA||isTopMgmtUser()},
       {key:'PartFinder',id:'partfinder',ic:'🔎',tt:'All-India Part Finder',dd:'Find any part across all Hero dealers. Nearest-first — tell the customer with confidence.',c:'#0891b2',bg:'#ecfeff',live:true,force:true},
       {key:'PartsDesk',id:'partsdesk',ic:'📦',tt:'Parts Desk',dd:'Parts-pending vehicles from Holdup — status, ETA & requisition photos.',c:'#0891b2',bg:'#ecfeff',live:true,force:isPartsPerson()},
+      {key:'PartsScanner',id:'partscan',ic:'📷',tt:'Parts Scanner',dd:'Scan any part sticker — part no, price, barcode auto-read. No sticker? AI identifies the part.',c:'#b45309',bg:'#fffbeb',live:true,force:isPartsPerson()||isTopMgmtUser()},
+      {key:'InsuranceCRM',id:'insurance',ic:'🛡',tt:'Insurance Renewals',dd:'Renewal worklist by expiry — call, WhatsApp, HOT/WARM/COLD, scripts in English/Hindi/Marathi.',c:'#0e7490',bg:'#ecfeff',live:true,force:isInsuranceUser()||isTopMgmtUser()},
       {key:'CRM',id:'crm',ic:'👥',tt:'Customer Actions',dd:'WhatsApp, email and follow-ups for assigned customers.',c:'#334155',bg:'#f1f5f9',live:false,force:isSA},
       {key:'ControlRoom',id:'control',ic:'📡',tt:'Top Management Control Room',dd:"Today's gate entries, estimates, billing and exceptions.",c:'#0f766e',bg:'#f0fdfa',live:true},
       {key:'MasterData',id:'master',ic:'🗂️',tt:'Master Data',dd:'Users, designations, levels, modules, models and dropdown masters.',c:'#475569',bg:'#f8fafc',live:true}
@@ -9370,9 +9481,14 @@ function goConfirm(){
 /* ---------- HOLDUP MOBILE CARDS (Operations Hub design) ---------- */
 function huMobCall(i){
   const r=HU_ROWS_CURRENT[i]; if(!r) return;
-  const mob=String(r['Mobile']||r['Mobile No']||r['Contact Number']||r['Customer Mobile']||'').replace(/\D/g,'').slice(-10);
+  let mob=String(r['Mobile']||r['Mobile No']||r['Contact Number']||r['Customer Mobile']||'').replace(/\D/g,'').slice(-10);
+  /* R22: the DMS holdup export rarely carries the mobile — the gate-entry match does. */
+  if(mob.length!==10){
+    const en=(typeof huFindEnrichedForRow==='function')&&huFindEnrichedForRow(r);
+    if(en&&en.mob) mob=String(en.mob).replace(/\D/g,'').slice(-10);
+  }
   if(mob.length===10) window.location.href='tel:+91'+mob;
-  else alert('No customer mobile number available in the holdup data for this vehicle.');
+  else alert('No customer mobile number available for this vehicle (not in holdup data or gate entries).');
 }
 function huRenderMobileCards(rows){
   const canEdit=canEditHoldup();
@@ -9392,7 +9508,7 @@ function huRenderMobileCards(rows){
       </div>
       <div class="hum-grid">
         <div><span class="hum-lbl">👤 SA</span>${saName||'—'}</div>
-        <div><span class="hum-lbl">🔧 JC Type</span>${r[HU_COLS.type]||'—'}</div>
+        <div><span class="hum-lbl">🔧 JC Type</span>${r[HU_COLS.type]||'—'}${(/free/i.test(String(r[HU_COLS.type]||''))&&days>2)?`<button class="hu-free-late" title="Free-service vehicle pending ${days} days">⚠ FREE ${days}d</button>`:''}</div>
         <div><span class="hum-lbl">● Status</span><span style="color:${drsColor};font-weight:700">${curHS}</span></div>
         <div><span class="hum-lbl">📅 ETA</span>${eta}</div>
       </div>
@@ -10736,15 +10852,43 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     if(vin && vin.style.display!=='none'){ vin.style.display='none'; return true; }
     const home=document.getElementById('view-home');
     if(home && home.style.display==='none'){ if(typeof goHome==='function') goHome(); return true; }
-    /* R21: at Home with nothing open, back is consumed — deliberately.
-       Falling through used to hand the press to the browser, which collapses
-       or re-shows its own top bar and can step out of the app entirely
-       ("one more back and the top UI disturbs"). Inside the app, Logout is
-       the way out; the back key never is. */
+    /* R22 (Ravi 03-Aug-2026): at Home with nothing open, back asks — like SBI
+       YONO. The app never exits on its own, however many times back is pressed;
+       Yes logs out and releases the history trap so the next back truly leaves. */
+    heroShowExitConfirm();
     return true;
   };
 
+  /* ---- R22: exit-confirm dialog (SBI-YONO style) ---- */
+  function heroShowExitConfirm(){
+    let m=document.getElementById('hero-exit-modal');
+    if(!m){
+      m=document.createElement('div');
+      m.id='hero-exit-modal';
+      m.style.cssText='display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:6000;align-items:center;justify-content:center;padding:24px';
+      m.innerHTML='<div style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:24px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+        +'<div style="font-size:34px;line-height:1;margin-bottom:10px">🚪</div>'
+        +'<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:22px;font-weight:700;text-transform:uppercase;margin-bottom:6px">Exit Hero App?</div>'
+        +'<div style="font-size:13px;color:#64748b;margin-bottom:18px">Do you want to logout and close the app?</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        +'<button onclick="document.getElementById(\'hero-exit-modal\').style.display=\'none\'" style="border:1.5px solid #cbd5e1;background:#fff;border-radius:9px;padding:11px 0;font-size:14px;font-weight:700;cursor:pointer">No</button>'
+        +'<button onclick="heroExitApp()" style="border:none;background:#dc2626;color:#fff;border-radius:9px;padding:11px 0;font-size:14px;font-weight:700;cursor:pointer">Yes, Exit</button>'
+        +'</div></div>';
+      m.addEventListener('click',function(ev){ if(ev.target===m) m.style.display='none'; });
+      document.body.appendChild(m);
+    }
+    m.style.display='flex';
+  }
+  window.heroExitApp = function(){
+    window.HERO_EXIT_OK = true;                    // popstate listener stops re-arming the trap
+    const m=document.getElementById('hero-exit-modal'); if(m) m.style.display='none';
+    try{ if(typeof logout==='function') logout(); }catch(e){}
+    try{ window.close(); }catch(e){}               // works inside the APK / installed PWA
+    try{ const n=history.length-1; if(n>0) history.go(-n); }catch(e){}
+  };
+
   window.addEventListener('popstate', function(){
+    if(window.HERO_EXIT_OK) return;   // R22: user confirmed exit — let the browser leave
     try{ history.pushState({app:true},'',location.href); }catch(e){}
     /* R20 (Ravi 01-Aug-2026): this guard used to be `if(window.USER)`, and it
        was ALWAYS false — USER is a top-level `let`, and let/const globals are
@@ -10756,6 +10900,24 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
        heroBackStep() directly is that the direct call skips this guard. */
     if(typeof USER!=='undefined' && USER) heroBackStep();
   });
+
+  /* R22 (Ravi 03-Aug-2026): "the grey back of the popup moves when we move it."
+     Dragging the backdrop was scrolling the PAGE underneath the popup. While any
+     overlay is open, touch-scrolling is blocked unless the finger is inside a
+     genuinely scrollable element of the popup itself (e.g. .modal-body). Uses the
+     same topOpenOverlay() the back key uses, so any future popup is covered. */
+  document.addEventListener('touchmove', function(ev){
+    const ov=topOpenOverlay();
+    if(!ov) return;
+    let n=ev.target;
+    while(n && n!==document.body && n!==document.documentElement){
+      if(n===ov) break;                      // reached the backdrop — nothing scrollable en route
+      const cs=getComputedStyle(n);
+      if(/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight>n.clientHeight+1) return; // let the popup body scroll
+      n=n.parentElement;
+    }
+    ev.preventDefault();                     // kill the page-scroll behind the popup
+  }, {passive:false});
 
   /* ------------------------------------------------------- GATE ENTRIES TODAY
      The "Gate Entries Today" tile was wired to raviOpenGateHistory(), which
@@ -12599,4 +12761,207 @@ function huDiag(){
 </script>
 <!-- ============== END HOLDUP FILTER FIX + DIAGNOSTIC (s40) ================= -->
 
+<script>
+/* ================================================================================
+   ===== R22 (03-Aug-2026) — PARTS SCANNER + INSURANCE RENEWAL CRM ================
+   Clean additions, no wraps. Backend routes: ps_recent / parts_scan_save,
+   inscrm_worklist / inscrm_call (ModulesR22.gs).
+   ================================================================================ */
+
+/* ------------------------------ PARTS SCANNER ------------------------------ */
+let PS_LAST={photo:'',extra:{},guess:null};
+function psBootMod(){ psLoadRecent(); }
+function psStatus(msg,kind){
+  const el=document.getElementById('ps-status'); if(!el) return;
+  el.style.color=kind==='err'?'var(--signal-d)':(kind==='ok'?'#166534':'var(--steel)');
+  el.textContent=msg||'';
+}
+function psPickPhoto(){
+  /* No capture attribute on purpose — phone shows Camera / Gallery / Files. */
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange=function(){
+    const f=inp.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=function(e){
+      PS_LAST={photo:e.target.result,extra:{},guess:null};
+      const pv=document.getElementById('ps-preview'); pv.style.display='block';
+      document.getElementById('ps-img').src=e.target.result;
+      document.getElementById('ps-result').style.display='none';
+      psAnalyze(e.target.result);
+    };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
+}
+async function psAnalyze(dataUrl){
+  const key=(typeof geGeminiKey==='function')?geGeminiKey():'';
+  if(!key){ psStatus('No AI key set. Ask admin to save the Gemini key in App Settings, then Sync Now.','err'); return; }
+  psStatus('🤖 Reading the part label…');
+  try{
+    const b64=await geCompressForAi(dataUrl);
+    const prompt=`You are looking at a motorcycle/scooter SPARE PART at an Indian Hero MotoCorp (and old Hero Honda) dealership parts store. The photo may show a printed sticker/label/plate on the part or its box, possibly old, faded or partly torn.
+1. If a label is readable: extract EVERY printed field. Standard ones: part number (like 17220KVSV00 or similar), description/name, MRP or price in rupees, barcode digits. ANY OTHER printed field (batch, date, vendor code, HSN, qty, colour code, anything) goes into "extra" as {"FIELD NAME":"value"}.
+2. If NO label/sticker is readable at all: identify what the part IS (e.g. "clutch plate set", "air filter element"), list probable Hero/HeroHonda models it fits, and your confidence 0-100.
+Return ONLY JSON:
+{"label_found":true,"part_no":"","description":"","mrp":"","barcode":"","extra":{},"part_guess":"","probable_models":[],"confidence_percent":0}`;
+    const url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
+    const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],generationConfig:{temperature:0,response_mime_type:'application/json'}};
+    let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.status===429){ psStatus('⏳ AI busy, retrying…'); await new Promise(s=>setTimeout(s,4000)); r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+    if(!r.ok) throw new Error('AI error '+r.status);
+    const j=await r.json();
+    const txt=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+    let g={}; { let s=txt.trim().replace(/^```json\s*/i,'').replace(/```$/,''); const a=s.indexOf('{'),b=s.lastIndexOf('}'); if(a>=0)s=s.slice(a,b+1); g=JSON.parse(s); }
+    PS_LAST.guess=g; PS_LAST.extra=g.extra&&typeof g.extra==='object'?g.extra:{};
+    document.getElementById('ps-partno').value=String(g.part_no||'');
+    document.getElementById('ps-desc').value=String(g.description||g.part_guess||'');
+    document.getElementById('ps-mrp').value=String(g.mrp||'').replace(/[₹,\s]/g,'');
+    document.getElementById('ps-barcode').value=String(g.barcode||'');
+    const xw=document.getElementById('ps-extra-wrap');
+    const keys=Object.keys(PS_LAST.extra);
+    xw.innerHTML=keys.length?('<div style="font-size:10.5px;font-weight:800;color:#0f766e;margin:4px 0">EXTRA FIELDS FOUND ON THE LABEL (new columns in the sheet)</div>'+keys.map((k,i)=>`<div class="fld"><label>${raviEsc(k)}</label><input id="ps-extra-${i}" value="${raviEsc(String(PS_LAST.extra[k]))}"></div>`).join('')):'';
+    const gw=document.getElementById('ps-guess-wrap');
+    if(!g.label_found && (g.part_guess||String(g.confidence_percent||''))){
+      gw.style.display='block';
+      gw.innerHTML='🔎 <b>No sticker readable.</b> AI identification: <b>'+raviEsc(String(g.part_guess||'unknown'))+'</b>'
+        +(Array.isArray(g.probable_models)&&g.probable_models.length?' · Probable models: '+raviEsc(g.probable_models.join(', ')):'')
+        +' · Accuracy: <b>'+Math.round(Number(g.confidence_percent)||0)+'%</b>';
+    } else gw.style.display='none';
+    document.getElementById('ps-result').style.display='block';
+    psStatus(g.label_found?'✔ Label read. Check the fields, correct anything, then save.':'No label found — AI identification shown. Add what you know and save.','ok');
+  }catch(e){
+    psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err');
+  }
+}
+function psSaveScan(){
+  const g=PS_LAST.guess||{};
+  const extra={};
+  Object.keys(PS_LAST.extra||{}).forEach((k,i)=>{
+    const el=document.getElementById('ps-extra-'+i);
+    extra[k]=el?el.value:String(PS_LAST.extra[k]);
+  });
+  const payload={type:'parts_scan_save',
+    by:(USER&&(USER.personName||USER.empno))||'', ws:(USER&&USER.ws)||'',
+    partNo:(document.getElementById('ps-partno').value||'').toUpperCase().trim(),
+    desc:document.getElementById('ps-desc').value||'', mrp:document.getElementById('ps-mrp').value||'',
+    barcode:document.getElementById('ps-barcode').value||'',
+    guess:String(g.part_guess||''), guessModels:Array.isArray(g.probable_models)?g.probable_models.join(', '):'',
+    confidence:String(Math.round(Number(g.confidence_percent)||0)||''),
+    remarks:document.getElementById('ps-remarks').value||'', extra:JSON.stringify(extra)};
+  if(!payload.partNo && !payload.desc){ psStatus('Nothing to save — need at least a part no or a description.','err'); return; }
+  psStatus('Saving…');
+  jpost(payload).then(function(res){
+    if(res&&res.ok!==false){ psStatus('✔ Saved to the backend sheet.','ok'); document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none'; psLoadRecent(); }
+    else psStatus('Save failed: '+((res&&res.error)||'unknown'),'err');
+  }).catch(function(e){ psStatus('Save failed: '+String(e).slice(0,120),'err'); });
+}
+function psLoadRecent(){
+  const el=document.getElementById('ps-recent'); if(!el) return;
+  jget('ps_recent',{limit:20},function(res){
+    if(!res||res.ok===false){ el.innerHTML='<div class="hint">'+((res&&res.error)||'Backend not reachable')+'</div>'; return; }
+    const rows=res.rows||[];
+    if(!rows.length){ el.innerHTML='<div class="hint">No scans saved yet. Scan the first part above.</div>'; return; }
+    el.innerHTML=rows.map(r=>`<div class="ctlitem"><div><div class="big">${raviEsc(r['Part No']||r['AI Guess']||'—')} · ${raviEsc(r['Description']||'')}</div>
+      <div class="small">${r['MRP']?'₹'+raviEsc(r['MRP'])+' · ':''}${r['Barcode']?'▮ '+raviEsc(r['Barcode'])+' · ':''}${raviEsc(r['Scanned By']||'')} · ${raviEsc(r['Timestamp']||'')}${r['Confidence %']?' · AI '+raviEsc(r['Confidence %'])+'%':''}</div></div></div>`).join('');
+  });
+}
+
+/* --------------------------- INSURANCE RENEWAL CRM --------------------------- */
+let INS_ROWS=[];
+const INS_SCRIPTS={
+  en:(r)=>`Hello ${r.customer||'Sir/Madam'}, I am calling from Sehgal Autoriders (Hero MotoCorp), Chinchwad — this is about the insurance of your vehicle ${r.reg}${r.model?' ('+r.model+')':''}.\n\nFirst — how may I help you today? Is there anything you were already planning about the policy?\n\nYour policy${r.company?' with '+r.company:''} ${r.daysToExpiry<0?'EXPIRED on '+r.expiry:'expires on '+r.expiry}. Renewing on time means:\n• No vehicle inspection needed — expired policies need inspection and higher premium\n• Your No-Claim Bonus stays protected\n• Riding without insurance is a ₹2,000 traffic fine, and any accident cost is fully yours\n• Cashless claim support at our workshop\n\nWe can renew it today itself on a single call. Shall I share the quote on WhatsApp?`,
+  hi:(r)=>`नमस्ते ${r.customer||'सर/मैडम'}, मैं सहगल ऑटोराइडर्स (हीरो मोटोकॉर्प), चिंचवड से बोल रही हूँ — आपकी गाड़ी ${r.reg}${r.model?' ('+r.model+')':''} के इंश्योरेंस के बारे में।\n\nपहले बताइए — मैं आपकी क्या मदद कर सकती हूँ? पॉलिसी को लेकर आपका कोई विचार है?\n\nआपकी पॉलिसी${r.company?' ('+r.company+')':''} ${r.daysToExpiry<0?'समाप्त हो चुकी है ('+r.expiry+')':r.expiry+' को समाप्त हो रही है'}। समय पर रिन्यू करने के फायदे:\n• गाड़ी की जाँच नहीं लगती — एक्सपायर पॉलिसी पर जाँच और ज़्यादा प्रीमियम लगता है\n• आपका नो-क्लेम बोनस सुरक्षित रहता है\n• बिना इंश्योरेंस चलाने पर ₹2,000 का चालान, और दुर्घटना का पूरा खर्च आप पर\n• हमारे वर्कशॉप में कैशलेस क्लेम की सुविधा\n\nआज ही एक कॉल में रिन्यू हो सकता है। क्या मैं WhatsApp पर कोटेशन भेज दूँ?`,
+  mr:(r)=>`नमस्कार ${r.customer||'सर/मॅडम'}, मी सहगल ऑटोरायडर्स (हिरो मोटोकॉर्प), चिंचवड मधून बोलत आहे — आपल्या ${r.reg}${r.model?' ('+r.model+')':''} गाडीच्या विम्याबद्दल.\n\nआधी सांगा — मी आपली काय मदत करू शकते? पॉलिसीबद्दल आपला काही विचार आहे का?\n\nआपली पॉलिसी${r.company?' ('+r.company+')':''} ${r.daysToExpiry<0?'संपली आहे ('+r.expiry+')':r.expiry+' रोजी संपत आहे'}। वेळेत नूतनीकरण केल्याचे फायदे:\n• गाडीची तपासणी लागत नाही — पॉलिसी संपल्यावर तपासणी व जास्त प्रीमियम लागतो\n• आपला नो-क्लेम बोनस सुरक्षित राहतो\n• विम्याशिवाय गाडी चालवल्यास ₹2,000 दंड, आणि अपघाताचा संपूर्ण खर्च आपल्यावर\n• आमच्या वर्कशॉपमध्ये कॅशलेस क्लेमची सोय\n\nआजच एका कॉलमध्ये नूतनीकरण होऊ शकते. मी WhatsApp वर कोटेशन पाठवू का?`
+};
+function insBootMod(force){
+  const el=document.getElementById('ins-list'); if(el&&(force||!INS_ROWS.length)) el.innerHTML='<div class="hint">Loading renewal worklist…</div>';
+  jget('inscrm_worklist',{owner:(USER&&USER.empno)||''},function(res){
+    if(!res||res.ok===false){ if(el) el.innerHTML='<div class="hint">'+((res&&res.error)||'Backend not reachable')+'</div>'; return; }
+    INS_ROWS=res.rows||[];
+    if(res.note&&!INS_ROWS.length&&el){ el.innerHTML='<div class="hint">'+raviEsc(res.note)+'</div>'; const c=document.getElementById('ins-count'); if(c) c.textContent=''; return; }
+    insRenderList();
+  });
+}
+function insTempSuggest(r){ const d=r.daysToExpiry; return d<=1?'HOT':(d<=30?'WARM':'COLD'); }
+function insRenderList(){
+  const el=document.getElementById('ins-list'); if(!el) return;
+  const f=(document.getElementById('ins-filter')||{}).value||'';
+  let rows=INS_ROWS;
+  if(f==='today') rows=rows.filter(r=>Math.abs(r.daysToExpiry)<=1);
+  else if(f==='week') rows=rows.filter(r=>r.daysToExpiry>=-7&&r.daysToExpiry<=7);
+  else if(f==='HOT'||f==='WARM'||f==='COLD') rows=rows.filter(r=>(r.temp||insTempSuggest(r))===f);
+  else if(f==='mine') rows=rows.filter(r=>r.owner===(USER&&USER.empno));
+  const c=document.getElementById('ins-count'); if(c) c.textContent=rows.length+' customer'+(rows.length===1?'':'s');
+  if(!rows.length){ el.innerHTML='<div class="hint">No customers in this bucket.</div>'; return; }
+  el.innerHTML=rows.map(function(r,i){
+    const idx=INS_ROWS.indexOf(r);
+    const temp=r.temp||'', sug=insTempSuggest(r);
+    const tCol={HOT:'#dc2626',WARM:'#d97706',COLD:'#2563eb'}[temp||sug];
+    const dLbl=r.daysToExpiry<0?('EXPIRED '+Math.abs(r.daysToExpiry)+'d ago'):(r.daysToExpiry===0?'EXPIRES TODAY 🔥':('in '+r.daysToExpiry+' days'));
+    const owned=r.owner?(r.owner===(USER&&USER.empno)?'👤 Mine':'👤 '+raviEsc(r.ownerName||r.owner)):'';
+    return `<div class="card" style="margin-bottom:10px;border-left:4px solid ${tCol}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div><b>${raviEsc(r.customer||'—')}</b> · <span class="mono">${raviEsc(r.reg)}</span> ${r.model?'· '+raviEsc(r.model):''}
+          <div style="font-size:12px;color:var(--steel)">${r.company?raviEsc(r.company)+' · ':''}Expiry <b style="color:${tCol}">${raviEsc(r.expiry)}</b> (${dLbl})${r.policy?' · Policy '+raviEsc(r.policy):''}</div>
+          <div style="font-size:11.5px;color:var(--steel)">${owned}${r.lastCall?' · Last call '+raviEsc(r.lastCall):''}${r.calls?' · '+r.calls+' call(s)':''}${r.remarks?' · 💬 '+raviEsc(r.remarks):''}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap">
+          <span style="background:${tCol}18;color:${tCol};border:1px solid ${tCol}40;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800">${temp||sug+' ?'}</span>
+          ${r.mobile?`<a href="tel:+91${r.mobile}" onclick="insClaim(${idx},'call')" class="hu-wa-btn call" style="text-decoration:none" title="Call">📞</a>`:''}
+          <button class="hu-wa-btn wa" onclick="insOpenScript(${idx})" title="Script + WhatsApp">🟢</button>
+        </div>
+      </div>
+      <div id="ins-script-${idx}" style="display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" onclick="insFillScript(${idx},'en')">English</button>
+          <button class="btn ghost sm" onclick="insFillScript(${idx},'hi')">हिंदी</button>
+          <button class="btn ghost sm" onclick="insFillScript(${idx},'mr')">मराठी</button>
+        </div>
+        <textarea id="ins-script-txt-${idx}" style="width:100%;min-height:150px;border:1.5px solid var(--line);border-radius:8px;padding:9px;font-size:12.5px"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          ${r.mobile?`<button class="btn sm wa" onclick="insWaSendScript(${idx})">🟢 WhatsApp this</button>`:'<span class="hint">No mobile on file</span>'}
+          <select id="ins-temp-${idx}" style="border:1.5px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px">
+            <option value="">Tag…</option><option ${temp==='HOT'?'selected':''}>HOT</option><option ${temp==='WARM'?'selected':''}>WARM</option><option ${temp==='COLD'?'selected':''}>COLD</option>
+          </select>
+          <input id="ins-rem-${idx}" placeholder="Outcome / remarks" value="${raviEsc(r.remarks||'')}" style="flex:1;min-width:140px;border:1.5px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px">
+          <button class="btn sm" onclick="insSaveOutcome(${idx})">💾 Save</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function insOpenScript(idx){
+  const el=document.getElementById('ins-script-'+idx); if(!el) return;
+  const show=el.style.display==='none';
+  el.style.display=show?'block':'none';
+  if(show && !document.getElementById('ins-script-txt-'+idx).value) insFillScript(idx,'en');
+}
+function insFillScript(idx,lang){
+  const r=INS_ROWS[idx]; if(!r) return;
+  document.getElementById('ins-script-txt-'+idx).value=INS_SCRIPTS[lang](r);
+}
+function insClaim(idx,how){
+  const r=INS_ROWS[idx]; if(!r) return;
+  jpost({type:'inscrm_call',reg:r.reg,customer:r.customer,mobile:r.mobile,expiry:r.expiry,
+    by:(USER&&USER.empno)||'',byName:(USER&&USER.personName)||'',called:'1'}).then(function(res){
+    if(res&&res.owner){ r.owner=res.owner; r.ownerName=res.ownerName; r.calls=(r.calls||0)+1; insRenderList(); if(how!=='call') insOpenScript(idx); }
+  }).catch(function(){});
+}
+function insWaSendScript(idx){
+  const r=INS_ROWS[idx]; if(!r||!r.mobile) return;
+  const txt=document.getElementById('ins-script-txt-'+idx).value||INS_SCRIPTS.en(r);
+  insClaim(idx,'wa');
+  window.open('https://wa.me/91'+r.mobile+'?text='+encodeURIComponent(txt),'_blank','noopener');
+}
+function insSaveOutcome(idx){
+  const r=INS_ROWS[idx]; if(!r) return;
+  const temp=(document.getElementById('ins-temp-'+idx)||{}).value||'';
+  const rem=(document.getElementById('ins-rem-'+idx)||{}).value||'';
+  jpost({type:'inscrm_call',reg:r.reg,customer:r.customer,mobile:r.mobile,expiry:r.expiry,
+    by:(USER&&USER.empno)||'',byName:(USER&&USER.personName)||'',temp:temp,remarks:rem}).then(function(res){
+    if(res&&res.ok!==false){ r.temp=temp||r.temp; r.remarks=rem; if(res.owner){r.owner=res.owner;r.ownerName=res.ownerName;} insRenderList(); }
+    else alert('Save failed: '+((res&&res.error)||'unknown'));
+  }).catch(function(e){ alert('Save failed: '+String(e).slice(0,120)); });
+}
+</script>
 </body></html>
