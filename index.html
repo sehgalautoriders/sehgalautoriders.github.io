@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 24;
-window.HERO_BUILD = 'R24-2026.08.03.2';
+window.HERO_RELEASE = 25;
+window.HERO_BUILD = 'R25-2026.08.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -14230,4 +14230,956 @@ function ins2MarutiUpload(inp){
   });
 }
 </script>
+
+<!-- ==========================================================================
+     R25 (03-Aug-2026)  —  ESTIMATE PART/LABOUR RULES · PARTS TREE · SA DAY BOARD
+
+     Ravi, 03-Aug-2026, in his words and what each line became:
+
+     "even I am not able to add the parts."
+         The only way in was Category -> Sub-category -> Part. When the parts
+         master carries a thin or blank Category the SA is stuck on an empty
+         dropdown with nothing to pick, and there was no way round it. There is
+         now a search box over all 55k parts (name OR part number), and a typed
+         fallback for a part the master has never heard of. The old dropdowns
+         still work exactly as before for anyone who prefers them.
+
+     "if a part is added corresponding labour to be added. if there are 3-4
+      labours for the corresponding part, then sa should be able to remove all
+      but 1 means atleast 1 and the one with highest ratio of parts:labour...
+      parts value 400, 3 labours of 100, 290, 150, then 290 labour prevails.
+      sa can remove 100 and 150 if he wants to. if the part is removed then all
+      labours of that part are removed automatically. but only labour of that
+      part if added should be able to take."
+         Four rules, enforced in one place (esR25Sync) and drawn as one panel:
+           1. a part brings its labour with it                — already true
+           2. the dearest labour is the primary and is kept   — new
+           3. the others can be struck off, never the last    — new
+           4. the part goes, every labour of it goes with it  — already true
+         Plus "labour only": every part in the search carries a 🔧 button that
+         puts its labour on the estimate WITHOUT the part. That labour is
+         standalone — it is not tied to a part, so nothing removes it later.
+
+     "plus I want the tree in L india parts module."
+         Category -> Sub-category -> Part, with search, inside All-India Part
+         Finder. Tapping a part drops its number into the search box and runs
+         the all-India stock search.
+
+     "why in my login insurance customers all are not seen."
+         The screen opens on "Expiring today" and stays inside whatever range
+         and filters are set. It never said so. There is now a line under the
+         filter bar that names exactly what is being held back, and one button
+         that clears the lot.
+
+     "my login should be like how many customers called for the day. MTD
+      conversion and other summary parameters. but nothing is there."
+         A day board above the tiles: called today, closed today, month to
+         date, MTD conversion, follow-ups due, never-called.
+
+     "insurance standard reasons."
+         The 26 dispositions now ship inside the app. If the server sends its
+         own list that one wins; if it sends nothing the buttons are still
+         there and a call can still be closed.
+
+     Wholly additive. Nothing above this line is edited — the functions this
+     block replaces are replaced on `window` at the end of parsing, so every
+     existing call site picks the new one up with no markup change.
+     ========================================================================== -->
+<style>
+/* ---- linked part/labour panel (estimate) ---- */
+#es-chips .r25-grp{border:1px solid var(--line);border-radius:11px;padding:9px 10px;margin:8px 0;background:#fbfcfe}
+#es-chips .r25-part{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:750;line-height:1.3}
+#es-chips .r25-part .r25-nm{flex:1;min-width:0;overflow-wrap:break-word}
+#es-chips .r25-part .r25-amt{font-weight:850;white-space:nowrap}
+#es-chips .r25-pn{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:var(--steel);font-weight:700}
+#es-chips .r25-labs{margin:7px 0 0;padding:7px 0 0;border-top:1px dashed #e3e8ef}
+#es-chips .r25-lab{display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 0;line-height:1.35}
+#es-chips .r25-lab .r25-nm{flex:1;min-width:0;overflow-wrap:break-word}
+#es-chips .r25-tag{font-size:9.5px;font-weight:850;letter-spacing:.03em;padding:2px 6px;border-radius:5px;white-space:nowrap}
+#es-chips .r25-tag.keep{background:#dcfce7;color:#166534}
+#es-chips .r25-tag.ratio{background:#eef2f7;color:#475569}
+#es-chips .r25-x{border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:7px;
+  width:26px;height:26px;font-size:13px;font-weight:800;cursor:pointer;flex:0 0 26px;line-height:1;font-family:inherit}
+#es-chips .r25-lock{color:#94a3b8;font-size:13px;flex:0 0 26px;text-align:center;cursor:help}
+#es-chips .r25-foot{font-size:10.5px;color:var(--steel);font-weight:650;margin-top:6px}
+#es-chips .r25-solo{margin-top:8px}
+
+/* ---- part search (estimate) ---- */
+.r25-search{margin-top:9px}
+.r25-search input{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--card,#fff);color:inherit}
+.r25-res{margin-top:7px;max-height:290px;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:9px}
+.r25-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #eef1f5}
+.r25-row:last-child{border-bottom:0}
+.r25-row .r25-nm{flex:1;min-width:0;font-size:12.5px;font-weight:650;line-height:1.3;overflow-wrap:break-word}
+.r25-row .r25-sub{font-size:10.5px;color:var(--steel);font-weight:650;margin-top:2px}
+.r25-row .r25-amt{font-size:12.5px;font-weight:850;white-space:nowrap}
+.r25-add{border:0;background:var(--ink,#0f172a);color:#fff;border-radius:8px;height:30px;min-width:30px;padding:0 8px;
+  font-size:14px;font-weight:800;cursor:pointer;flex:0 0 auto;font-family:inherit;line-height:1}
+.r25-add.lab{background:#0e7490;font-size:12px}
+.r25-note{font-size:11px;color:var(--steel);font-weight:650;padding:7px 2px;line-height:1.45}
+.r25-note b{color:var(--ink,#0f172a)}
+
+/* ---- parts tree (All-India Part Finder) ---- */
+#pf-tree{border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);margin-bottom:12px;overflow:hidden}
+#pf-tree>summary{cursor:pointer;padding:10px 12px;font-size:13px;font-weight:800;background:#f8fafc;list-style:none}
+#pf-tree>summary::-webkit-details-marker{display:none}
+#pf-tree .pf-tb{padding:11px 12px 13px}
+#pf-tree input.pf-q{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--card,#fff);color:inherit}
+#pf-tree .pf-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+#pf-tree .pf-chip{border:1.5px solid var(--line);background:var(--card,#fff);color:var(--steel);border-radius:999px;
+  padding:5px 11px;font-size:11.5px;font-weight:750;cursor:pointer;font-family:inherit;white-space:nowrap}
+#pf-tree .pf-chip.on{background:#0f172a;border-color:#0f172a;color:#fff}
+#pf-tree .pf-list{margin-top:10px;max-height:340px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#pf-tree .pf-item{display:flex;align-items:center;gap:9px;padding:8px 3px;border-bottom:1px solid #eef1f5;cursor:pointer}
+#pf-tree .pf-item:last-child{border-bottom:0}
+#pf-tree .pf-item .n{flex:1;min-width:0;font-size:12.5px;font-weight:650;line-height:1.3;overflow-wrap:break-word}
+#pf-tree .pf-item .p{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--steel);font-weight:700;margin-top:2px}
+#pf-tree .pf-item .a{font-size:12px;font-weight:850;white-space:nowrap}
+#pf-tree .pf-hint{font-size:11px;color:var(--steel);font-weight:650;padding:10px 2px;line-height:1.45}
+
+/* ---- insurance day board ---- */
+.ins2-day{background:var(--card,#fff);border-radius:16px;padding:12px 13px;margin-bottom:11px;box-shadow:0 2px 10px rgba(15,23,42,.07)}
+.ins2-day-h{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);
+  margin-bottom:9px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ins2-day-h span.sub{font-weight:700;text-transform:none;letter-spacing:0;color:#94a3b8;font-size:10.5px}
+.ins2-day-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.ins2-day-c{background:#f8fafc;border-radius:11px;padding:8px 9px}
+.ins2-day-n{font-size:19px;font-weight:850;line-height:1.1;letter-spacing:-.5px}
+.ins2-day-l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--steel);margin-top:2px;line-height:1.25}
+.ins2-scope{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:11px;padding:9px 11px;
+  font-size:11.5px;font-weight:650;line-height:1.5;margin-bottom:10px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.ins2-scope button{border:0;background:#9a3412;color:#fff;border-radius:8px;padding:6px 11px;font-size:11.5px;
+  font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
+@media (prefers-color-scheme:dark){ .ins2-day-c{background:rgba(148,163,184,.12)} }
+</style>
+<script>
+"use strict";
+/* ==========================================================================
+   1.  PART  ->  LABOUR.   The rules, in one place.
+
+   Every labour a part brings carries _fromPn (the part number) and/or
+   _fromPart (the part name). That tag is written by three different adders —
+   the local MD_PartLabourMap, the backend ee_forpart engine and the repair
+   tree — and read by esEnforceLinkedLabour_ when the estimate is computed.
+   None of that changes. What this adds is the grading INSIDE a part's group:
+
+     primary  the dearest labour of the group. Highest labour:part ratio, so
+              on a ₹400 part with labour of 100 / 290 / 150 it is the 290.
+              It is what survives if the SA strikes everything else off.
+     locked   the last labour standing for a part. There is always work in
+              fitting a part, so a part on an estimate with no labour at all
+              is not a state the SA is allowed to reach.
+
+   _locked was previously set once at add time and meant "never removable".
+   It is now derived here on every redraw and means "this is the last one".
+   ========================================================================== */
+function esR25Key(v){ return String(v==null?'':v).trim().toUpperCase(); }
+
+/* The part a labour line belongs to, or '' for standalone labour. Matched on
+   part number first — a name can be typed two ways, a number cannot. */
+function esR25OwnerOf(lb){
+  if(!lb || (!lb._fromPart && !lb._fromPn)) return '';
+  var fp=esR25Key(lb._fromPn), fl=esR25Key(lb._fromPart);
+  var parts=(typeof ES_ADDPART!=='undefined' && ES_ADDPART) || [];
+  for(var i=0;i<parts.length;i++){
+    if(fp && fp===esR25Key(parts[i].pn)) return esR25Key(parts[i].pn)||esR25Key(parts[i].l);
+  }
+  for(var j=0;j<parts.length;j++){
+    if(fl && fl===esR25Key(parts[j].l)) return esR25Key(parts[j].pn)||esR25Key(parts[j].l);
+  }
+  return '';   /* its part has already gone — esEnforceLinkedLabour_ drops it */
+}
+function esR25PartKey(p){ return esR25Key(p&&p.pn)||esR25Key(p&&p.l); }
+
+/* Regrade every group. Called before anything is drawn or removed. */
+function esR25Sync(){
+  var labs=(typeof ES_ADDLAB!=='undefined' && ES_ADDLAB) || [];
+  var parts=(typeof ES_ADDPART!=='undefined' && ES_ADDPART) || [];
+  var groups={};
+  parts.forEach(function(p){ groups[esR25PartKey(p)]={part:p, idx:[]}; });
+
+  labs.forEach(function(lb,i){
+    if(!lb) return;
+    lb._primary=false; lb._ratio=0; lb._grpSize=0; lb._grpKey='';
+    if(!lb._fromPart && !lb._fromPn){ lb._locked=false; return; }
+    var k=esR25OwnerOf(lb);
+    if(!k || !groups[k]){ lb._locked=false; return; }
+    lb._grpKey=k; groups[k].idx.push(i);
+  });
+
+  Object.keys(groups).forEach(function(k){
+    var g=groups[k], partP=Number(g.part&&g.part.p)||0;
+    /* Dearest first. That IS the highest labour:part ratio — the part price is
+       the same denominator for every labour in the group. */
+    g.idx.sort(function(a,b){ return (Number(labs[b].p)||0)-(Number(labs[a].p)||0); });
+    g.idx.forEach(function(i,n){
+      var lb=labs[i];
+      lb._primary=(n===0);
+      lb._ratio=partP>0 ? (Number(lb.p)||0)/partP : 0;
+      lb._grpSize=g.idx.length;
+      lb._locked=(g.idx.length===1);       /* the last one cannot be struck off */
+    });
+  });
+  return groups;
+}
+
+function esR25Msg(txt, kind){
+  var m=document.getElementById('es-msg'); if(!m) return;
+  m.style.color = kind==='ok' ? 'var(--ok,#166534)' : (kind==='bad' ? 'var(--signal-d,#b91c1c)' : 'var(--steel,#64748b)');
+  m.textContent=txt;
+  var mine=txt;
+  setTimeout(function(){ if(m.textContent===mine) m.textContent=''; }, kind==='bad'?7000:6000);
+}
+
+/* Strike one labour off. Refused when it is the last one its part has. */
+function esR25RemoveLabour(i){
+  esR25Sync();
+  var lb=ES_ADDLAB[i]; if(!lb) return;
+  if((lb._fromPart||lb._fromPn) && lb._grpKey && lb._grpSize<=1){
+    esR25Msg('🔒 '+(lb.l||'This labour')+' is the last labour on '+(lb._fromPart||'this part')
+      +'. A part cannot be billed with no labour against it — remove the part itself if there is no work to charge.');
+    return;
+  }
+  var name=lb.l||'';
+  ES_ADDLAB.splice(i,1);
+  esR25Sync();
+  esDrawChips();
+  esR25Msg('✕ '+name+' removed.'+((lb._fromPart||lb._fromPn)?' The part keeps its remaining labour.':''));
+}
+
+/* Take a part off. Every labour it brought goes with it — unless another part
+   still on the estimate carries the same labour, which is the shared-fitment
+   case (one remove/refit covering two parts). */
+function esR25RemovePart(i){
+  var removed=ES_ADDPART[i]; if(!removed) return;
+  var pk=esR25Key(removed.pn), lk=esR25Key(removed.l);
+  ES_ADDPART.splice(i,1);
+  var dropped=[];
+  ES_ADDLAB=(ES_ADDLAB||[]).filter(function(lb){
+    var fp=esR25Key(lb._fromPn), fl=esR25Key(lb._fromPart);
+    if(!fp && !fl) return true;                                  /* standalone */
+    var mine=(fp&&pk&&fp===pk)||(fl&&lk&&fl===lk);
+    if(!mine) return true;
+    var shared=(ES_ADDPART||[]).some(function(p){
+      return (fp&&fp===esR25Key(p.pn)) || (fl&&fl===esR25Key(p.l));
+    });
+    if(shared) return true;
+    dropped.push(lb.l||lb.code||'');
+    return false;
+  });
+  esR25Sync();
+  esDrawChips();
+  if(dropped.length) esR25Msg('🔗 '+removed.l+' removed — its labour came off with it: '+dropped.join(', ')+'.');
+  else esR25Msg('✕ '+removed.l+' removed.');
+}
+
+/* ---- the panel -----------------------------------------------------------
+   Parts and their labour are drawn together, because that is the relationship
+   the SA has to explain to the customer. Standalone labour stays a plain chip
+   underneath, because it answers to nothing. */
+function esR25ChipsHtml(){
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){
+    return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); };
+  var money=function(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } };
+  esR25Sync();
+  var labs=ES_ADDLAB||[], parts=ES_ADDPART||[], html='';
+
+  parts.forEach(function(p,pi){
+    var k=esR25PartKey(p);
+    var mine=[];
+    labs.forEach(function(lb,li){ if(lb._grpKey===k) mine.push({lb:lb,i:li}); });
+    mine.sort(function(a,b){ return (Number(b.lb.p)||0)-(Number(a.lb.p)||0); });
+    var labTotal=mine.reduce(function(s,x){ return s+(Number(x.lb.p)||0); },0);
+    var partP=Number(p.p)||0;
+
+    html+='<div class="r25-grp">'
+      +'<div class="r25-part">'
+        +'<span>\u2699\uFE0F</span>'
+        +'<span class="r25-nm">'+E(p.l)+(p.pn?' <span class="r25-pn">['+E(p.pn)+']</span>':'')+'</span>'
+        +'<span class="r25-amt">'+money(partP)+'</span>'
+        +'<button type="button" class="r25-x" title="Remove this part and all its labour" onclick="esR25RemovePart('+pi+')">\u2715</button>'
+      +'</div>';
+
+    if(mine.length){
+      html+='<div class="r25-labs">'+mine.map(function(x){
+        var lb=x.lb, pct=lb._ratio>0 ? Math.round(lb._ratio*100)+'% of part' : '';
+        return '<div class="r25-lab">'
+          +'<span>\uD83D\uDD27</span>'
+          +'<span class="r25-nm">'+E(lb.l)+(lb.code?' <span class="r25-pn">['+E(lb.code)+']</span>':'')+'</span>'
+          +(lb._primary?'<span class="r25-tag keep">\u2B50 KEEPS</span>':'')
+          +(pct?'<span class="r25-tag ratio">'+pct+'</span>':'')
+          +'<span class="r25-amt">'+money(lb.p)+'</span>'
+          +(lb._locked
+              ? '<span class="r25-lock" title="The last labour on this part. Remove the part itself if there is no work to charge.">\uD83D\uDD12</span>'
+              : '<button type="button" class="r25-x" title="Strike this labour off — the part keeps the rest" onclick="esR25RemoveLabour('+x.i+')">\u2715</button>')
+          +'</div>';
+      }).join('')+'</div>'
+      +'<div class="r25-foot">Parts : Labour on this part \u2014 '+money(partP)+' : '+money(labTotal)
+        +(mine.length>1?' \u00B7 '+mine.length+' labour lines, the dearest is kept and at least one must stay':' \u00B7 the only labour on this part')
+      +'</div>';
+    } else {
+      html+='<div class="r25-foot">No labour mapped to this part yet \u2014 add the fitment labour by hand from the labour list above.</div>';
+    }
+    html+='</div>';
+  });
+
+  var solo=[];
+  labs.forEach(function(lb,i){ if(!lb._grpKey) solo.push({lb:lb,i:i}); });
+  if(solo.length){
+    html+='<div class="r25-solo">'+solo.map(function(x){
+      return '<div class="chip"><span>\uD83D\uDD27 '+E(x.lb.l)
+        +(x.lb.code?' <b style="font-size:10px;color:var(--steel)">['+E(x.lb.code)+']</b>':'')+'</span>'
+        +'<span><b>'+money(x.lb.p)+'</b> <span class="x" onclick="esR25RemoveLabour('+x.i+')">\u2715</span></span></div>';
+    }).join('')+'</div>';
+  }
+  return html;
+}
+
+/* ==========================================================================
+   2.  ADDING A PART.   Search first, dropdowns second, typing third.
+
+   esAddPartFn (the + beside the dropdowns) still exists and still works. It
+   now hands the actual work to esR25AddPart, which is also what the search
+   rows and the typed fallback call, so a part added any of the three ways
+   gets identically treated: learn-back, local labour map, backend top-up.
+   ========================================================================== */
+var ES_R25_LEARNED={};
+
+function esR25AddPart(row, price, opts){
+  opts=opts||{};
+  if(!row) return false;
+  price=Number(price)||0;
+  if(!(price>0)){ esR25Msg('Type the price for '+(row.l||'this part')+' before adding it.','bad'); return false; }
+  var pn=String(row.pn||'').trim();
+  if(pn && (ES_ADDPART||[]).some(function(x){ return esR25Key(x.pn)===esR25Key(pn); })){
+    esR25Msg(pn+' is already on this estimate.','bad'); return false;
+  }
+  ES_ADDPART.push({l:row.l, p:price, pn:pn, _typed:!!opts.typed});
+
+  /* learn-back: teach the master this model's price for this part */
+  try{
+    if(pn && !ES_R25_LEARNED[pn]){
+      ES_R25_LEARNED[pn]=1;
+      jpost({type:'learn_part', pn:pn, model:(typeof esCurrentModelUP==='function'?esCurrentModelUP():''),
+             price:(opts.typed?price:0), by:(typeof USER!=='undefined'&&USER&&(USER.personName||USER.empno))||''});
+    }
+  }catch(e){}
+
+  var added=esR25AttachLabour(row.l, pn, price);
+  esR25Sync();
+  esDrawChips();
+  if(added.length) esR25Msg('\uD83D\uDD17 '+row.l+' added with its labour: '+added.join(', ')+'. The dearest is kept; the rest can be struck off.','ok');
+  else esR25Msg('\u2699\uFE0F '+row.l+' added. No labour is mapped to it \u2014 add the fitment labour by hand.','ok');
+
+  if(pn) esR25BackendLabour(row.l, pn);
+  return true;
+}
+
+/* A labour line that is already on the estimate untagged \u2014 the SA added it on
+   its own, or added it "labour only" before deciding to fit the part after all
+   \u2014 is ADOPTED by the part rather than skipped. If it were left standing on its
+   own it would survive the part being removed, and a labour line with no part
+   behind it on a printed estimate is the one thing that cannot be allowed to
+   happen. Labour already owned by a DIFFERENT part is left alone: that is the
+   shared-fitment case and its first owner keeps it. */
+function esR25Adopt(lb, label, pn){
+  if(!lb) return false;
+  if(lb._fromPart || lb._fromPn) return false;   /* another part already owns it */
+  lb._fromPart=label; lb._fromPn=pn||''; lb._labourOnly=false;
+  return true;
+}
+
+/* Local map only. Returns the labour descriptions it put on. */
+function esR25AttachLabour(label, pn, partPrice){
+  var added=[];
+  var map=null;
+  try{ map=esFindLinkedLabours(label); }catch(e){}
+  if(!map || !map.labours) return added;
+  map.labours.forEach(function(lb){
+    var have=(ES_ADDLAB||[]).filter(function(x){ return esR25Key(x.l)===esR25Key(lb.l); })[0];
+    if(have){ if(esR25Adopt(have, label, pn)) added.push(lb.l+' (already on the estimate \u2014 now tied to this part)'); return; }
+    ES_ADDLAB.push({l:lb.l, p:Number(lb.p)||0, code:lb.code||'', cc:lb.cc||'',
+                    _fromPart:label, _fromPn:pn||''});
+    added.push(lb.l+' ('+((function(){ try{ return inr(lb.p); }catch(e){ return '\u20B9'+lb.p; } })())+')');
+  });
+  return added;
+}
+
+/* Backend top-up. MD_Tree_PartLink covers 8,239 part NUMBERS with supersession
+   and per-model rates — far more than anyone has mapped by hand. Never blocks,
+   never removes what the local map already put on. */
+function esR25BackendLabour(label, pn){
+  try{
+    jget('ee_forpart',{part:pn, model:(typeof esCurrentModelUP==='function'?esCurrentModelUP():'')}, function(res){
+      if(!res||!res.ok||!res.labour||!res.labour.length) return;
+      if(!(ES_ADDPART||[]).some(function(x){ return esR25Key(x.pn)===esR25Key(pn); })) return;  /* taken off mid-flight */
+      var gained=[];
+      res.labour.forEach(function(lb){
+        var code=String(lb.code||'').trim(), desc=String(lb.desc||'').trim();
+        if(!desc && !code) return;
+        var dup=(ES_ADDLAB||[]).filter(function(x){
+          return (code && esR25Key(x.code)===esR25Key(code)) || (desc && esR25Key(x.l)===esR25Key(desc)); })[0];
+        if(dup){ esR25Adopt(dup, label, pn); return; }   /* same rule as the local map */
+        ES_ADDLAB.push({l:desc||code, p:Number(lb.rate||0), code:code, cc:'', _fromPart:label, _fromPn:pn});
+        gained.push(desc||code);
+      });
+      if(!gained.length) return;
+      esR25Sync(); esDrawChips();
+      esR25Msg('\uD83D\uDD17 More labour found for '+label+': '+gained.join(', ')+'.','ok');
+    });
+  }catch(e){}
+}
+
+/* "but only labour of that part if added should be able to take" — the labour
+   of a part, on its own, with no part behind it. It is deliberately NOT tagged
+   _fromPart: nothing later removes it, and the SA can strike it off freely. */
+function esR25AddLabourOnly(idx){
+  var row=(ES_R25_RESULTS||[])[idx]; if(!row) return;
+  var map=null;
+  try{ map=esFindLinkedLabours(row.l); }catch(e){}
+  if(!map || !map.labours || !map.labours.length){
+    esR25Msg('No labour is mapped to '+row.l+' yet. Pick it from the labour list above instead.','bad');
+    return;
+  }
+  var added=[];
+  map.labours.forEach(function(lb){
+    if((ES_ADDLAB||[]).some(function(x){ return esR25Key(x.l)===esR25Key(lb.l); })) return;
+    ES_ADDLAB.push({l:lb.l, p:Number(lb.p)||0, code:lb.code||'', cc:lb.cc||'', _labourOnly:true});
+    added.push(lb.l);
+  });
+  esR25Sync(); esDrawChips();
+  esR25Msg(added.length
+    ? '\uD83D\uDD27 Labour only \u2014 '+added.join(', ')+' added without the part. It stands on its own and is not removed by anything.'
+    : 'That labour is already on this estimate.', added.length?'ok':'bad');
+}
+
+/* ---- search over the whole parts master --------------------------------- */
+var ES_R25_RESULTS=[], ES_R25_TIMER=null;
+
+function esR25Toks(s){ return String(s||'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); }
+
+function esR25Search(){
+  clearTimeout(ES_R25_TIMER);
+  ES_R25_TIMER=setTimeout(esR25SearchNow, 180);
+}
+function esR25SearchNow(){
+  var box=document.getElementById('es-part-q'), out=document.getElementById('es-part-res');
+  if(!box||!out) return;
+  var q=String(box.value||'').trim();
+  if(q.length<2){ ES_R25_RESULTS=[]; out.innerHTML=''; return; }
+  try{ esEnsurePartsReady(); }catch(e){}
+  var idx=(typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX) || {};
+  var all=idx.all||[];
+  if(!all.length){
+    out.innerHTML='<div class="r25-note">The parts master is still loading. Wait a moment and type again \u2014 '
+      +'or <b><a href="#" onclick="esR25TypedAdd();return false">add \u201C'+((typeof raviEsc==='function')?raviEsc(q):q)+'\u201D by typing the price</a></b>.</div>';
+    return;
+  }
+  var toks=esR25Toks(q);
+  var hits=[], loose=[];
+  for(var i=0;i<all.length && hits.length<400;i++){
+    var it=all[i], hay=(String(it.l||'')+' '+String(it.pn||'')).toUpperCase();
+    var ok=true;
+    for(var t=0;t<toks.length;t++){ if(hay.indexOf(toks[t])<0){ ok=false; break; } }
+    if(!ok) continue;
+    var forModel=true;
+    try{ forModel=esPartMatchesModel(it); }catch(e){}
+    if(forModel) hits.push(it); else loose.push(it);
+  }
+  /* Nothing for this model is not an answer the SA can use on an accidental
+     job, so the all-model matches are offered rather than hidden. */
+  var usingLoose=false;
+  if(!hits.length && loose.length){ hits=loose; usingLoose=true; }
+  hits.sort(function(a,b){
+    var au=String(a.l||'').toUpperCase(), bu=String(b.l||'').toUpperCase(), q0=toks[0]||'';
+    var ai=au.indexOf(q0), bi=bu.indexOf(q0);
+    if(ai!==bi) return (ai<0?99:ai)-(bi<0?99:bi);
+    return au<bu?-1:1;
+  });
+  ES_R25_RESULTS=hits.slice(0,40);
+  esR25RenderResults(q, hits.length, usingLoose);
+}
+function esR25RenderResults(q, total, usingLoose){
+  var out=document.getElementById('es-part-res'); if(!out) return;
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var money=function(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } };
+  if(!ES_R25_RESULTS.length){
+    out.innerHTML='<div class="r25-note">Nothing in the parts master matches <b>'+E(q)+'</b>. '
+      +'<a href="#" onclick="esR25TypedAdd();return false">Add it by typing the name and price</a> \u2014 '
+      +'it goes on the estimate as a normal part line.</div>';
+    return;
+  }
+  out.innerHTML=(usingLoose
+      ? '<div class="r25-note">Nothing matches for <b>'+E((typeof val==='function'?val('es-model'):'')||'this model')
+        +'</b>. Showing every model \u2014 check the part fits before adding.</div>'
+      : '')
+    + ES_R25_RESULTS.map(function(p,i){
+      return '<div class="r25-row">'
+        +'<div class="r25-nm">'+E(p.l)
+          +'<div class="r25-sub">'+(p.pn?E(p.pn)+' \u00B7 ':'')+E(p.cat||'')+(p.sub&&p.sub!=='General'?' \u203A '+E(p.sub):'')+'</div>'
+        +'</div>'
+        +'<div class="r25-amt">'+(p.price>0?money(p.price):'\u20B9 ?')+'</div>'
+        +'<button type="button" class="r25-add lab" title="Put only this part\u2019s labour on the estimate, without the part" onclick="esR25AddLabourOnly('+i+')">\uD83D\uDD27</button>'
+        +'<button type="button" class="r25-add" title="Add this part (its labour comes with it)" onclick="esR25AddFromSearch('+i+')">+</button>'
+      +'</div>';
+    }).join('')
+    + (total>ES_R25_RESULTS.length
+        ? '<div class="r25-note">'+total.toLocaleString('en-IN')+' parts match \u2014 showing the first '+ES_R25_RESULTS.length+'. Type more to narrow it.</div>'
+        : '');
+}
+function esR25AddFromSearch(i){
+  var row=(ES_R25_RESULTS||[])[i]; if(!row) return;
+  var price=Number(row.price)||0;
+  if(!(price>0)){
+    var t=prompt('No price on record for '+row.l+'.\nType the price:','');
+    price=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(price>0)) return;
+    if(esR25AddPart(row, price, {typed:true})) esR25ClearSearch();
+    return;
+  }
+  if(esR25AddPart(row, price)) esR25ClearSearch();
+}
+/* Last resort: a part the master has never heard of. Accidental jobs throw
+   these up constantly and the SA cannot be stopped by a missing master row. */
+function esR25TypedAdd(){
+  var box=document.getElementById('es-part-q');
+  var name=String((box&&box.value)||'').trim();
+  name=prompt('Part name as it should read on the estimate:', name)||'';
+  name=name.trim();
+  if(!name) return;
+  var pn=String(prompt('Hero part number (leave blank if not known):','')||'').trim().toUpperCase();
+  var price=Number(String(prompt('Price for '+name+':','')||'').replace(/[^0-9.]/g,''))||0;
+  if(!(price>0)){ esR25Msg('A part cannot go on the estimate without a price.','bad'); return; }
+  if(esR25AddPart({l:name, pn:pn, price:price}, price, {typed:true})) esR25ClearSearch();
+}
+function esR25ClearSearch(){
+  var box=document.getElementById('es-part-q'); if(box) box.value='';
+  var out=document.getElementById('es-part-res'); if(out) out.innerHTML='';
+  ES_R25_RESULTS=[];
+}
+
+/* Injected into the existing add-box rather than added to the markup, so the
+   part of the screen that already works is not touched. */
+function esR25MountSearch(){
+  if(document.getElementById('es-part-q')) return;
+  var chips=document.getElementById('es-chips'); if(!chips) return;
+  var box=document.createElement('div');
+  box.className='r25-search';
+  box.innerHTML='<input id="es-part-q" type="search" autocomplete="off" '
+    +'placeholder="\uD83D\uDD0E Search any part \u2014 name or part number" '
+    +'oninput="esR25Search()" onfocus="esEnsurePartsReady()">'
+    +'<div class="r25-res" id="es-part-res"></div>'
+    +'<div class="r25-note">Search finds a part whether or not it has a category. '
+    +'<b>+</b> adds the part and its labour \u00B7 <b>\uD83D\uDD27</b> adds only the labour, without the part.</div>';
+  chips.parentNode.insertBefore(box, chips);
+}
+
+/* ==========================================================================
+   3.  PARTS TREE  —  All-India Part Finder
+   Same index the estimate uses (ModelPart), so it loads once for both.
+   ========================================================================== */
+var PFT={cat:'', sub:'', q:''};
+
+function pfTreeMount(){
+  if(document.getElementById('pf-tree')) return;
+  var anchor=document.getElementById('pf-live-wrap'); if(!anchor) return;
+  var d=document.createElement('details');
+  d.id='pf-tree';
+  d.innerHTML='<summary>\uD83C\uDF32 Browse the parts tree \u2014 category \u203A sub-category \u203A part</summary>'
+    +'<div class="pf-tb">'
+      +'<input class="pf-q" id="pf-tree-q" type="search" autocomplete="off" placeholder="\uD83D\uDD0E Search the tree by name or part number" oninput="pfTreeSearch()">'
+      +'<div class="pf-chips" id="pf-tree-cats"></div>'
+      +'<div class="pf-chips" id="pf-tree-subs"></div>'
+      +'<div class="pf-list" id="pf-tree-list"></div>'
+    +'</div>';
+  anchor.parentNode.insertBefore(d, anchor.nextSibling);
+  d.addEventListener('toggle', function(){ if(d.open) pfTreeLoad(); });
+}
+function pfTreeLoad(){
+  var list=document.getElementById('pf-tree-list'); if(!list) return;
+  var idx=(typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX) || {};
+  if(!idx.all || !idx.all.length){
+    list.innerHTML='<div class="pf-hint">Loading the all-India parts master\u2026</div>';
+    try{ esEnsurePartsReady(); }catch(e){}
+    setTimeout(function(){
+      var i2=(typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX) || {};
+      if(i2.all && i2.all.length) pfTreePaint();
+      else list.innerHTML='<div class="pf-hint">The parts master did not load. Tap \u21BB Sync Now on the home screen, then reopen this panel.</div>';
+    }, 2500);
+    return;
+  }
+  pfTreePaint();
+}
+function pfTreePaint(){
+  var idx=ES_PART_INDEX||{}, cats=Object.keys(idx.cats||{}).sort();
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var cw=document.getElementById('pf-tree-cats');
+  if(cw) cw.innerHTML=cats.map(function(c){
+    var n=0, subs=idx.cats[c]||{};
+    Object.keys(subs).forEach(function(s){ n+=subs[s].length; });
+    return '<button class="pf-chip'+(PFT.cat===c?' on':'')+'" onclick="pfTreeCat(\''+String(c).replace(/'/g,"\\'")+'\')">'
+      +E(c)+' <b style="opacity:.6">'+n+'</b></button>';
+  }).join('');
+  pfTreeSubs();
+}
+function pfTreeCat(c){ PFT.cat=(PFT.cat===c?'':c); PFT.sub=''; pfTreePaint(); }
+function pfTreeSub(s){ PFT.sub=(PFT.sub===s?'':s); pfTreePaint(); }
+function pfTreeSubs(){
+  var idx=ES_PART_INDEX||{}, sw=document.getElementById('pf-tree-subs');
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  if(!sw) return;
+  if(!PFT.cat){ sw.innerHTML=''; pfTreeList(); return; }
+  var subs=Object.keys(idx.cats[PFT.cat]||{}).sort();
+  var real=subs.filter(function(s){ return s && s!=='General'; });
+  sw.innerHTML = real.length ? subs.map(function(s){
+      return '<button class="pf-chip'+(PFT.sub===s?' on':'')+'" onclick="pfTreeSub(\''+String(s).replace(/'/g,"\\'")+'\')">'
+        +E(s)+' <b style="opacity:.6">'+(idx.cats[PFT.cat][s]||[]).length+'</b></button>';
+    }).join('') : '';
+  pfTreeList();
+}
+function pfTreeSearch(){
+  var q=document.getElementById('pf-tree-q');
+  PFT.q=String((q&&q.value)||'').trim();
+  pfTreeList();
+}
+function pfTreeList(){
+  var list=document.getElementById('pf-tree-list'); if(!list) return;
+  var idx=ES_PART_INDEX||{};
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var money=function(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } };
+  var pool=[];
+  if(PFT.q){
+    var toks=esR25Toks(PFT.q);
+    pool=(idx.all||[]).filter(function(p){
+      var hay=(String(p.l||'')+' '+String(p.pn||'')).toUpperCase();
+      return toks.every(function(t){ return hay.indexOf(t)>=0; });
+    });
+  } else if(PFT.cat && PFT.sub){ pool=(idx.cats[PFT.cat]||{})[PFT.sub]||[];
+  } else if(PFT.cat){
+    var subs=idx.cats[PFT.cat]||{};
+    Object.keys(subs).forEach(function(s){ pool=pool.concat(subs[s]); });
+  } else {
+    list.innerHTML='<div class="pf-hint">Pick a category above, or type a name or part number to search all '
+      +((idx.all||[]).length).toLocaleString('en-IN')+' parts.</div>';
+    return;
+  }
+  var seen={}, rows=[];
+  pool.forEach(function(p){
+    var k=(p.pn||'')+'|'+(p.l||''); if(seen[k]) return; seen[k]=1; rows.push(p);
+  });
+  rows.sort(function(a,b){ return String(a.l||'')<String(b.l||'')?-1:1; });
+  var show=rows.slice(0,200);
+  if(!show.length){ list.innerHTML='<div class="pf-hint">Nothing here.</div>'; return; }
+  list.innerHTML=show.map(function(p){
+    return '<div class="pf-item" onclick="pfTreePick(\''+String(p.pn||'').replace(/'/g,'')+'\')">'
+      +'<div class="n">'+E(p.l)+'<div class="p">'+(p.pn?E(p.pn):'no part number on record')+'</div></div>'
+      +'<div class="a">'+(p.price>0?money(p.price):'\u20B9 ?')+'</div>'
+      +'<div style="font-size:15px;color:#0891b2">\uD83D\uDD0E</div>'
+    +'</div>';
+  }).join('')
+  + (rows.length>show.length ? '<div class="pf-hint">'+rows.length.toLocaleString('en-IN')
+      +' parts here \u2014 showing the first '+show.length+'. Search to narrow it.</div>' : '');
+}
+/* Tapping a part in the tree is the same as typing its number and pressing
+   Find Stock — the tree exists to save the typing, not to be a second screen. */
+function pfTreePick(pn){
+  if(!pn){ if(typeof pfInfo==='function') pfInfo('That part has no part number on record, so all-India stock cannot be searched for it.','warn'); return; }
+  var box=document.getElementById('pf-partno'); if(box) box.value=pn;
+  var d=document.getElementById('pf-tree'); if(d) d.open=false;
+  try{ pfSearch(); }catch(e){}
+  var t=document.getElementById('pf-info'); if(t) t.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* ==========================================================================
+   4.  INSURANCE  —  standard reasons, the day board, and saying out loud
+       why the list is shorter than the book.
+   ========================================================================== */
+
+/* The 26 dispositions, shipped in the app. The server list wins when it sends
+   one; this is what stands in when it does not, so an SMRE is never looking at
+   a customer she has just called with no way to record the outcome.
+     temp   what the disposition means for follow-up priority
+     closes the conversation is over, won or lost
+     won    a policy was actually sold                                        */
+var INS2_STD_DISPOSITIONS=[
+  {code:'NR_NOANSWER',   label:'No answer',                 group:'Not reached', temp:'WARM'},
+  {code:'NR_SWITCHEDOFF',label:'Switched off',              group:'Not reached', temp:'WARM'},
+  {code:'NR_BUSY',       label:'Busy \u2014 asked to call later', group:'Not reached', temp:'WARM'},
+  {code:'NR_WRONG',      label:'Wrong number',              group:'Not reached', temp:'COLD', closes:true},
+  {code:'NR_NOTINSVC',   label:'Number not in service',     group:'Not reached', temp:'COLD', closes:true},
+
+  {code:'IP_CALLBACK',   label:'Call back on a date',       group:'In progress', temp:'HOT'},
+  {code:'IP_QUOTED',     label:'Quote shared',              group:'In progress', temp:'HOT'},
+  {code:'IP_COMPARING',  label:'Comparing quotes',          group:'In progress', temp:'WARM'},
+  {code:'IP_VISIT',      label:'Wants us to visit',         group:'In progress', temp:'HOT'},
+  {code:'IP_DOCS',       label:'Documents pending',         group:'In progress', temp:'HOT'},
+  {code:'IP_PAYLINK',    label:'Payment link sent',         group:'In progress', temp:'HOT'},
+  {code:'IP_NEGOTIATE',  label:'Negotiating premium',       group:'In progress', temp:'HOT'},
+
+  {code:'LO_ELSEWHERE',  label:'Renewed elsewhere',         group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_OWNAGENT',   label:'Renewed with own agent',    group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_ONLINE',     label:'Bought online himself',     group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_PRICE',      label:'Premium too high',          group:'Lost', temp:'WARM'},
+  {code:'LO_SOLD',       label:'Vehicle sold',              group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_SCRAP',      label:'Vehicle scrapped',          group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_NOTUSED',    label:'Vehicle not in use',        group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_NOTINT',     label:'Not interested',            group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_COMPLAINT',  label:'Unhappy with service',      group:'Lost', temp:'WARM'},
+
+  {code:'WON_FULL',      label:'Renewed with us',           group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_OD',        label:'Renewed \u2014 OD only',    group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_TP',        label:'Renewed \u2014 third party', group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_CAR',       label:'Renewed + car policy',      group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_FAMILY',    label:'Renewed a family vehicle',  group:'Won', temp:'COLD', closes:true, won:true}
+];
+function ins2EnsureDispositions(){
+  if(typeof INS2==='undefined') return;
+  if(!INS2.meta) INS2.meta={};
+  var d=INS2.meta.dispositions;
+  if(!d || !d.length){ INS2.meta.dispositions=INS2_STD_DISPOSITIONS.slice(); INS2.meta._stdReasons=true; }
+}
+
+/* ---- the day board -------------------------------------------------------
+   Built from what inscrm2_stats actually answers with. The 14-day trend is
+   the only per-day series the server sends, so month-to-date is summed from
+   the days of it that fall in this month and the tile says so when the series
+   does not reach back to the 1st. Nothing here is invented. */
+function ins2DayStats(){
+  var s=(typeof INS2!=='undefined' && INS2.stats) || {};
+  var tr=s.trend||[];
+  var now=new Date(), mStart=new Date(now.getFullYear(), now.getMonth(), 1);
+  /* the series ends today — index from the end to get each day's real date */
+  var days=tr.map(function(d,i){
+    var dt=new Date(now.getFullYear(), now.getMonth(), now.getDate()-(tr.length-1-i));
+    return {calls:Number(d.calls)||0, won:Number(d.won)||0, dt:dt};
+  });
+  var today=days.length?days[days.length-1]:{calls:0,won:0};
+  var mtd={calls:0, won:0, covered:0};
+  days.forEach(function(d){ if(d.dt>=mStart){ mtd.calls+=d.calls; mtd.won+=d.won; mtd.covered++; } });
+  var elapsed=now.getDate();
+  return {
+    todayCalls:today.calls, todayWon:today.won,
+    mtdCalls:mtd.calls, mtdWon:mtd.won,
+    mtdConv: mtd.calls ? Math.round(100*mtd.won/mtd.calls) : 0,
+    partial: mtd.covered < elapsed,           /* the series does not reach the 1st */
+    covered: mtd.covered, elapsed:elapsed,
+    bookConv: (Number(s.won)||0)+(Number(s.lost)||0) ? Math.round(100*(Number(s.won)||0)/((Number(s.won)||0)+(Number(s.lost)||0))) : 0,
+    dueToday:Number(s.dueToday)||0, untouched:Number(s.untouched)||0,
+    open:Number(s.open)||0, won:Number(s.won)||0, premium:Number(s.premium)||0,
+    haveTrend: days.length>0
+  };
+}
+function ins2PaintDay(){
+  var host=document.getElementById('ins2-kpis'); if(!host) return;
+  var el=document.getElementById('ins2-day');
+  if(!el){
+    el=document.createElement('div'); el.id='ins2-day'; el.className='ins2-day';
+    host.parentNode.insertBefore(el, host);
+  }
+  var d=ins2DayStats();
+  if(!d.haveTrend && !d.won && !d.open){
+    el.innerHTML='<div class="ins2-day-h"><span>My day</span></div>'
+      +'<div class="ins2-day-l" style="font-size:11.5px;text-transform:none;letter-spacing:0">'
+      +'The summary fills in as soon as calls are saved with an outcome.</div>';
+    return;
+  }
+  var tiles=[
+    {n:d.todayCalls, l:'Called today',        c:'#2563eb'},
+    {n:d.todayWon,   l:'Closed today',        c:'#166534'},
+    {n:d.mtdCalls,   l:'Calls MTD',           c:'#0891b2'},
+    {n:d.mtdWon,     l:'Closed MTD',          c:'#15803d'},
+    {n:d.mtdConv+'%',l:'MTD conversion',      c:'#7c3aed'},
+    {n:d.dueToday,   l:'Follow-ups due',      c:'#d97706'},
+    {n:d.untouched,  l:'Never called',        c:'#64748b'},
+    {n:d.open,       l:'In progress',         c:'#b45309'}
+  ];
+  var who=(typeof ins2MyName==='function' ? ins2MyName() : '')||'';
+  el.innerHTML='<div class="ins2-day-h"><span>My day'+(who?' \u00B7 '+((typeof ins2Esc==='function')?ins2Esc(who):who):'')+'</span>'
+    +'<span class="sub">'+(d.partial
+        ? 'MTD covers the last '+d.covered+' of '+d.elapsed+' days \u2014 the server sends a 14-day series'
+        : 'month to date')
+    +(d.premium?' \u00B7 \u20B9'+d.premium.toLocaleString('en-IN')+' premium booked':'')+'</span></div>'
+    +'<div class="ins2-day-g">'+tiles.map(function(t){
+      return '<div class="ins2-day-c"><div class="ins2-day-n" style="color:'+t.c+'">'
+        +(typeof t.n==='number'?t.n.toLocaleString('en-IN'):t.n)+'</div>'
+        +'<div class="ins2-day-l">'+t.l+'</div></div>';
+    }).join('')+'</div>';
+}
+
+/* ---- why the list is shorter than the book -------------------------------
+   "why in my login insurance customers all are not seen." Because the screen
+   opens on one day's expiries and every chip narrows it further, and it never
+   said so anywhere. Now it does, and one button undoes the lot. */
+function ins2PaintScope(){
+  var bar=document.querySelector('.ins2-bar'); if(!bar) return;
+  var el=document.getElementById('ins2-scope');
+  if(!el){ el=document.createElement('div'); el.id='ins2-scope'; el.className='ins2-scope';
+           bar.parentNode.insertBefore(el, bar.nextSibling); }
+  var book=Number(INS2.bookTotal)||0, shown=Number(INS2.total)||0;
+  if(!book || shown>=book){ el.style.display='none'; return; }
+
+  var labels={overdue:'already expired',today:'expiring today',tomorrow:'expiring tomorrow',
+    week:'expiring in 7 days',fortnight:'expiring in 15 days',month:'expiring in 30 days',
+    quarter:'expiring in 90 days',all:'the whole window'};
+  var why=[ 'the <b>'+(labels[INS2.bucket]||INS2.bucket)+'</b> range' ];
+  if(INS2.mine)    why.push('<b>Mine</b> only');
+  if(INS2.car)     why.push('<b>car owners</b> only');
+  if(INS2.temp)    why.push('<b>'+INS2.temp+'</b>');
+  if(INS2.status)  why.push('<b>'+INS2.status+'</b>');
+  if(INS2.loyalty) why.push('<b>'+INS2.loyalty+'</b>');
+  if(INS2.q)       why.push('the search <b>'+((typeof ins2Esc==='function')?ins2Esc(INS2.q):INS2.q)+'</b>');
+
+  el.style.display='';
+  el.innerHTML='<div style="flex:1;min-width:180px">Showing <b>'+shown.toLocaleString('en-IN')+'</b> of <b>'
+    + book.toLocaleString('en-IN')+'</b> policies in the book \u2014 held back by '+why.join(', ')+'.</div>'
+    +'<button onclick="ins2ShowWholeBook()">\uD83D\uDCCB Show the whole book</button>';
+}
+function ins2ShowWholeBook(){
+  INS2.bucket='all'; INS2.page=0;
+  INS2.q=''; INS2.temp=''; INS2.status=''; INS2.loyalty=''; INS2.mine=false; INS2.car=false;
+  var q=document.getElementById('ins2-q'); if(q) q.value='';
+  ins2PaintChips(); ins2Load(true);
+}
+
+/* ==========================================================================
+   5.  WIRING.  Replace on window, never edit above.
+   ========================================================================== */
+(function(){
+  /* ---- estimate: chips are now the grouped part/labour panel ---- */
+  window.esDrawChips=function(){
+    var c=document.getElementById('es-chips');
+    if(c) c.innerHTML=esR25ChipsHtml();
+    try{ esUpdateLive(); }catch(e){}
+  };
+  /* the old chip ✕ still routes here from any cached page */
+  window.esRmChip=function(t,i){
+    if(t==='L') esR25RemoveLabour(i); else esR25RemovePart(i);
+  };
+
+  /* ---- the + beside the dropdowns keeps working, through the new core ---- */
+  window.esAddPartFn=function(){
+    var nm=document.getElementById('es-add-pname');
+    var items=(nm&&nm._items)||[];
+    var row=items[+(nm&&nm.value)];
+    if(!row){ esR25Msg('Pick a part from the list, or use the search box below \u2014 it finds any part by name or number.','bad'); return; }
+    var typed=Number(String((typeof val==='function'?val('es-add-pamt'):'')||'').replace(/[^0-9.]/g,''))||0;
+    var price=typed>0?typed:Number(row.price)||0;
+    if(!esR25AddPart(row, price, {typed:(typed>0 && typed!==row.price)})) return;
+    var cat=document.getElementById('es-add-pcat'); if(cat) cat.value='';
+    var sub=document.getElementById('es-add-psub'); if(sub) sub.innerHTML='<option value="">Sub-category\u2026</option>';
+    if(nm) nm.innerHTML='<option value="">Part\u2026</option>';
+    var amt=document.getElementById('es-add-pamt'); if(amt) amt.value='';
+    var sa=document.getElementById('es-add-showall'); if(sa){ sa.checked=false; ES_PART_SHOWALL=false; }
+  };
+
+  /* ---- the ✕ on a generated estimate line obeys the same rule ---- */
+  var OLD_REMOVE_ITEM=window.esRemoveItem;
+  window.esRemoveItem=function(label){
+    var c=null; try{ c=esComputeCurrent(); }catch(e){}
+    var lb=c&&c.items&&c.items.labour&&c.items.labour.filter(function(x){ return x.l===label && (x._fromPart||x._fromPn); })[0];
+    if(lb){
+      if(!(lb._grpSize>1)){
+        alert('This is the last labour on '+(lb._fromPart||'its part')+'.\n\n'
+          +'A part cannot be billed with no labour against it. Remove the part itself if there is no work to charge.');
+        return;
+      }
+      ES_UNDO_STACK.push({removed:new Set(ES_REMOVED), overrides:Object.assign({},ES_PRICE_OVERRIDES),
+        lineDiscounts:JSON.parse(JSON.stringify(ES_LINE_DISCOUNTS||{})), label:label});
+      if(ES_UNDO_STACK.length>10) ES_UNDO_STACK.shift();
+      ES_REMOVED.add(label);
+      try{ esUpdateLive(); esRenderUndoBtn(); }catch(e){}
+      return;
+    }
+    return OLD_REMOVE_ITEM.apply(this, arguments);
+  };
+
+  /* ---- and the line renders ✕ or 🔒 to match ---- */
+  var OLD_ROWS=window.esRowsEditable;
+  window.esRowsEditable=function(a, kind){
+    if(!a || !a.length) return '';
+    if(!a.some(function(x){ return x._fromPart||x._fromPn; })) return OLD_ROWS.apply(this, arguments);
+    return a.map(function(x){
+      var safe=String(x.l).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var stock=x.pn?' <button type="button" class="es-stock-link" onclick="pfQuickCheck(\''+String(x.pn).replace(/'/g,'')+'\')" title="Check all-India stock">\uD83D\uDD0E Check stock</button>':'';
+      var marks=(ES_PRICE_OVERRIDES[x.l]!==undefined?' <span class="es-line-state">Edited</span>':'')
+              + (x.lineDiscount>0?' <span class="es-line-state">Discounted</span>':'')
+              + (x._primary&&x._grpSize>1?' <span class="es-line-state" style="border-color:#86efac;background:#f0fdf4;color:#166534">\u2B50 Kept labour</span>':'');
+      var linked=(x._fromPart||x._fromPn);
+      var del = (linked && !(x._grpSize>1))
+        ? '<span class="es-line-act es-line-lock" title="The last labour on '+String(x._fromPart||'its part').replace(/"/g,'')+'. Remove the part to remove this.">\uD83D\uDD12 <span>Linked</span></span>'
+        : '<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem(\''+safe+'\')" title="Remove this item"><span aria-hidden="true">\u2715</span><span>Remove</span></button>';
+      return '<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">'+x.l+'</div>'
+        +'<div class="es-item-meta">'+stock+marks+'</div>'+esCodeHtml(x)+'</td>'
+        +'<td class="amt es-item-amt">'+esAmountHtml(x)+'</td>'
+        +'<td class="es-item-actions">'
+          +'<button type="button" class="es-line-act es-line-disc" onclick="esDiscountLine(\''+safe+'\',\''+(kind||'')+'\')" title="Discount this line"><span aria-hidden="true">%</span><span>Discount</span></button>'
+          +'<button type="button" class="es-line-act es-line-edit" onclick="esEditPrice(\''+safe+'\')" title="Correct amount"><span aria-hidden="true">\u270E</span><span>Edit</span></button>'
+          +del
+        +'</td></tr>';
+    }).join('');
+  };
+
+  /* ---- grading must be current before the estimate is computed ---- */
+  var OLD_COMPUTE=window.esComputeCurrent;
+  window.esComputeCurrent=function(){ try{ esR25Sync(); }catch(e){} return OLD_COMPUTE.apply(this, arguments); };
+
+  /* ---- the parts master failing to load must be said, not guessed at ---- */
+  var OLD_PARTS_READY=window.esEnsurePartsReady;
+  window.esEnsurePartsReady=function(){
+    var r=OLD_PARTS_READY.apply(this, arguments);
+    setTimeout(function(){
+      if(typeof ES_PARTS_READY==='undefined' || !ES_PARTS_READY) return;
+      var n=((typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX && ES_PART_INDEX.all)||[]).length;
+      var sel=document.getElementById('es-add-pcat');
+      if(!n && sel && sel.options.length<=1){
+        sel.innerHTML='<option value="">Parts master empty \u2014 use the search box below</option>';
+      }
+    }, 400);
+    return r;
+  };
+
+  /* ---- insurance: reasons, day board, scope line ---- */
+  var OLD_APPLY=window.ins2Apply;
+  if(typeof OLD_APPLY==='function') window.ins2Apply=function(res, fromCache){
+    var r=OLD_APPLY.apply(this, arguments);
+    try{ ins2EnsureDispositions(); ins2PaintScope(); ins2PaintDay(); }catch(e){}
+    return r;
+  };
+  var OLD_STATS=window.ins2LoadStats;
+  if(typeof OLD_STATS==='function') window.ins2LoadStats=function(){
+    /* ask for a month of history; a server that does not know `days` simply
+       answers with its usual 14 and the board says which it got */
+    jgetRaw('inscrm2_stats', {owner:ins2Me(), days:35}, function(res){
+      if(!res || res.ok===false) return;
+      INS2.stats=res;
+      if(res.counts && Object.keys(res.counts).length){ INS2.counts=res.counts; try{ ins2PaintChips(); }catch(e){} }
+      try{ ins2PaintKpis(); ins2PaintCharts(); ins2PaintDay(); }catch(e){}
+      var ring=document.getElementById('ins2-ring');
+      if(ring){ var won=res.won||0; ring.innerHTML=ins2Ring(won, Math.max(10, Math.ceil(won/10)*10)); }
+    }, 45000);
+  };
+  var OLD_BOOT=window.ins2Boot;
+  if(typeof OLD_BOOT==='function') window.ins2Boot=function(force){
+    try{ ins2EnsureDispositions(); }catch(e){}
+    return OLD_BOOT.apply(this, arguments);
+  };
+
+  /* ---- mount the injected UI whenever its screen is opened ---- */
+  var OLD_SHOW=window.showView;
+  if(typeof OLD_SHOW==='function') window.showView=function(name){
+    var r=OLD_SHOW.apply(this, arguments);
+    try{
+      if(name==='estimate'){ esR25MountSearch(); esR25Sync(); }
+      if(name==='partfinder') pfTreeMount();
+    }catch(e){}
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    try{ esR25MountSearch(); pfTreeMount(); }catch(e){}
+  });
+  try{ esR25MountSearch(); pfTreeMount(); }catch(e){}
+})();
+</script>
+
 </body></html>
