@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 25;
-window.HERO_BUILD = 'R25-2026.08.03.1';
+window.HERO_RELEASE = 26;
+window.HERO_BUILD = 'R26-2026.08.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1919,25 +1919,65 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
 <!-- ================= ALL-INDIA PART FINDER (v11.2) ================= -->
 <!-- ================= R22: PARTS SCANNER (Parts / WM / GM / CEO) ================= -->
+<!-- ===== PARTS SCANNER  —  redesigned R26, 03-Aug-2026 =========================
+     Ravi: "uis for part scanner. now it is very boring. I had given you many
+     many mascots, robots, cartoon characters to be embedded in the app."
+     He was right — 4 of the 33 characters were on screen anywhere in the app.
+     Every id below is the one the scanner JS already writes to (ps-shoot-btn,
+     ps-preview, ps-img, ps-status, ps-result, ps-partno, ps-verify, ps-desc,
+     ps-mrp, ps-barcode, ps-extra-wrap, ps-guess-wrap, ps-remarks, ps-recent),
+     so psPickPhoto / psAnalyze / psVerifyPart / psSaveScan are untouched.
+     ========================================================================= -->
 <div id="view-partscan" style="display:none">
-  <div class="wrap">
-    <div class="hu-topbar">
-      <h2>📷 Parts Scanner</h2>
-      <button class="btn ghost sm" onclick="showView('home')">‹ Home</button>
+  <div class="psx">
+
+    <!-- hero: the Hero robot, a moving scan line, and what the thing does -->
+    <div class="psx-hero">
+      <button class="psx-back" onclick="showView('home')" aria-label="Home">‹</button>
+      <div class="psx-hero-txt">
+        <div class="psx-kicker">Smart parts scanner</div>
+        <h2 class="psx-title">Snap · Scan · Get&nbsp;all&nbsp;the&nbsp;details</h2>
+        <div class="psx-sub">Old Hero Honda stock included</div>
+        <div class="psx-pills">
+          <span>Part No</span><span>Price</span><span>Barcode</span><span>Models</span>
+        </div>
+      </div>
+      <img class="psx-bot" src="assets/17_red_robot_superhero.png" alt="" onerror="this.style.display='none'">
+      <div class="psx-scanline"></div>
     </div>
-    <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-        <img src="assets/19_parts_box_robot.png" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
-        <div class="hint" style="margin:0">Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads part no, description, price, barcode and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy %.</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn" id="ps-shoot-btn" style="flex:1 1 140px" onclick="psPickPhoto('camera')">📷 Open Camera</button>
-        <button class="btn ghost" style="flex:1 1 140px" onclick="psPickPhoto('gallery')">🖼 Pick from Gallery</button>
-      </div>
-      <div id="ps-preview" style="margin-top:12px;display:none"><img id="ps-img" style="max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line)"></div>
-      <div id="ps-status" class="hint" style="margin-top:8px"></div>
-      <div id="ps-result" style="display:none;margin-top:12px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-bottom:6px">Check &amp; correct before saving</div>
+
+    <!-- what it reads -->
+    <div class="psx-tip">
+      <img src="assets/19_parts_box_robot.png" alt="" onerror="this.style.display='none'">
+      <div>Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads <b>part no, description, price, barcode</b> and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy&nbsp;%.</div>
+    </div>
+
+    <!-- the two ways in -->
+    <div class="psx-actions">
+      <button class="psx-act cam" id="ps-shoot-btn" onclick="psPickPhoto('camera')">
+        <span class="psx-act-ic">📷</span>
+        <span class="psx-act-t">Open Camera<small>Scan the sticker / plate</small></span>
+        <span class="psx-act-go">›</span>
+      </button>
+      <button class="psx-act gal" onclick="psPickPhoto('gallery')">
+        <span class="psx-act-ic">🖼</span>
+        <span class="psx-act-t">Pick from Gallery<small>Choose an image</small></span>
+        <span class="psx-act-go">›</span>
+      </button>
+    </div>
+
+    <!-- quick options. Every tile goes somewhere that exists. -->
+    <div class="psx-card">
+      <div class="psx-h">Quick options</div>
+      <div class="psx-quick" id="psx-quick"></div>
+    </div>
+
+    <!-- the scan in progress -->
+    <div class="psx-card" id="psx-work" style="display:none">
+      <div id="ps-preview" style="display:none"><img id="ps-img" alt="Scanned part"></div>
+      <div id="ps-status" class="psx-status"></div>
+      <div id="ps-result" style="display:none">
+        <div class="psx-h" style="margin-top:12px">Check &amp; correct before saving</div>
         <div class="fld"><label>Part No</label><input id="ps-partno" style="text-transform:uppercase" onchange="psVerifyPart()"></div>
         <!-- R24: the scanned number checked against the all-India Hero parts
              master (55,681 parts), not against the 8,239 the dealer has billed.
@@ -1952,9 +1992,13 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
         <button class="btn" onclick="psSaveScan()">💾 Save to Backend Sheet</button>
       </div>
     </div>
-    <div class="card">
-      <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Recent Scans</div>
-      <div id="ps-recent"><div class="hint">Loading…</div></div>
+
+    <!-- what the scanner has actually done -->
+    <div class="psx-stats" id="psx-stats"></div>
+
+    <div class="psx-card">
+      <div class="psx-h">Recent scans <span class="psx-h-sub" id="psx-recent-sub"></span></div>
+      <div id="ps-recent"><div class="psx-skel"></div><div class="psx-skel"></div><div class="psx-skel"></div></div>
     </div>
   </div>
 </div>
@@ -15179,6 +15223,356 @@ function ins2ShowWholeBook(){
     try{ esR25MountSearch(); pfTreeMount(); }catch(e){}
   });
   try{ esR25MountSearch(); pfTreeMount(); }catch(e){}
+})();
+</script>
+
+
+<!-- ==========================================================================
+     R26 (03-Aug-2026)  —  PARTS SCANNER UI
+
+     "uis for part scanner. now it is very boring. I had given you many many
+      mascots, robots, cartoon characters to be embedded in the app. check
+      that."   — Ravi, 03-Aug-2026
+
+     He was right: 33 characters were shipped in /assets and exactly four of
+     them appeared anywhere in the app. This screen now uses eight of them, and
+     each one is doing a job rather than decorating:
+
+       17_red_robot_superhero    the hero banner — the scanner's own face
+       19_parts_box_robot        the "what it reads" tip
+       16_parts_box_character    nothing scanned yet
+       22_standalone_star_mascot a scan saved
+       04_trophy_confetti        a milestone on the stat strip
+       29_white_bear_mechanic    the AI could not read the sticker
+       09_red_cube_mascot_waving the backend is not reachable
+       24_..._superhero_thumbs_up a part number confirmed against the master
+
+     Nothing about how the scanner WORKS changed. psPickPhoto, psAnalyze,
+     psVerifyPart and psSaveScan write to exactly the ids they always did.
+     What is new here is the shell around them, the quick-options row (every
+     tile goes somewhere that already exists), and a stat strip counted from
+     the scans the backend actually returns — no invented numbers.
+     ========================================================================== -->
+<style>
+.psx{max-width:1000px;margin:0 auto;padding:10px 12px 80px}
+.psx-card{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:13px 14px;margin-bottom:11px;
+  box-shadow:0 2px 10px rgba(15,23,42,.06)}
+.psx-h{font-size:11.5px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);
+  margin-bottom:10px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.psx-h-sub{font-weight:700;text-transform:none;letter-spacing:0;color:#94a3b8;font-size:10.5px}
+
+/* ---- hero ---- */
+.psx-hero{position:relative;overflow:hidden;border-radius:20px;padding:15px 16px 14px;margin-bottom:11px;
+  background:linear-gradient(135deg,#1e1b4b 0%,#3b1d7a 45%,#7c1d3f 100%);color:#fff;
+  box-shadow:0 14px 34px rgba(49,20,90,.32);display:flex;align-items:center;gap:10px;min-height:132px}
+.psx-hero:before{content:'';position:absolute;right:-50px;top:-70px;width:210px;height:210px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.16),rgba(255,255,255,0) 70%)}
+.psx-back{position:relative;z-index:2;flex:0 0 auto;align-self:flex-start;width:32px;height:32px;border:0;border-radius:11px;
+  background:rgba(255,255,255,.18);color:#fff;font-size:19px;font-weight:800;cursor:pointer;font-family:inherit;line-height:1}
+.psx-hero-txt{position:relative;z-index:2;flex:1;min-width:0}
+.psx-kicker{font-size:10.5px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;color:#7dd3fc}
+.psx-title{margin:3px 0 0;font-size:19px;font-weight:850;letter-spacing:-.3px;line-height:1.2}
+.psx-sub{font-size:11.5px;opacity:.86;margin-top:3px}
+.psx-pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.psx-pills span{font-size:10px;font-weight:800;letter-spacing:.02em;padding:3px 9px;border-radius:999px;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22)}
+.psx-bot{position:relative;z-index:2;width:118px;height:118px;object-fit:contain;flex:0 0 auto;margin:-6px -4px -10px 0;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.35));animation:psxBob 3.6s ease-in-out infinite}
+@keyframes psxBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+/* the scan line that says "this thing reads things" without a word */
+.psx-scanline{position:absolute;left:0;right:0;height:2px;z-index:1;
+  background:linear-gradient(90deg,rgba(125,211,252,0),rgba(125,211,252,.95),rgba(125,211,252,0));
+  box-shadow:0 0 14px 2px rgba(125,211,252,.55);animation:psxScan 3.2s ease-in-out infinite}
+@keyframes psxScan{0%{top:6%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:94%;opacity:0}}
+@media (prefers-reduced-motion:reduce){ .psx-bot,.psx-scanline{animation:none} .psx-scanline{opacity:.5;top:50%} }
+
+/* ---- tip ---- */
+.psx-tip{display:flex;gap:11px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;
+  border-radius:15px;padding:11px 13px;margin-bottom:11px;font-size:12.5px;line-height:1.55;color:#78350f}
+.psx-tip img{width:52px;height:52px;object-fit:contain;flex:0 0 auto;margin-top:-2px}
+.psx-tip b{color:#9a3412}
+
+/* ---- the two big ways in ---- */
+.psx-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px}
+.psx-act{display:flex;align-items:center;gap:10px;text-align:left;border:0;border-radius:16px;padding:14px 13px;
+  cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(15,23,42,.1);transition:transform .12s,box-shadow .12s}
+.psx-act:active{transform:translateY(1px)}
+.psx-act:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.16)}
+.psx-act.cam{background:linear-gradient(135deg,#ef4444 0%,#b91c1c 100%);color:#fff}
+.psx-act.gal{background:var(--card,#fff);color:inherit;border:1px solid var(--line)}
+.psx-act-ic{flex:0 0 auto;width:44px;height:44px;border-radius:14px;display:inline-flex;align-items:center;
+  justify-content:center;font-size:21px;background:rgba(255,255,255,.9);line-height:1}
+.psx-act.gal .psx-act-ic{background:#eff6ff}
+.psx-act-t{flex:1;min-width:0;font-size:14px;font-weight:850;line-height:1.25}
+.psx-act-t small{display:block;font-size:10.5px;font-weight:650;opacity:.82;margin-top:2px;letter-spacing:0}
+.psx-act-go{flex:0 0 auto;font-size:19px;font-weight:800;opacity:.6}
+
+/* ---- quick options ---- */
+.psx-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px}
+.psx-q{position:relative;background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;
+  padding:11px 7px 9px;text-align:center;cursor:pointer;font-family:inherit;color:inherit;transition:transform .12s,border-color .12s}
+.psx-q:hover{transform:translateY(-2px);border-color:#cbd5e1}
+.psx-q-ic{font-size:20px;line-height:1}
+.psx-q-l{font-size:10.5px;font-weight:800;margin-top:5px;line-height:1.25;color:var(--steel)}
+.psx-q-b{position:absolute;top:-6px;right:-4px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;
+  background:#dc2626;color:#fff;font-size:10px;font-weight:850;display:inline-flex;align-items:center;justify-content:center}
+
+/* ---- the scan in progress ---- */
+#ps-preview img{max-width:100%;max-height:260px;border-radius:12px;border:1px solid var(--line);display:block;margin:0 auto}
+.psx-status{font-size:12.5px;font-weight:700;margin-top:9px;line-height:1.5;display:flex;gap:8px;align-items:center}
+.psx-status img{width:38px;height:38px;object-fit:contain;flex:0 0 auto}
+
+/* ---- stat strip ---- */
+.psx-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:9px;margin-bottom:11px}
+.psx-stat{position:relative;background:var(--card,#fff);border:1px solid var(--line);border-radius:15px;padding:10px 11px;
+  box-shadow:0 2px 8px rgba(15,23,42,.05)}
+.psx-stat-n{font-size:20px;font-weight:850;line-height:1.05;letter-spacing:-.5px}
+.psx-stat-l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-top:3px;line-height:1.25}
+.psx-stat img{position:absolute;right:6px;top:6px;width:28px;height:28px;object-fit:contain;opacity:.95}
+
+/* ---- recent scans ---- */
+.psx-scan{display:flex;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid #eef1f5}
+.psx-scan:last-child{border-bottom:0}
+.psx-thumb{flex:0 0 auto;width:52px;height:40px;border-radius:9px;background:#f1f5f9;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:17px;letter-spacing:-2px;color:#334155;overflow:hidden}
+.psx-scan-m{flex:1;min-width:0}
+.psx-scan-t{font-size:13px;font-weight:800;line-height:1.3;overflow-wrap:anywhere}
+.psx-scan-d{font-size:11px;font-weight:650;color:var(--steel);margin-top:2px;line-height:1.4;overflow-wrap:anywhere}
+.psx-acc{flex:0 0 auto;font-size:10.5px;font-weight:850;padding:3px 8px;border-radius:7px;white-space:nowrap}
+.psx-acc.hi{background:#dcfce7;color:#166534}
+.psx-acc.mid{background:#fef3c7;color:#92400e}
+.psx-acc.lo{background:#fee2e2;color:#b91c1c}
+.psx-skel{height:52px;border-radius:11px;margin-bottom:7px;
+  background:linear-gradient(90deg,#eef2f7 25%,#f8fafc 50%,#eef2f7 75%);background-size:200% 100%;animation:psxSk 1.3s infinite}
+@keyframes psxSk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.psx-empty{text-align:center;padding:18px 8px}
+.psx-empty img{width:92px;height:92px;object-fit:contain}
+.psx-empty-t{font-size:13.5px;font-weight:800;margin-top:7px}
+.psx-empty-s{font-size:12px;color:var(--steel);margin-top:3px;line-height:1.5}
+.psx-more{display:block;width:100%;margin-top:10px;border:1px solid var(--line);background:var(--card,#fff);
+  color:var(--steel);border-radius:11px;padding:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+.psx-more:hover{border-color:#cbd5e1}
+
+@media (max-width:520px){
+  .psx-actions{grid-template-columns:1fr}
+  .psx-title{font-size:17px}
+  .psx-hero{min-height:126px;padding:14px 13px}
+  .psx-stats{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-color-scheme:dark){
+  .psx-tip{background:rgba(253,230,138,.1);border-color:rgba(253,230,138,.3);color:#fde68a}
+  .psx-tip b{color:#fdba74}
+  .psx-thumb{background:rgba(148,163,184,.14)}
+  .psx-act.gal .psx-act-ic{background:rgba(148,163,184,.16)}
+}
+</style>
+<script>
+"use strict";
+/* --------------------------------------------------------------------------
+   Quick options. Each one is a destination the app already has — a tile that
+   goes nowhere is worse than no tile.
+   -------------------------------------------------------------------------- */
+function psxQuick(){
+  var el=document.getElementById('psx-quick'); if(!el) return;
+  var pending=0; try{ pending=(getQueue()||[]).length; }catch(e){}
+  var tiles=[
+    {ic:'🔎', l:'All-India stock', go:"showView('partfinder')"},
+    {ic:'🌲', l:'Parts tree',      go:"psxOpenTree()"},
+    {ic:'☁',  l:'Pending sync',    go:"psxFlush()", b:pending},
+    {ic:'📜', l:'Scan history',    go:"psxJump()"},
+    {ic:'🔑', l:'Vision key',      go:"geSetVisionKey()", admin:true}
+  ];
+  el.innerHTML=tiles.filter(function(t){ return !t.admin || (typeof isAdmin==='function' && isAdmin()); })
+    .map(function(t){
+      return '<button class="psx-q" onclick="'+t.go+'">'
+        +(t.b?'<span class="psx-q-b">'+t.b+'</span>':'')
+        +'<div class="psx-q-ic">'+t.ic+'</div><div class="psx-q-l">'+t.l+'</div></button>';
+    }).join('');
+}
+/* the tree lives on the Part Finder screen — take them there and open it */
+function psxOpenTree(){
+  showView('partfinder');
+  setTimeout(function(){
+    try{ pfTreeMount(); var d=document.getElementById('pf-tree'); if(d){ d.open=true; pfTreeLoad(); d.scrollIntoView({behavior:'smooth',block:'start'}); } }catch(e){}
+  }, 120);
+}
+function psxJump(){
+  var el=document.getElementById('ps-recent');
+  if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function psxFlush(){
+  var n=0; try{ n=(getQueue()||[]).length; }catch(e){}
+  if(!n){ psStatus('Nothing is waiting to sync — everything scanned is saved.','ok'); return; }
+  psStatus('Sending '+n+' saved scan'+(n===1?'':'s')+' to the backend…');
+  Promise.resolve(flushQueue()).then(function(){
+    var left=0; try{ left=(getQueue()||[]).length; }catch(e){}
+    psStatus(left ? (left+' still waiting — the connection dropped. They stay saved and go up by themselves.')
+                  : '✔ Everything synced.', left?'err':'ok');
+    psxQuick();
+  });
+}
+
+/* --------------------------------------------------------------------------
+   The stat strip. Counted from the scans the backend returns — the labels say
+   "last N scans" rather than pretending to be an all-time figure the route
+   does not answer with.
+   -------------------------------------------------------------------------- */
+var PSX_ROWS=[];
+/* The sheet's Timestamp column has been written in more than one shape over
+   the life of this app. Rather than assume one and quietly report "0 scanned
+   today", read the three that actually occur and give up honestly on anything
+   else — psxStats drops the tile instead of showing a number it cannot stand
+   behind. */
+function psxDay(ts){
+  var s=String(ts||'').trim(); if(!s) return null;
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);                    /* 2026-08-03 */
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);            /* 03-08-2026, 3/8/2026 */
+  if(m) return m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2);
+  var d=new Date(s);
+  if(!isNaN(d.getTime())) return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  return null;
+}
+function psxStats(){
+  var el=document.getElementById('psx-stats'); if(!el) return;
+  var rows=PSX_ROWS||[];
+  if(!rows.length){ el.innerHTML=''; return; }
+  var identified=0, accSum=0, accN=0, added=0, dated=0;
+  var t=new Date();
+  var tKey=t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2);
+  rows.forEach(function(r){
+    if(String(r['Part No']||'').trim()) identified++;
+    var a=Number(String(r['Confidence %']||'').replace(/[^0-9.]/g,''));
+    if(a>0){ accSum+=a; accN++; }
+    var d=psxDay(r['Timestamp']);
+    if(d){ dated++; if(d===tKey) added++; }
+  });
+  var acc=accN?Math.round(accSum/accN):0;
+  var tiles=[
+    {n:rows.length,  l:'Scans on file', c:'#2563eb', img:(rows.length>=100?'04_trophy_confetti.png':'')},
+    {n:identified,   l:'Parts identified', c:'#166534'},
+    {n:acc?acc+'%':'—', l:'Avg accuracy', c:'#b45309'}
+  ];
+  /* only claim a "today" count when the timestamps could actually be read */
+  if(dated) tiles.splice(2, 0, {n:added, l:'Scanned today', c:'#7c3aed'});
+  el.innerHTML=tiles.map(function(t){
+    return '<div class="psx-stat">'
+      +(t.img?'<img src="assets/'+t.img+'" alt="" onerror="this.style.display=\'none\'">':'')
+      +'<div class="psx-stat-n" style="color:'+t.c+'">'+(typeof t.n==='number'?t.n.toLocaleString('en-IN'):t.n)+'</div>'
+      +'<div class="psx-stat-l">'+t.l+'</div></div>';
+  }).join('');
+}
+
+/* --------------------------------------------------------------------------
+   Recent scans as cards. Same route, same fields — read as a list of parts
+   rather than a wall of text.
+   -------------------------------------------------------------------------- */
+function psxRecent(){
+  var el=document.getElementById('ps-recent'); if(!el) return;
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  jget('ps_recent',{limit:200},function(res){
+    var sub=document.getElementById('psx-recent-sub');
+    if(!res || res.ok===false){
+      PSX_ROWS=[]; psxStats();
+      el.innerHTML='<div class="psx-empty"><img src="assets/09_red_cube_mascot_waving.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="psx-empty-t">Can’t reach the backend</div>'
+        +'<div class="psx-empty-s">'+E((res&&res.error)||'No answer from the server.')
+        +' Scans you take now are still saved on the phone and go up by themselves.</div></div>';
+      if(sub) sub.textContent='';
+      return;
+    }
+    var rows=res.rows||[];
+    PSX_ROWS=rows; psxStats();
+    if(!rows.length){
+      el.innerHTML='<div class="psx-empty"><img src="assets/16_parts_box_character.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="psx-empty-t">Nothing scanned yet</div>'
+        +'<div class="psx-empty-s">Point the camera at any part sticker and the first one lands here.</div></div>';
+      if(sub) sub.textContent='';
+      return;
+    }
+    if(sub) sub.textContent=rows.length>=200 ? 'latest 200' : (rows.length+' on file');
+    psxPaintScans(rows, false);
+  });
+}
+/* Eight is what fits on a phone before the screen turns into a wall. The rest
+   are one tap away rather than a scroll away. */
+function psxPaintScans(rows, all){
+  var el=document.getElementById('ps-recent'); if(!el) return;
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var SHOW=all?rows.length:8;
+  el.innerHTML=rows.slice(0,SHOW).map(function(r){
+      var acc=Number(String(r['Confidence %']||'').replace(/[^0-9.]/g,''));
+      var cls=acc>=90?'hi':(acc>=70?'mid':'lo');
+      var pn=String(r['Part No']||r['AI Guess']||'').trim();
+      var bits=[];
+      if(r['MRP']) bits.push('₹'+E(r['MRP']));
+      if(r['Barcode']) bits.push('▮ '+E(r['Barcode']));
+      if(r['Scanned By']) bits.push(E(r['Scanned By']));
+      if(r['Timestamp']) bits.push(E(r['Timestamp']));
+      return '<div class="psx-scan">'
+        +'<div class="psx-thumb">'+(r['Barcode']?'‖‖‖':'🔩')+'</div>'
+        +'<div class="psx-scan-m">'
+          +'<div class="psx-scan-t">'+(pn?E(pn):'—')+(r['Description']?' <span style="font-weight:650;color:var(--steel)">'+E(r['Description'])+'</span>':'')+'</div>'
+          +'<div class="psx-scan-d">'+bits.join(' · ')+'</div>'
+        +'</div>'
+        +(acc?'<div class="psx-acc '+cls+'">'+acc+'%</div>':'')
+      +'</div>';
+    }).join('')
+    + (rows.length>SHOW
+        ? '<button class="psx-more" onclick="psxPaintScans(PSX_ROWS,true)">Show all '+rows.length.toLocaleString('en-IN')+' scans</button>'
+        : (all && rows.length>8
+            ? '<button class="psx-more" onclick="psxPaintScans(PSX_ROWS,false)">Show fewer</button>'
+            : ''));
+}
+
+/* --------------------------------------------------------------------------
+   Wiring. The scanner's own functions are wrapped, never rewritten: the work
+   card is revealed when a photo is taken, a mascot is put beside the status
+   line for the three outcomes that matter, and the tiles refresh after a save.
+   -------------------------------------------------------------------------- */
+(function(){
+  var OLD_STATUS=window.psStatus;
+  if(typeof OLD_STATUS==='function') window.psStatus=function(msg, kind){
+    var el=document.getElementById('ps-status');
+    if(!el) return OLD_STATUS.apply(this, arguments);
+    el.style.color = kind==='err' ? 'var(--signal-d,#b91c1c)' : (kind==='ok' ? '#166534' : 'var(--steel,#64748b)');
+    var m=String(msg||'');
+    /* one character per outcome — the bear when the sticker beat the AI, the
+       star when a scan is banked, the thumbs-up when the master confirms it */
+    var pic='';
+    if(kind==='err') pic='29_white_bear_mechanic.png';
+    else if(kind==='ok') pic=/saved|synced/i.test(m) ? '22_standalone_star_mascot.png' : '24_white_red_superhero_thumbs_up.png';
+    el.innerHTML = m ? ((pic?'<img src="assets/'+pic+'" alt="" onerror="this.style.display=\'none\'">':'')
+      + '<span>'+((typeof raviEsc==='function')?raviEsc(m):m)+'</span>') : '';
+    return;
+  };
+
+  var OLD_PICK=window.psPickPhoto;
+  if(typeof OLD_PICK==='function') window.psPickPhoto=function(mode){
+    var w=document.getElementById('psx-work'); if(w) w.style.display='block';
+    return OLD_PICK.apply(this, arguments);
+  };
+
+  var OLD_SAVE=window.psSaveScan;
+  if(typeof OLD_SAVE==='function') window.psSaveScan=function(){
+    var r=OLD_SAVE.apply(this, arguments);
+    setTimeout(function(){ try{ psxQuick(); psxRecent(); }catch(e){} }, 900);
+    return r;
+  };
+
+  /* psBootMod called psLoadRecent; it now paints the whole screen. The old
+     function is left in place and still works if anything else calls it. */
+  var OLD_BOOT=window.psBootMod;
+  window.psBootMod=function(){
+    try{ psxQuick(); psxRecent(); }catch(e){ if(typeof OLD_BOOT==='function') return OLD_BOOT.apply(this, arguments); }
+  };
+
+  var OLD_SHOW=window.showView;
+  if(typeof OLD_SHOW==='function') window.showView=function(name){
+    var r=OLD_SHOW.apply(this, arguments);
+    try{ if(name==='partscan') psxQuick(); }catch(e){}
+    return r;
+  };
 })();
 </script>
 
