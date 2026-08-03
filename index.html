@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 22;
-window.HERO_BUILD = 'R22-2026.08.03.2';
+window.HERO_BUILD = 'R22-2026.08.03.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1930,7 +1930,10 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
         <img src="assets/19_parts_box_robot.png" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
         <div class="hint" style="margin:0">Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads part no, description, price, barcode and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy %.</div>
       </div>
-      <button class="btn" id="ps-shoot-btn" onclick="psPickPhoto()">📷 Scan a Part (camera or gallery)</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="ps-shoot-btn" style="flex:1 1 140px" onclick="psPickPhoto('camera')">📷 Open Camera</button>
+        <button class="btn ghost" style="flex:1 1 140px" onclick="psPickPhoto('gallery')">🖼 Pick from Gallery</button>
+      </div>
       <div id="ps-preview" style="margin-top:12px;display:none"><img id="ps-img" style="max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line)"></div>
       <div id="ps-status" class="hint" style="margin-top:8px"></div>
       <div id="ps-result" style="display:none;margin-top:12px">
@@ -2637,6 +2640,19 @@ async function globalSyncNow(){
   const orig=btn?btn.textContent:'';
   if(btn) btn.textContent='Syncing…';
   await flushQueue(); // send anything that was waiting offline, first
+  /* THE SERVER CACHES EVERY MASTER TABLE FOR SIX HOURS (Ravi 03-Aug-2026).
+     Clearing only the phone copy re-downloaded the SAME stale JSON — which is
+     exactly why Sync Now looked dead after a sheet edit, and why three new
+     Insurance logins never appeared. Clear the server side FIRST, and wait for
+     it, before dropping the phone copy. Capped at 7s so a slow backend can
+     never leave the button stuck on "Syncing…". */
+  await new Promise(function(done){
+    let settled=false;
+    const finish=function(){ if(settled) return; settled=true; done(); };
+    setTimeout(finish, 7000);
+    try{ jgetRaw('refresh_masters', {}, finish, 7000); }catch(e){ finish(); }
+  });
+  try{ localStorage.removeItem(HERO_STAMP_KEY); }catch(e){} // force the next stamp check to re-pull
   clearMasterCache(); // forget cached master tables
   if(typeof jrClearFresh==='function') jrClearFresh();
   try{ HERO_STAMP_CHECKED=false; heroCheckMasterStamps(true); }catch(e){} // Sync Now must genuinely re-ask, not reuse the 4-second window
@@ -12790,9 +12806,13 @@ function psStatus(msg,kind){
   el.style.color=kind==='err'?'var(--signal-d)':(kind==='ok'?'#166534':'var(--steel)');
   el.textContent=msg||'';
 }
-function psPickPhoto(){
-  /* No capture attribute on purpose — phone shows Camera / Gallery / Files. */
+/* Two explicit buttons (Ravi 03-Aug-2026). Relying on the phone's own chooser
+   failed in the installed app — an Android WebView often resolves a bare
+   accept="image/*" straight to the gallery, so the camera never opened. Passing
+   capture='environment' is the only reliable way to ask for the rear camera. */
+function psPickPhoto(mode){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  if(mode==='camera') inp.setAttribute('capture','environment');
   inp.onchange=function(){
     const f=inp.files[0]; if(!f) return;
     const rd=new FileReader();
