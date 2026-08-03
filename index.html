@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 26;
-window.HERO_BUILD = 'R26-2026.08.03.1';
+window.HERO_RELEASE = 27;
+window.HERO_BUILD = 'R27-2026.08.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15571,6 +15571,358 @@ function psxPaintScans(rows, all){
   if(typeof OLD_SHOW==='function') window.showView=function(name){
     var r=OLD_SHOW.apply(this, arguments);
     try{ if(name==='partscan') psxQuick(); }catch(e){}
+    return r;
+  };
+})();
+</script>
+
+
+<!-- ==========================================================================
+     R27 (03-Aug-2026)  —  DATE OF SALE, AND FREEZING THE MODEL THE RECORDS GAVE
+
+     "dos not fetching from back, model not freezed if taken from database
+      after scanning at gate."   — Ravi, 03-Aug-2026
+
+     Both features were written. Neither could fire. Two separate root causes:
+
+     1. DATE OF SALE — heroCustLookup is local-first and SHORT-CIRCUITS:
+
+            heroCustFind(query, function(local){
+              if(local && local.found){ cb(local); return; }   <-- server never asked
+              jgetRaw('customer_find', ...)
+
+        The phone's copy of the customer master is written by custWriteBatch as
+            { reg, vin, mob, alt, mdl, nm, loc, dos:r.d }
+        so a chunk row that arrives without `d` is cached with dos:''. From that
+        moment the reg IS found on the phone, the lookup returns immediately,
+        and customer_find on the server — which does have the sale date — is
+        never called for that vehicle again. Date of Sale could only ever be
+        typed by hand. It is not a backend problem and no amount of re-syncing
+        fixes it, because the sync is what writes the blank.
+
+        Fixed by resolving a vehicle rather than merely finding one:
+        heroVehicleResolve() takes the phone's answer, and if the FIELDS THE
+        ESTIMATE ACTUALLY NEEDS (model, sale date) are missing from it, asks the
+        server and merges. The phone still answers instantly when it is
+        complete, so nothing got slower for the common case.
+
+     2. MODEL FREEZE — the confirmation modal beat the records lookup.
+
+        esOnGatePick ends with esMaybeAskModel(g), which opens the "Confirm the
+        model" modal SYNCHRONOUSLY on every single gate pick. The DMS lock in
+        s35 runs off an async heroCustLookup callback that lands afterwards. So
+        the SA was always asked to choose a model — and esModelConfirm teaches
+        the chosen one back to the backend at SA authority — while the freeze
+        arrived a moment later and locked whatever had happened. A frozen field
+        the app just asked you to fill in is not frozen.
+
+        Fixed by holding the question until the records have answered. If the
+        customer master supplies a model that exists in the model list, it is
+        set, frozen, and NOT asked about. Only when records have no model — a
+        genuinely new vehicle, or one the master has never seen — is the SA
+        asked, exactly as before.
+
+     Additive: esOnGatePick, esMaybeAskModel and esNewEstimate are wrapped on
+     window after parsing. heroCustLookup itself is left alone — it is used by
+     the gate screen too, and this file does not change behaviour there.
+     ========================================================================== -->
+<style>
+#es-dos-src,#es-model-src{font-size:11px;margin-top:3px;font-weight:700;line-height:1.4}
+#es-dos-src a,#es-model-src a{font-weight:800}
+.es-r27-wait{font-size:11px;font-weight:700;color:var(--steel);margin-top:3px;display:flex;gap:6px;align-items:center}
+.es-r27-wait:before{content:'';width:11px;height:11px;border-radius:50%;flex:0 0 11px;
+  border:2px solid #cbd5e1;border-top-color:#0f172a;animation:esR27Spin .7s linear infinite}
+@keyframes esR27Spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .es-r27-wait:before{animation:none} }
+</style>
+<script>
+"use strict";
+/* --------------------------------------------------------------------------
+   1.  RESOLVE a vehicle — phone first, server only for what is missing.
+
+   heroCustFind answers from IndexedDB. heroCustLookup returns that answer and
+   stops. This asks the server as well WHENEVER the phone's answer is missing a
+   field the estimate needs, then merges the two, server winning on conflict and
+   the phone filling any gap the server leaves.
+
+   cb({found:true|false|null, vehicle:{...}, source:'phone'|'server'|'phone+server'})
+     found:false  the server checked and there is no such vehicle
+     found:null   nobody could answer — do NOT treat that as a new vehicle
+   -------------------------------------------------------------------------- */
+function esR27Str(v){ return String(v==null?'':v).trim(); }
+
+/* the sale date arrives under whichever key the answering layer happens to use */
+function esR27SaleDate(v){
+  if(!v) return '';
+  return esR27Str(v.saleDate || v.dos || v.d
+    || v['Date of Sale'] || v['Sale Date'] || v['Purchase Date'] || v['DateOfSale'] || '');
+}
+function esR27Model(v){
+  if(!v) return '';
+  return esR27Str(v.model || v.mdl || v['Model'] || v['MODEL'] || '');
+}
+
+function heroVehicleResolve(query, cb){
+  var q=esR27Str(query);
+  if(!q){ cb({found:false, source:'none'}); return; }
+  var fired=false;
+  var finish=function(o){ if(fired) return; fired=true; try{ cb(o); }catch(e){} };
+
+  heroCustFind(q, function(local){
+    var lv=(local && local.found && local.vehicle) || null;
+    var haveModel=!!esR27Model(lv), haveDos=!!esR27SaleDate(lv);
+
+    /* the phone's copy is complete — answer from it and touch no network */
+    if(lv && haveModel && haveDos){
+      lv.saleDate=esR27SaleDate(lv); lv.model=esR27Model(lv);
+      finish({found:true, vehicle:lv, source:'phone'});
+      return;
+    }
+
+    /* something the estimate needs is missing. THIS is the call the old
+       short-circuit skipped, and the reason Date of Sale was always blank. */
+    jgetRaw('customer_find', {q:q}, function(res){
+      var sv=(res && res.ok && res.found && res.vehicle) || null;
+      if(!sv && !lv){
+        finish({found:(res && res.ok===true) ? false : null,
+                source:(res && res.ok===true) ? 'server' : 'unavailable'});
+        return;
+      }
+      var m={};
+      if(lv) Object.keys(lv).forEach(function(k){ m[k]=lv[k]; });
+      if(sv) Object.keys(sv).forEach(function(k){ if(esR27Str(sv[k])) m[k]=sv[k]; });
+      m.saleDate=esR27SaleDate(sv)||esR27SaleDate(lv)||'';
+      m.model   =esR27Model(sv)||esR27Model(lv)||'';
+      finish({found:true, vehicle:m, source: sv ? (lv?'phone+server':'server') : 'phone'});
+    }, 12000);
+  });
+
+  /* IndexedDB can sit on a blocked transaction and never call back at all.
+     The screen must not wait on it forever. */
+  setTimeout(function(){
+    if(fired) return;
+    jgetRaw('customer_find', {q:q}, function(res){
+      var sv=(res && res.ok && res.found && res.vehicle) || null;
+      if(!sv){ finish({found:(res&&res.ok===true)?false:null, source:'unavailable'}); return; }
+      sv.saleDate=esR27SaleDate(sv); sv.model=esR27Model(sv);
+      finish({found:true, vehicle:sv, source:'server'});
+    }, 12000);
+  }, 2500);
+}
+
+/* --------------------------------------------------------------------------
+   2.  DATE OF SALE onto the form.
+   dd-mm-yyyy is what the field, raviParseDMY and esMonthsSince all expect.
+   -------------------------------------------------------------------------- */
+function esR27Dmy(raw){
+  var s=esR27Str(raw); if(!s) return '';
+  if(/^\d{2}-\d{2}-\d{4}$/.test(s)) return s;                                  /* already right */
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);                                   /* 2019-06-14 */
+  if(m) return m[3]+'-'+m[2]+'-'+m[1];
+  m=s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);                           /* 14/6/2019 */
+  if(m) return ('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2)+'-'+m[3];
+  var d=new Date(s);
+  if(!isNaN(d.getTime())) return ('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+d.getFullYear();
+  return '';                                                                   /* unreadable — leave it blank, never guess */
+}
+function esR27DosLine(html, colour){
+  var wrap=document.getElementById('es-dos'); if(!wrap) return;
+  var el=document.getElementById('es-dos-src');
+  if(!el){
+    el=document.createElement('div'); el.id='es-dos-src';
+    wrap.parentNode.appendChild(el);
+  }
+  if(!html){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block'; el.style.color=colour||'var(--steel)'; el.innerHTML=html;
+}
+function esR27FillDos(v, source){
+  var el=document.getElementById('es-dos'); if(!el) return false;
+  var dmy=esR27Dmy(esR27SaleDate(v));
+  if(!dmy){
+    esR27DosLine('⚠️ No date of sale on record for this vehicle — type it if the customer knows it. '
+      +'It decides the free-service stage and what the owner manual says is due.', '#b45309');
+    return false;
+  }
+  /* Anything the SA has already typed for THIS vehicle wins — they are looking
+     at the customer's book and the record can be stale. An earlier fill that
+     already agrees with the record still gets its provenance said out loud;
+     one that disagrees gets offered the record's date, never given it. */
+  if(esR27Str(el.value)){
+    if(esR27Str(el.value)===dmy){
+      esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from '
+        +(source==='phone'?'the customer master on this phone':'DMS records')
+        +'. Editable if the record is wrong.', '#047857');
+    } else {
+      esR27DosLine('ℹ️ Records say <b>'+dmy+'</b>. '
+        +'<a href="#" onclick="esR27UseDos(\''+dmy+'\');return false">Use that</a>', '#b45309');
+    }
+    return false;
+  }
+  el.value=dmy;
+  esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from '
+    +(source==='phone'?'the customer master on this phone':'DMS records')
+    +'. Editable if the record is wrong.', '#047857');
+  try{ el.dispatchEvent(new Event('change')); }catch(e){}
+  try{ esUpdateLive(); }catch(e){}
+  try{ esLoadServiceDue(); }catch(e){}
+  return true;
+}
+function esR27UseDos(dmy){
+  var el=document.getElementById('es-dos'); if(!el) return;
+  el.value=dmy;
+  esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from DMS records.', '#047857');
+  try{ el.dispatchEvent(new Event('change')); esUpdateLive(); esLoadServiceDue(); }catch(e){}
+}
+
+/* --------------------------------------------------------------------------
+   3.  FREEZE the model when the records supplied it — and don't ask.
+   -------------------------------------------------------------------------- */
+var ES_R27_HOLD=false;          /* the confirm modal is held while records load */
+var ES_R27_PENDING=null;        /* the gate row to ask about if records fail us */
+var ES_R27_LOCKED='';           /* the model the records froze, '' when free */
+
+function esR27MatchModel(dm){
+  var sel=document.getElementById('es-model'); if(!sel || !dm) return '';
+  var want=String(dm).toUpperCase();
+  for(var i=0;i<sel.options.length;i++){
+    var o=sel.options[i]; if(!o.value) continue;
+    if(o.value.toUpperCase()===want) return o.value;
+  }
+  if(typeof heroOilKey==='function'){
+    var k=heroOilKey(dm);
+    for(var j=0;j<sel.options.length;j++){
+      var o2=sel.options[j];
+      if(o2.value && heroOilKey(o2.value)===k) return o2.value;
+    }
+  }
+  return '';
+}
+/* s35's ES_MODEL_SRC / esModelSrcLine / esUnlockModel live inside an IIFE and
+   are NOT reachable from here — assigning to them would throw under "use
+   strict" and leave the model neither frozen nor asked about. So the lock is
+   applied directly to the things that ARE shared: the data-locked attribute
+   that s35's own mousedown/keydown guards read off the element, and the
+   #es-model-src line. Nothing in s35 is referenced. */
+function esR27CanUnlock(){
+  try{
+    var lv=String((USER&&(USER.level||USER.Level))||'').toLowerCase();
+    var rl=String((USER&&(USER.role||USER.Role))||'').toUpperCase();
+    return lv==='admin'||lv==='superadmin'||rl==='WM'||rl==='GM'||rl==='CEO';
+  }catch(e){ return false; }
+}
+function esR27ModelLine(html, colour){
+  var el=document.getElementById('es-model-src'); if(!el) return;
+  if(!html){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block'; el.style.color=colour||'var(--steel)'; el.innerHTML=html;
+}
+function esR27FreezeModel(hit, gateModel){
+  var sel=document.getElementById('es-model'); if(!sel) return;
+  if(sel.value!==hit){ sel.value=hit; try{ sel.dispatchEvent(new Event('change')); }catch(e){} }
+  sel.classList.add('es-locked');
+  sel.setAttribute('data-locked','1');          /* s35's guards enforce this on the element */
+  ES_R27_LOCKED=hit;
+  var gm=String(gateModel||'').trim();
+  var clash=(gm && esR27MatchModel(gm)!==hit)
+    ? ' The gate had recorded <b>'+gm.replace(/</g,'&lt;')+'</b>.' : '';
+  esR27ModelLine('🔒 <b>'+hit.replace(/</g,'&lt;')+'</b> from DMS records — not editable.'+clash
+    + (esR27CanUnlock() ? ' <a href="#" onclick="esR27Unlock();return false">Unlock</a>' : ''), '#047857');
+  /* the question is settled — close it if it managed to open */
+  try{ esCloseModelModal(); }catch(e){}
+}
+function esR27Unlock(){
+  if(!esR27CanUnlock()){ alert('Only the WM, GM or CEO can change a model that came from DMS records.'); return; }
+  var sel=document.getElementById('es-model'); if(!sel) return;
+  sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+  ES_R27_LOCKED='';
+  esR27ModelLine('🔓 Unlocked — a change here overrides the DMS record.', '#b45309');
+}
+function esR27UnfreezeModel(){
+  var sel=document.getElementById('es-model'); if(!sel) return;
+  sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+  ES_R27_LOCKED='';
+}
+function esR27WaitLine(on){
+  if(on) esR27ModelLine('<span class="es-r27-wait">Checking DMS records for this vehicle…</span>', 'var(--steel)');
+}
+/* records could not settle it: the model stands on the gate's word alone, so
+   say so and leave it editable — this is the case the SA MUST look at. */
+function esR27GateLine(g){
+  esR27UnfreezeModel();
+  var gm=String((g&&g.model)||'').trim();
+  esR27ModelLine(gm
+    ? '⚠️ <b>'+gm.replace(/</g,'&lt;')+'</b> recorded at the gate, not confirmed by records — check it against the vehicle.'
+    : '⚠️ No model on record for this vehicle — pick it from the list.', '#b45309');
+}
+/* records could not settle it — ask, exactly as the app always did */
+function esR27ReleaseAsk(){
+  ES_R27_HOLD=false;
+  var g=ES_R27_PENDING; ES_R27_PENDING=null;
+  if(!g) return;
+  try{ esMaybeAskModel(g); }catch(e){}
+}
+
+/* --------------------------------------------------------------------------
+   4.  WIRING
+   -------------------------------------------------------------------------- */
+(function(){
+  /* the modal is held, not cancelled — esR27ReleaseAsk opens it if records fail */
+  var OLD_ASK=window.esMaybeAskModel;
+  if(typeof OLD_ASK==='function') window.esMaybeAskModel=function(g){
+    if(ES_R27_HOLD){ ES_R27_PENDING=g; return; }
+    return OLD_ASK.apply(this, arguments);
+  };
+
+  var OLD_PICK=window.esOnGatePick;
+  if(typeof OLD_PICK==='function') window.esOnGatePick=function(g){
+    ES_R27_HOLD=true; ES_R27_PENDING=null;
+    esR27DosLine('');
+    var r=OLD_PICK.apply(this, arguments);          /* fills name/mob/reg/km, holds the ask */
+    try{ esR27WaitLine(true); }catch(e){}
+
+    var reg=(g && g.reg) || '';
+    if(!reg){ esR27ReleaseAsk(); return r; }
+
+    var settled=false;
+    /* records are allowed 7 seconds. After that the SA is asked rather than
+       left staring at a spinner — a slow master must not stop a job card. */
+    var giveUp=setTimeout(function(){
+      if(settled) return; settled=true;
+      esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309');
+      esR27GateLine(g);
+      esR27ReleaseAsk();
+    }, 7000);
+
+    heroVehicleResolve(reg, function(res){
+      if(settled) return; settled=true; clearTimeout(giveUp);
+      var v=(res && res.found && res.vehicle) || null;
+
+      /* DATE OF SALE — the whole point of the resolver */
+      if(v) esR27FillDos(v, res.source);
+      else if(res && res.found===false)
+        esR27DosLine('ℹ️ This vehicle is not in the customer master — type the date of sale.', '#b45309');
+      else
+        esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309');
+
+      /* MODEL — frozen when records have it, asked about when they do not */
+      var hit=v ? esR27MatchModel(esR27Model(v)) : '';
+      if(hit){
+        esR27FreezeModel(hit, g && g.model);
+        ES_R27_HOLD=false; ES_R27_PENDING=null;      /* settled — never ask */
+        return;
+      }
+      /* no usable model on record — back to the SA, as before */
+      esR27GateLine(g);
+      esR27ReleaseAsk();
+    });
+    return r;
+  };
+
+  /* a fresh estimate must not inherit the last vehicle's date or its lock */
+  var OLD_NEW=window.esNewEstimate;
+  if(typeof OLD_NEW==='function') window.esNewEstimate=function(){
+    var r=OLD_NEW.apply(this, arguments);
+    try{ ES_R27_HOLD=false; ES_R27_PENDING=null;
+         esR27DosLine(''); esR27ModelLine(''); esR27UnfreezeModel(); }catch(e){}
     return r;
   };
 })();
