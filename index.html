@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 24;
-window.HERO_BUILD = 'R25-2026.08.04.1';
+window.HERO_BUILD = 'R27-2026.08.04.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -13834,6 +13834,14 @@ function ins2Detail(r,i){
     ['Mobile', r.mobile?('<a href="tel:+91'+r.mobile+'" onclick="event.stopPropagation()">'+ins2Esc(r.mobile)+'</a>'):'—'],
     ['Second mobile', r.altMobile?('<a href="tel:+91'+r.altMobile+'" onclick="event.stopPropagation()">'+ins2Esc(r.altMobile)+'</a>'):'—'],
     ['Model', ins2Esc(r.model||'—')],
+    /* R27 04-Aug-2026. A two-wheeler policy cannot be issued without these two,
+       so they sit directly under the model where the SMRE reads them out. They
+       come from MD_CustomerMaster via InsuranceBookV2 — chassis is the master's
+       VIN column, engine is filled from the sales register. A book built before
+       R27 has no such columns, so both arrive as '' and show '—' rather than
+       breaking the card. */
+    ['Chassis no', ins2Esc(r.chassis||'—')],
+    ['Engine no', ins2Esc(r.engine||'—')],
     ['Bought on', ins2Esc(r.dos||'—')],
     ['Last service', ins2Esc(r.lastService||'never here')],
     ['Next service due', ins2Esc(r.nextService||'—')],
@@ -14157,7 +14165,8 @@ function ins2Export(){
       if(!ok || typeof XLSX==='undefined'){ ins2Toast('Could not load the Excel library — check the connection','bad'); return; }
       const cols=[
         ['Reg No','reg'],['Customer','customer'],['Mobile','mobile'],['Second Mobile','altMobile'],
-        ['Model','model'],['City','city'],['Bought On','dos'],
+        ['Model','model'],['Chassis No','chassis'],['Engine No','engine'],
+        ['City','city'],['Bought On','dos'],
         ['Insurance Expiry','expiry'],['Days To Expiry','daysToExpiry'],['Expiry Source','expirySrc'],
         ['Insurer','company'],['Policy No','policy'],
         ['Loyalty','loyalty'],['Relationship','relationship'],
