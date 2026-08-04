@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 25;
-window.HERO_BUILD = 'R28-2026.08.04.4';
+window.HERO_BUILD = 'R28-2026.08.04.5';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -14580,9 +14580,17 @@ async function ins3Load(force){
   }
 
   /* what the server has */
+  /* Every R28 data route now demands a live employee number — the bulk snapshot
+     carries both mobile numbers for 74,865 customers and used to answer anybody
+     who knew the URL. See ins3Gate_ in ModulesR28.gs. */
   const ver = await new Promise(function(res){
-    jgetRaw('inscrm3_ver', {}, function(r){ res(r||null); }, 30000);
+    jgetRaw('inscrm3_ver', {owner:ins3Me()}, function(r){ res(r||null); }, 30000);
   });
+  if(ver && ver.ok===false && ver.denied){
+    ins3Say('bad', ver.error || 'This login cannot open the renewal book.');
+    INS3.syncing=false; ins3Render(); return;
+  }
+  if(ver && typeof ver.manager==='boolean') INS3.manager=ver.manager;
   if(!ver || ver.ok===false){
     /* Guard on SHAPE, not on ok — an undeployed route answers ok:true with no
        payload (CodeAppEntry doGet's else branch). See the R24 scanner bug. */
@@ -14617,7 +14625,7 @@ async function ins3Load(force){
 
   while(true){
     const res = await new Promise(function(r){
-      jgetRaw('inscrm3_snapshot', {page:page, size:5000}, function(x){ r(x||null); }, 120000);
+      jgetRaw('inscrm3_snapshot', {page:page, size:5000, owner:ins3Me()}, function(x){ r(x||null); }, 120000);
     });
     if(!res || res.ok===false || !Array.isArray(res.rows)){
       ins3Say('bad','Download stopped at page '+(page+1)+((res&&res.error)?' — '+res.error:'')+'. Tap Sync now to continue.');
@@ -14690,7 +14698,7 @@ async function ins3LoadLocal(db){
 /* Call outcomes, ownership and today's assignments. Small sheet, one call, and
    it is what makes the screen agree with what the other SMREs have done. */
 function ins3LoadStates(){
-  jgetRaw('inscrm3_states', {}, function(res){
+  jgetRaw('inscrm3_states', {owner:ins3Me()}, function(res){
     if(!res || !Array.isArray(res.rows)) return;
     const m={};
     for(let i=0;i<res.rows.length;i++){
