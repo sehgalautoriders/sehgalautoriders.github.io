@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 24;
-window.HERO_BUILD = 'R24-2026.08.03.2';
+window.HERO_BUILD = 'R25-2026.08.04.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -14123,7 +14123,15 @@ function ins2PaintCharts(){
         return '<div class="ins2-board-row">'
           +'<img class="ins2-board-av" src="assets/'+avatars[i%avatars.length]+'" alt="" onerror="this.style.visibility=\'hidden\'">'
           +'<div class="ins2-board-n">'+(i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'')+ins2Esc(a.name)+'</div>'
-          +'<div style="font-size:11px;color:var(--steel);font-weight:700">'+a.calls+' calls</div>'
+          /* CALLS AND CUSTOMERS ARE NOT THE SAME NUMBER, AND THE BOARD SAID ONLY ONE OF THEM.
+             04-Aug-2026: the board showed "Ravi Pimperkar 13 calls" while the InsuranceCRM
+             sheet held exactly two touched rows — thirteen call-backs to ONE customer. The
+             count was arithmetically right (backend sums the 'Calls' column) and read as
+             thirteen customers, which is the opposite of the truth. byAgent.touched is
+             incremented once per ROW in insCrmStats2, so it is already the distinct-customer
+             count — nothing new is needed from the server. */
+          +'<div style="font-size:11px;color:var(--steel);font-weight:700">'+a.calls+' call'+(a.calls===1?'':'s')
+            +' · '+(a.touched||0)+' customer'+((a.touched||0)===1?'':'s')+'</div>'
           +'<div class="ins2-board-v">'+a.won+' ✓</div></div>'; }).join('')
     : '<div class="ins2-empty-s">The board fills up as the team saves call outcomes.</div>';
 }

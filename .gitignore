@@ -33,3 +33,8 @@
 # .nojekyll: Pages' Jekyll build silently DROPS dot-folders, so without this
 # file /.well-known/assetlinks.json 404s and the APK grows a browser URL bar.
 !.nojekyll
+# 04-Aug-2026: manual.html is the staff owner's manual, English + Marathi in one
+# page with the mascots embedded as data: URIs. It is self-contained on purpose —
+# it can be opened from /manual.html, saved, or sent on WhatsApp as a single file.
+# No customer data of any kind is in it. Whitelisted by NAME, as above.
+!manual.html
