@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 25;
-window.HERO_BUILD = 'R28-2026.08.04.3';
+window.HERO_BUILD = 'R28-2026.08.04.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3034,7 +3034,26 @@ function clearVolatileUserCache(){
     rm.forEach(function(k){ localStorage.removeItem(k); });
   }catch(e){}
 }
-function logout(){ USER = null; try{ localStorage.removeItem('sehgalhero_user'); localStorage.removeItem('sehgalhero_user_ts'); }catch(e){} clearVolatileUserCache(); showView('login'); }
+/* R28 04-Aug-2026. The offline renewal book is 74,865 customers — names, both
+   mobiles, chassis, engine and policy numbers — sitting in IndexedDB in PLAIN
+   TEXT. Chrome does not encrypt it; the origin sandbox stops other websites
+   reading it and app-private storage stops other apps, but anyone who unlocks
+   the phone, or pulls a backup off it, can read the lot.
+
+   Until this was added, logout() cleared localStorage and the KV cache and left
+   the book untouched — so an SMRE who left the company walked out with the
+   entire customer base on their phone. Logging out now takes it back.
+
+   Deliberately fire-and-forget: logout must never hang or fail because a
+   database delete is slow or blocked by another open tab. */
+function ins3WipeLocal(){
+  try{
+    if(!window.indexedDB) return;
+    INS3.rows=[]; INS3.keys=[]; INS3.state={}; INS3.total=0; INS3.ready=false; INS3.sel=-1;
+    indexedDB.deleteDatabase('heroIns3');
+  }catch(e){}
+}
+function logout(){ USER = null; try{ localStorage.removeItem('sehgalhero_user'); localStorage.removeItem('sehgalhero_user_ts'); }catch(e){} clearVolatileUserCache(); try{ ins3WipeLocal(); }catch(e){} showView('login'); }
 
 function fpOpen(){
   document.getElementById('fp-modal').style.display='block';
@@ -14547,6 +14566,7 @@ function ins3Say(kind, txt, pct){
 async function ins3Load(force){
   if(INS3.syncing) return;
   INS3.syncing=true;
+  ins3Render();          /* so the hint says "getting the book", not "tap Sync now" */
   let db=null;
   try{ db=await ins3Open(); }
   catch(e){
@@ -14774,7 +14794,13 @@ function ins3Boot(force){
   const old=document.querySelector('#view-insurance .ins2'); if(old) old.style.display='none';
   const root=document.getElementById('ins3-root'); if(root) root.style.display='';
   ins3Shell();
-  if(INS3.ready && !force){ ins3Render(); ins3LoadStates(); }
+  /* Paint immediately, before the sync starts. Without this the chips, the tier
+     counts and the list are not drawn until ins3LoadLocal runs at the END of
+     the download, so for the two or three minutes the first sync takes the
+     screen is blank and the hint reads "Searches all 0 policies" — it looks
+     broken while it is working. Ravi photographed exactly this on 04-Aug-2026. */
+  ins3Render();
+  if(INS3.ready && !force){ ins3LoadStates(); }
   else ins3Load(force);
 }
 
@@ -14799,8 +14825,7 @@ function ins3Shell(){
           +'oninput="ins3OnQ(this.value)" autocomplete="off" spellcheck="false">'
         +'<button class="x" onclick="ins3ClearQ()" title="Clear">✕</button>'
       +'</div>'
-      +'<div class="ins3-searchhint" id="ins3-hint">Searches all '
-        +'<b id="ins3-tot">0</b> policies — every column of the renewal sheet, whichever tab is selected.</div>'
+      +'<div class="ins3-searchhint" id="ins3-hint">Getting the book onto this phone…</div>'
     +'</div>'
     +'<div class="ins3-strip" id="ins3-buckets"></div>'
     +'<div class="ins3-strip" id="ins3-filters"></div>'
@@ -14850,8 +14875,19 @@ function ins3More(){ INS3.shown+=120; ins3Render(); }
 
 function ins3Render(){
   if(!document.getElementById('ins3-root')) return;
-  const tot=document.getElementById('ins3-tot');
-  if(tot) tot.textContent=(INS3.total||0).toLocaleString('en-IN');
+
+  /* The hint must never claim "0 policies" while the book is still arriving —
+     that reads as a failure. It says what is actually true at that moment. */
+  const hint=document.getElementById('ins3-hint');
+  if(hint){
+    hint.innerHTML = INS3.ready
+      ? 'Searches all <b>'+(INS3.total||0).toLocaleString('en-IN')+'</b> policies — '
+        + 'name, reg no, both mobiles, chassis, engine, policy number, model and city — '
+        + 'whichever tab is selected.'
+      : (INS3.syncing
+          ? 'Getting the book onto this phone. It happens once. Searching switches on the moment it finishes.'
+          : 'The book is not on this device yet — tap <b>↻ Sync now</b>.');
+  }
 
   ins3PaintChips();
   const view=ins3Filter();
