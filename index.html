@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 24;
-window.HERO_BUILD = 'R24-2026.08.03.2';
+window.HERO_RELEASE = 27;
+window.HERO_BUILD = 'R27-2026.08.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1919,25 +1919,65 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
 <!-- ================= ALL-INDIA PART FINDER (v11.2) ================= -->
 <!-- ================= R22: PARTS SCANNER (Parts / WM / GM / CEO) ================= -->
+<!-- ===== PARTS SCANNER  —  redesigned R26, 03-Aug-2026 =========================
+     Ravi: "uis for part scanner. now it is very boring. I had given you many
+     many mascots, robots, cartoon characters to be embedded in the app."
+     He was right — 4 of the 33 characters were on screen anywhere in the app.
+     Every id below is the one the scanner JS already writes to (ps-shoot-btn,
+     ps-preview, ps-img, ps-status, ps-result, ps-partno, ps-verify, ps-desc,
+     ps-mrp, ps-barcode, ps-extra-wrap, ps-guess-wrap, ps-remarks, ps-recent),
+     so psPickPhoto / psAnalyze / psVerifyPart / psSaveScan are untouched.
+     ========================================================================= -->
 <div id="view-partscan" style="display:none">
-  <div class="wrap">
-    <div class="hu-topbar">
-      <h2>📷 Parts Scanner</h2>
-      <button class="btn ghost sm" onclick="showView('home')">‹ Home</button>
+  <div class="psx">
+
+    <!-- hero: the Hero robot, a moving scan line, and what the thing does -->
+    <div class="psx-hero">
+      <button class="psx-back" onclick="showView('home')" aria-label="Home">‹</button>
+      <div class="psx-hero-txt">
+        <div class="psx-kicker">Smart parts scanner</div>
+        <h2 class="psx-title">Snap · Scan · Get&nbsp;all&nbsp;the&nbsp;details</h2>
+        <div class="psx-sub">Old Hero Honda stock included</div>
+        <div class="psx-pills">
+          <span>Part No</span><span>Price</span><span>Barcode</span><span>Models</span>
+        </div>
+      </div>
+      <img class="psx-bot" src="assets/17_red_robot_superhero.png" alt="" onerror="this.style.display='none'">
+      <div class="psx-scanline"></div>
     </div>
-    <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-        <img src="assets/19_parts_box_robot.png" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.style.display='none'">
-        <div class="hint" style="margin:0">Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads part no, description, price, barcode and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy %.</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn" id="ps-shoot-btn" style="flex:1 1 140px" onclick="psPickPhoto('camera')">📷 Open Camera</button>
-        <button class="btn ghost" style="flex:1 1 140px" onclick="psPickPhoto('gallery')">🖼 Pick from Gallery</button>
-      </div>
-      <div id="ps-preview" style="margin-top:12px;display:none"><img id="ps-img" style="max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line)"></div>
-      <div id="ps-status" class="hint" style="margin-top:8px"></div>
-      <div id="ps-result" style="display:none;margin-top:12px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-bottom:6px">Check &amp; correct before saving</div>
+
+    <!-- what it reads -->
+    <div class="psx-tip">
+      <img src="assets/19_parts_box_robot.png" alt="" onerror="this.style.display='none'">
+      <div>Photograph the sticker / plate on any part — old HeroHonda stock included. The AI reads <b>part no, description, price, barcode</b> and <b>every extra field printed</b>; anything new becomes a new column in the backend sheet. If there is no sticker at all, it identifies the part and probable models with an accuracy&nbsp;%.</div>
+    </div>
+
+    <!-- the two ways in -->
+    <div class="psx-actions">
+      <button class="psx-act cam" id="ps-shoot-btn" onclick="psPickPhoto('camera')">
+        <span class="psx-act-ic">📷</span>
+        <span class="psx-act-t">Open Camera<small>Scan the sticker / plate</small></span>
+        <span class="psx-act-go">›</span>
+      </button>
+      <button class="psx-act gal" onclick="psPickPhoto('gallery')">
+        <span class="psx-act-ic">🖼</span>
+        <span class="psx-act-t">Pick from Gallery<small>Choose an image</small></span>
+        <span class="psx-act-go">›</span>
+      </button>
+    </div>
+
+    <!-- quick options. Every tile goes somewhere that exists. -->
+    <div class="psx-card">
+      <div class="psx-h">Quick options</div>
+      <div class="psx-quick" id="psx-quick"></div>
+    </div>
+
+    <!-- the scan in progress -->
+    <div class="psx-card" id="psx-work" style="display:none">
+      <div id="ps-preview" style="display:none"><img id="ps-img" alt="Scanned part"></div>
+      <div id="ps-status" class="psx-status"></div>
+      <div id="ps-result" style="display:none">
+        <div class="psx-h" style="margin-top:12px">Check &amp; correct before saving</div>
         <div class="fld"><label>Part No</label><input id="ps-partno" style="text-transform:uppercase" onchange="psVerifyPart()"></div>
         <!-- R24: the scanned number checked against the all-India Hero parts
              master (55,681 parts), not against the 8,239 the dealer has billed.
@@ -1952,9 +1992,13 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
         <button class="btn" onclick="psSaveScan()">💾 Save to Backend Sheet</button>
       </div>
     </div>
-    <div class="card">
-      <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Recent Scans</div>
-      <div id="ps-recent"><div class="hint">Loading…</div></div>
+
+    <!-- what the scanner has actually done -->
+    <div class="psx-stats" id="psx-stats"></div>
+
+    <div class="psx-card">
+      <div class="psx-h">Recent scans <span class="psx-h-sub" id="psx-recent-sub"></span></div>
+      <div id="ps-recent"><div class="psx-skel"></div><div class="psx-skel"></div><div class="psx-skel"></div></div>
     </div>
   </div>
 </div>
@@ -14230,4 +14274,1697 @@ function ins2MarutiUpload(inp){
   });
 }
 </script>
+
+<!-- ==========================================================================
+     R25 (03-Aug-2026)  —  ESTIMATE PART/LABOUR RULES · PARTS TREE · SA DAY BOARD
+
+     Ravi, 03-Aug-2026, in his words and what each line became:
+
+     "even I am not able to add the parts."
+         The only way in was Category -> Sub-category -> Part. When the parts
+         master carries a thin or blank Category the SA is stuck on an empty
+         dropdown with nothing to pick, and there was no way round it. There is
+         now a search box over all 55k parts (name OR part number), and a typed
+         fallback for a part the master has never heard of. The old dropdowns
+         still work exactly as before for anyone who prefers them.
+
+     "if a part is added corresponding labour to be added. if there are 3-4
+      labours for the corresponding part, then sa should be able to remove all
+      but 1 means atleast 1 and the one with highest ratio of parts:labour...
+      parts value 400, 3 labours of 100, 290, 150, then 290 labour prevails.
+      sa can remove 100 and 150 if he wants to. if the part is removed then all
+      labours of that part are removed automatically. but only labour of that
+      part if added should be able to take."
+         Four rules, enforced in one place (esR25Sync) and drawn as one panel:
+           1. a part brings its labour with it                — already true
+           2. the dearest labour is the primary and is kept   — new
+           3. the others can be struck off, never the last    — new
+           4. the part goes, every labour of it goes with it  — already true
+         Plus "labour only": every part in the search carries a 🔧 button that
+         puts its labour on the estimate WITHOUT the part. That labour is
+         standalone — it is not tied to a part, so nothing removes it later.
+
+     "plus I want the tree in L india parts module."
+         Category -> Sub-category -> Part, with search, inside All-India Part
+         Finder. Tapping a part drops its number into the search box and runs
+         the all-India stock search.
+
+     "why in my login insurance customers all are not seen."
+         The screen opens on "Expiring today" and stays inside whatever range
+         and filters are set. It never said so. There is now a line under the
+         filter bar that names exactly what is being held back, and one button
+         that clears the lot.
+
+     "my login should be like how many customers called for the day. MTD
+      conversion and other summary parameters. but nothing is there."
+         A day board above the tiles: called today, closed today, month to
+         date, MTD conversion, follow-ups due, never-called.
+
+     "insurance standard reasons."
+         The 26 dispositions now ship inside the app. If the server sends its
+         own list that one wins; if it sends nothing the buttons are still
+         there and a call can still be closed.
+
+     Wholly additive. Nothing above this line is edited — the functions this
+     block replaces are replaced on `window` at the end of parsing, so every
+     existing call site picks the new one up with no markup change.
+     ========================================================================== -->
+<style>
+/* ---- linked part/labour panel (estimate) ---- */
+#es-chips .r25-grp{border:1px solid var(--line);border-radius:11px;padding:9px 10px;margin:8px 0;background:#fbfcfe}
+#es-chips .r25-part{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:750;line-height:1.3}
+#es-chips .r25-part .r25-nm{flex:1;min-width:0;overflow-wrap:break-word}
+#es-chips .r25-part .r25-amt{font-weight:850;white-space:nowrap}
+#es-chips .r25-pn{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:var(--steel);font-weight:700}
+#es-chips .r25-labs{margin:7px 0 0;padding:7px 0 0;border-top:1px dashed #e3e8ef}
+#es-chips .r25-lab{display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 0;line-height:1.35}
+#es-chips .r25-lab .r25-nm{flex:1;min-width:0;overflow-wrap:break-word}
+#es-chips .r25-tag{font-size:9.5px;font-weight:850;letter-spacing:.03em;padding:2px 6px;border-radius:5px;white-space:nowrap}
+#es-chips .r25-tag.keep{background:#dcfce7;color:#166534}
+#es-chips .r25-tag.ratio{background:#eef2f7;color:#475569}
+#es-chips .r25-x{border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:7px;
+  width:26px;height:26px;font-size:13px;font-weight:800;cursor:pointer;flex:0 0 26px;line-height:1;font-family:inherit}
+#es-chips .r25-lock{color:#94a3b8;font-size:13px;flex:0 0 26px;text-align:center;cursor:help}
+#es-chips .r25-foot{font-size:10.5px;color:var(--steel);font-weight:650;margin-top:6px}
+#es-chips .r25-solo{margin-top:8px}
+
+/* ---- part search (estimate) ---- */
+.r25-search{margin-top:9px}
+.r25-search input{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--card,#fff);color:inherit}
+.r25-res{margin-top:7px;max-height:290px;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:9px}
+.r25-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #eef1f5}
+.r25-row:last-child{border-bottom:0}
+.r25-row .r25-nm{flex:1;min-width:0;font-size:12.5px;font-weight:650;line-height:1.3;overflow-wrap:break-word}
+.r25-row .r25-sub{font-size:10.5px;color:var(--steel);font-weight:650;margin-top:2px}
+.r25-row .r25-amt{font-size:12.5px;font-weight:850;white-space:nowrap}
+.r25-add{border:0;background:var(--ink,#0f172a);color:#fff;border-radius:8px;height:30px;min-width:30px;padding:0 8px;
+  font-size:14px;font-weight:800;cursor:pointer;flex:0 0 auto;font-family:inherit;line-height:1}
+.r25-add.lab{background:#0e7490;font-size:12px}
+.r25-note{font-size:11px;color:var(--steel);font-weight:650;padding:7px 2px;line-height:1.45}
+.r25-note b{color:var(--ink,#0f172a)}
+
+/* ---- parts tree (All-India Part Finder) ---- */
+#pf-tree{border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);margin-bottom:12px;overflow:hidden}
+#pf-tree>summary{cursor:pointer;padding:10px 12px;font-size:13px;font-weight:800;background:#f8fafc;list-style:none}
+#pf-tree>summary::-webkit-details-marker{display:none}
+#pf-tree .pf-tb{padding:11px 12px 13px}
+#pf-tree input.pf-q{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--card,#fff);color:inherit}
+#pf-tree .pf-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+#pf-tree .pf-chip{border:1.5px solid var(--line);background:var(--card,#fff);color:var(--steel);border-radius:999px;
+  padding:5px 11px;font-size:11.5px;font-weight:750;cursor:pointer;font-family:inherit;white-space:nowrap}
+#pf-tree .pf-chip.on{background:#0f172a;border-color:#0f172a;color:#fff}
+#pf-tree .pf-list{margin-top:10px;max-height:340px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#pf-tree .pf-item{display:flex;align-items:center;gap:9px;padding:8px 3px;border-bottom:1px solid #eef1f5;cursor:pointer}
+#pf-tree .pf-item:last-child{border-bottom:0}
+#pf-tree .pf-item .n{flex:1;min-width:0;font-size:12.5px;font-weight:650;line-height:1.3;overflow-wrap:break-word}
+#pf-tree .pf-item .p{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--steel);font-weight:700;margin-top:2px}
+#pf-tree .pf-item .a{font-size:12px;font-weight:850;white-space:nowrap}
+#pf-tree .pf-hint{font-size:11px;color:var(--steel);font-weight:650;padding:10px 2px;line-height:1.45}
+
+/* ---- insurance day board ---- */
+.ins2-day{background:var(--card,#fff);border-radius:16px;padding:12px 13px;margin-bottom:11px;box-shadow:0 2px 10px rgba(15,23,42,.07)}
+.ins2-day-h{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);
+  margin-bottom:9px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ins2-day-h span.sub{font-weight:700;text-transform:none;letter-spacing:0;color:#94a3b8;font-size:10.5px}
+.ins2-day-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.ins2-day-c{background:#f8fafc;border-radius:11px;padding:8px 9px}
+.ins2-day-n{font-size:19px;font-weight:850;line-height:1.1;letter-spacing:-.5px}
+.ins2-day-l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--steel);margin-top:2px;line-height:1.25}
+.ins2-scope{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:11px;padding:9px 11px;
+  font-size:11.5px;font-weight:650;line-height:1.5;margin-bottom:10px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.ins2-scope button{border:0;background:#9a3412;color:#fff;border-radius:8px;padding:6px 11px;font-size:11.5px;
+  font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
+@media (prefers-color-scheme:dark){ .ins2-day-c{background:rgba(148,163,184,.12)} }
+</style>
+<script>
+"use strict";
+/* ==========================================================================
+   1.  PART  ->  LABOUR.   The rules, in one place.
+
+   Every labour a part brings carries _fromPn (the part number) and/or
+   _fromPart (the part name). That tag is written by three different adders —
+   the local MD_PartLabourMap, the backend ee_forpart engine and the repair
+   tree — and read by esEnforceLinkedLabour_ when the estimate is computed.
+   None of that changes. What this adds is the grading INSIDE a part's group:
+
+     primary  the dearest labour of the group. Highest labour:part ratio, so
+              on a ₹400 part with labour of 100 / 290 / 150 it is the 290.
+              It is what survives if the SA strikes everything else off.
+     locked   the last labour standing for a part. There is always work in
+              fitting a part, so a part on an estimate with no labour at all
+              is not a state the SA is allowed to reach.
+
+   _locked was previously set once at add time and meant "never removable".
+   It is now derived here on every redraw and means "this is the last one".
+   ========================================================================== */
+function esR25Key(v){ return String(v==null?'':v).trim().toUpperCase(); }
+
+/* The part a labour line belongs to, or '' for standalone labour. Matched on
+   part number first — a name can be typed two ways, a number cannot. */
+function esR25OwnerOf(lb){
+  if(!lb || (!lb._fromPart && !lb._fromPn)) return '';
+  var fp=esR25Key(lb._fromPn), fl=esR25Key(lb._fromPart);
+  var parts=(typeof ES_ADDPART!=='undefined' && ES_ADDPART) || [];
+  for(var i=0;i<parts.length;i++){
+    if(fp && fp===esR25Key(parts[i].pn)) return esR25Key(parts[i].pn)||esR25Key(parts[i].l);
+  }
+  for(var j=0;j<parts.length;j++){
+    if(fl && fl===esR25Key(parts[j].l)) return esR25Key(parts[j].pn)||esR25Key(parts[j].l);
+  }
+  return '';   /* its part has already gone — esEnforceLinkedLabour_ drops it */
+}
+function esR25PartKey(p){ return esR25Key(p&&p.pn)||esR25Key(p&&p.l); }
+
+/* Regrade every group. Called before anything is drawn or removed. */
+function esR25Sync(){
+  var labs=(typeof ES_ADDLAB!=='undefined' && ES_ADDLAB) || [];
+  var parts=(typeof ES_ADDPART!=='undefined' && ES_ADDPART) || [];
+  var groups={};
+  parts.forEach(function(p){ groups[esR25PartKey(p)]={part:p, idx:[]}; });
+
+  labs.forEach(function(lb,i){
+    if(!lb) return;
+    lb._primary=false; lb._ratio=0; lb._grpSize=0; lb._grpKey='';
+    if(!lb._fromPart && !lb._fromPn){ lb._locked=false; return; }
+    var k=esR25OwnerOf(lb);
+    if(!k || !groups[k]){ lb._locked=false; return; }
+    lb._grpKey=k; groups[k].idx.push(i);
+  });
+
+  Object.keys(groups).forEach(function(k){
+    var g=groups[k], partP=Number(g.part&&g.part.p)||0;
+    /* Dearest first. That IS the highest labour:part ratio — the part price is
+       the same denominator for every labour in the group. */
+    g.idx.sort(function(a,b){ return (Number(labs[b].p)||0)-(Number(labs[a].p)||0); });
+    g.idx.forEach(function(i,n){
+      var lb=labs[i];
+      lb._primary=(n===0);
+      lb._ratio=partP>0 ? (Number(lb.p)||0)/partP : 0;
+      lb._grpSize=g.idx.length;
+      lb._locked=(g.idx.length===1);       /* the last one cannot be struck off */
+    });
+  });
+  return groups;
+}
+
+function esR25Msg(txt, kind){
+  var m=document.getElementById('es-msg'); if(!m) return;
+  m.style.color = kind==='ok' ? 'var(--ok,#166534)' : (kind==='bad' ? 'var(--signal-d,#b91c1c)' : 'var(--steel,#64748b)');
+  m.textContent=txt;
+  var mine=txt;
+  setTimeout(function(){ if(m.textContent===mine) m.textContent=''; }, kind==='bad'?7000:6000);
+}
+
+/* Strike one labour off. Refused when it is the last one its part has. */
+function esR25RemoveLabour(i){
+  esR25Sync();
+  var lb=ES_ADDLAB[i]; if(!lb) return;
+  if((lb._fromPart||lb._fromPn) && lb._grpKey && lb._grpSize<=1){
+    esR25Msg('🔒 '+(lb.l||'This labour')+' is the last labour on '+(lb._fromPart||'this part')
+      +'. A part cannot be billed with no labour against it — remove the part itself if there is no work to charge.');
+    return;
+  }
+  var name=lb.l||'';
+  ES_ADDLAB.splice(i,1);
+  esR25Sync();
+  esDrawChips();
+  esR25Msg('✕ '+name+' removed.'+((lb._fromPart||lb._fromPn)?' The part keeps its remaining labour.':''));
+}
+
+/* Take a part off. Every labour it brought goes with it — unless another part
+   still on the estimate carries the same labour, which is the shared-fitment
+   case (one remove/refit covering two parts). */
+function esR25RemovePart(i){
+  var removed=ES_ADDPART[i]; if(!removed) return;
+  var pk=esR25Key(removed.pn), lk=esR25Key(removed.l);
+  ES_ADDPART.splice(i,1);
+  var dropped=[];
+  ES_ADDLAB=(ES_ADDLAB||[]).filter(function(lb){
+    var fp=esR25Key(lb._fromPn), fl=esR25Key(lb._fromPart);
+    if(!fp && !fl) return true;                                  /* standalone */
+    var mine=(fp&&pk&&fp===pk)||(fl&&lk&&fl===lk);
+    if(!mine) return true;
+    var shared=(ES_ADDPART||[]).some(function(p){
+      return (fp&&fp===esR25Key(p.pn)) || (fl&&fl===esR25Key(p.l));
+    });
+    if(shared) return true;
+    dropped.push(lb.l||lb.code||'');
+    return false;
+  });
+  esR25Sync();
+  esDrawChips();
+  if(dropped.length) esR25Msg('🔗 '+removed.l+' removed — its labour came off with it: '+dropped.join(', ')+'.');
+  else esR25Msg('✕ '+removed.l+' removed.');
+}
+
+/* ---- the panel -----------------------------------------------------------
+   Parts and their labour are drawn together, because that is the relationship
+   the SA has to explain to the customer. Standalone labour stays a plain chip
+   underneath, because it answers to nothing. */
+function esR25ChipsHtml(){
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){
+    return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); };
+  var money=function(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } };
+  esR25Sync();
+  var labs=ES_ADDLAB||[], parts=ES_ADDPART||[], html='';
+
+  parts.forEach(function(p,pi){
+    var k=esR25PartKey(p);
+    var mine=[];
+    labs.forEach(function(lb,li){ if(lb._grpKey===k) mine.push({lb:lb,i:li}); });
+    mine.sort(function(a,b){ return (Number(b.lb.p)||0)-(Number(a.lb.p)||0); });
+    var labTotal=mine.reduce(function(s,x){ return s+(Number(x.lb.p)||0); },0);
+    var partP=Number(p.p)||0;
+
+    html+='<div class="r25-grp">'
+      +'<div class="r25-part">'
+        +'<span>\u2699\uFE0F</span>'
+        +'<span class="r25-nm">'+E(p.l)+(p.pn?' <span class="r25-pn">['+E(p.pn)+']</span>':'')+'</span>'
+        +'<span class="r25-amt">'+money(partP)+'</span>'
+        +'<button type="button" class="r25-x" title="Remove this part and all its labour" onclick="esR25RemovePart('+pi+')">\u2715</button>'
+      +'</div>';
+
+    if(mine.length){
+      html+='<div class="r25-labs">'+mine.map(function(x){
+        var lb=x.lb, pct=lb._ratio>0 ? Math.round(lb._ratio*100)+'% of part' : '';
+        return '<div class="r25-lab">'
+          +'<span>\uD83D\uDD27</span>'
+          +'<span class="r25-nm">'+E(lb.l)+(lb.code?' <span class="r25-pn">['+E(lb.code)+']</span>':'')+'</span>'
+          +(lb._primary?'<span class="r25-tag keep">\u2B50 KEEPS</span>':'')
+          +(pct?'<span class="r25-tag ratio">'+pct+'</span>':'')
+          +'<span class="r25-amt">'+money(lb.p)+'</span>'
+          +(lb._locked
+              ? '<span class="r25-lock" title="The last labour on this part. Remove the part itself if there is no work to charge.">\uD83D\uDD12</span>'
+              : '<button type="button" class="r25-x" title="Strike this labour off — the part keeps the rest" onclick="esR25RemoveLabour('+x.i+')">\u2715</button>')
+          +'</div>';
+      }).join('')+'</div>'
+      +'<div class="r25-foot">Parts : Labour on this part \u2014 '+money(partP)+' : '+money(labTotal)
+        +(mine.length>1?' \u00B7 '+mine.length+' labour lines, the dearest is kept and at least one must stay':' \u00B7 the only labour on this part')
+      +'</div>';
+    } else {
+      html+='<div class="r25-foot">No labour mapped to this part yet \u2014 add the fitment labour by hand from the labour list above.</div>';
+    }
+    html+='</div>';
+  });
+
+  var solo=[];
+  labs.forEach(function(lb,i){ if(!lb._grpKey) solo.push({lb:lb,i:i}); });
+  if(solo.length){
+    html+='<div class="r25-solo">'+solo.map(function(x){
+      return '<div class="chip"><span>\uD83D\uDD27 '+E(x.lb.l)
+        +(x.lb.code?' <b style="font-size:10px;color:var(--steel)">['+E(x.lb.code)+']</b>':'')+'</span>'
+        +'<span><b>'+money(x.lb.p)+'</b> <span class="x" onclick="esR25RemoveLabour('+x.i+')">\u2715</span></span></div>';
+    }).join('')+'</div>';
+  }
+  return html;
+}
+
+/* ==========================================================================
+   2.  ADDING A PART.   Search first, dropdowns second, typing third.
+
+   esAddPartFn (the + beside the dropdowns) still exists and still works. It
+   now hands the actual work to esR25AddPart, which is also what the search
+   rows and the typed fallback call, so a part added any of the three ways
+   gets identically treated: learn-back, local labour map, backend top-up.
+   ========================================================================== */
+var ES_R25_LEARNED={};
+
+function esR25AddPart(row, price, opts){
+  opts=opts||{};
+  if(!row) return false;
+  price=Number(price)||0;
+  if(!(price>0)){ esR25Msg('Type the price for '+(row.l||'this part')+' before adding it.','bad'); return false; }
+  var pn=String(row.pn||'').trim();
+  if(pn && (ES_ADDPART||[]).some(function(x){ return esR25Key(x.pn)===esR25Key(pn); })){
+    esR25Msg(pn+' is already on this estimate.','bad'); return false;
+  }
+  ES_ADDPART.push({l:row.l, p:price, pn:pn, _typed:!!opts.typed});
+
+  /* learn-back: teach the master this model's price for this part */
+  try{
+    if(pn && !ES_R25_LEARNED[pn]){
+      ES_R25_LEARNED[pn]=1;
+      jpost({type:'learn_part', pn:pn, model:(typeof esCurrentModelUP==='function'?esCurrentModelUP():''),
+             price:(opts.typed?price:0), by:(typeof USER!=='undefined'&&USER&&(USER.personName||USER.empno))||''});
+    }
+  }catch(e){}
+
+  var added=esR25AttachLabour(row.l, pn, price);
+  esR25Sync();
+  esDrawChips();
+  if(added.length) esR25Msg('\uD83D\uDD17 '+row.l+' added with its labour: '+added.join(', ')+'. The dearest is kept; the rest can be struck off.','ok');
+  else esR25Msg('\u2699\uFE0F '+row.l+' added. No labour is mapped to it \u2014 add the fitment labour by hand.','ok');
+
+  if(pn) esR25BackendLabour(row.l, pn);
+  return true;
+}
+
+/* A labour line that is already on the estimate untagged \u2014 the SA added it on
+   its own, or added it "labour only" before deciding to fit the part after all
+   \u2014 is ADOPTED by the part rather than skipped. If it were left standing on its
+   own it would survive the part being removed, and a labour line with no part
+   behind it on a printed estimate is the one thing that cannot be allowed to
+   happen. Labour already owned by a DIFFERENT part is left alone: that is the
+   shared-fitment case and its first owner keeps it. */
+function esR25Adopt(lb, label, pn){
+  if(!lb) return false;
+  if(lb._fromPart || lb._fromPn) return false;   /* another part already owns it */
+  lb._fromPart=label; lb._fromPn=pn||''; lb._labourOnly=false;
+  return true;
+}
+
+/* Local map only. Returns the labour descriptions it put on. */
+function esR25AttachLabour(label, pn, partPrice){
+  var added=[];
+  var map=null;
+  try{ map=esFindLinkedLabours(label); }catch(e){}
+  if(!map || !map.labours) return added;
+  map.labours.forEach(function(lb){
+    var have=(ES_ADDLAB||[]).filter(function(x){ return esR25Key(x.l)===esR25Key(lb.l); })[0];
+    if(have){ if(esR25Adopt(have, label, pn)) added.push(lb.l+' (already on the estimate \u2014 now tied to this part)'); return; }
+    ES_ADDLAB.push({l:lb.l, p:Number(lb.p)||0, code:lb.code||'', cc:lb.cc||'',
+                    _fromPart:label, _fromPn:pn||''});
+    added.push(lb.l+' ('+((function(){ try{ return inr(lb.p); }catch(e){ return '\u20B9'+lb.p; } })())+')');
+  });
+  return added;
+}
+
+/* Backend top-up. MD_Tree_PartLink covers 8,239 part NUMBERS with supersession
+   and per-model rates — far more than anyone has mapped by hand. Never blocks,
+   never removes what the local map already put on. */
+function esR25BackendLabour(label, pn){
+  try{
+    jget('ee_forpart',{part:pn, model:(typeof esCurrentModelUP==='function'?esCurrentModelUP():'')}, function(res){
+      if(!res||!res.ok||!res.labour||!res.labour.length) return;
+      if(!(ES_ADDPART||[]).some(function(x){ return esR25Key(x.pn)===esR25Key(pn); })) return;  /* taken off mid-flight */
+      var gained=[];
+      res.labour.forEach(function(lb){
+        var code=String(lb.code||'').trim(), desc=String(lb.desc||'').trim();
+        if(!desc && !code) return;
+        var dup=(ES_ADDLAB||[]).filter(function(x){
+          return (code && esR25Key(x.code)===esR25Key(code)) || (desc && esR25Key(x.l)===esR25Key(desc)); })[0];
+        if(dup){ esR25Adopt(dup, label, pn); return; }   /* same rule as the local map */
+        ES_ADDLAB.push({l:desc||code, p:Number(lb.rate||0), code:code, cc:'', _fromPart:label, _fromPn:pn});
+        gained.push(desc||code);
+      });
+      if(!gained.length) return;
+      esR25Sync(); esDrawChips();
+      esR25Msg('\uD83D\uDD17 More labour found for '+label+': '+gained.join(', ')+'.','ok');
+    });
+  }catch(e){}
+}
+
+/* "but only labour of that part if added should be able to take" — the labour
+   of a part, on its own, with no part behind it. It is deliberately NOT tagged
+   _fromPart: nothing later removes it, and the SA can strike it off freely. */
+function esR25AddLabourOnly(idx){
+  var row=(ES_R25_RESULTS||[])[idx]; if(!row) return;
+  var map=null;
+  try{ map=esFindLinkedLabours(row.l); }catch(e){}
+  if(!map || !map.labours || !map.labours.length){
+    esR25Msg('No labour is mapped to '+row.l+' yet. Pick it from the labour list above instead.','bad');
+    return;
+  }
+  var added=[];
+  map.labours.forEach(function(lb){
+    if((ES_ADDLAB||[]).some(function(x){ return esR25Key(x.l)===esR25Key(lb.l); })) return;
+    ES_ADDLAB.push({l:lb.l, p:Number(lb.p)||0, code:lb.code||'', cc:lb.cc||'', _labourOnly:true});
+    added.push(lb.l);
+  });
+  esR25Sync(); esDrawChips();
+  esR25Msg(added.length
+    ? '\uD83D\uDD27 Labour only \u2014 '+added.join(', ')+' added without the part. It stands on its own and is not removed by anything.'
+    : 'That labour is already on this estimate.', added.length?'ok':'bad');
+}
+
+/* ---- search over the whole parts master --------------------------------- */
+var ES_R25_RESULTS=[], ES_R25_TIMER=null;
+
+function esR25Toks(s){ return String(s||'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); }
+
+function esR25Search(){
+  clearTimeout(ES_R25_TIMER);
+  ES_R25_TIMER=setTimeout(esR25SearchNow, 180);
+}
+function esR25SearchNow(){
+  var box=document.getElementById('es-part-q'), out=document.getElementById('es-part-res');
+  if(!box||!out) return;
+  var q=String(box.value||'').trim();
+  if(q.length<2){ ES_R25_RESULTS=[]; out.innerHTML=''; return; }
+  try{ esEnsurePartsReady(); }catch(e){}
+  var idx=(typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX) || {};
+  var all=idx.all||[];
+  if(!all.length){
+    out.innerHTML='<div class="r25-note">The parts master is still loading. Wait a moment and type again \u2014 '
+      +'or <b><a href="#" onclick="esR25TypedAdd();return false">add \u201C'+((typeof raviEsc==='function')?raviEsc(q):q)+'\u201D by typing the price</a></b>.</div>';
+    return;
+  }
+  var toks=esR25Toks(q);
+  var hits=[], loose=[];
+  for(var i=0;i<all.length && hits.length<400;i++){
+    var it=all[i], hay=(String(it.l||'')+' '+String(it.pn||'')).toUpperCase();
+    var ok=true;
+    for(var t=0;t<toks.length;t++){ if(hay.indexOf(toks[t])<0){ ok=false; break; } }
+    if(!ok) continue;
+    var forModel=true;
+    try{ forModel=esPartMatchesModel(it); }catch(e){}
+    if(forModel) hits.push(it); else loose.push(it);
+  }
+  /* Nothing for this model is not an answer the SA can use on an accidental
+     job, so the all-model matches are offered rather than hidden. */
+  var usingLoose=false;
+  if(!hits.length && loose.length){ hits=loose; usingLoose=true; }
+  hits.sort(function(a,b){
+    var au=String(a.l||'').toUpperCase(), bu=String(b.l||'').toUpperCase(), q0=toks[0]||'';
+    var ai=au.indexOf(q0), bi=bu.indexOf(q0);
+    if(ai!==bi) return (ai<0?99:ai)-(bi<0?99:bi);
+    return au<bu?-1:1;
+  });
+  ES_R25_RESULTS=hits.slice(0,40);
+  esR25RenderResults(q, hits.length, usingLoose);
+}
+function esR25RenderResults(q, total, usingLoose){
+  var out=document.getElementById('es-part-res'); if(!out) return;
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var money=function(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } };
+  if(!ES_R25_RESULTS.length){
+    out.innerHTML='<div class="r25-note">Nothing in the parts master matches <b>'+E(q)+'</b>. '
+      +'<a href="#" onclick="esR25TypedAdd();return false">Add it by typing the name and price</a> \u2014 '
+      +'it goes on the estimate as a normal part line.</div>';
+    return;
+  }
+  out.innerHTML=(usingLoose
+      ? '<div class="r25-note">Nothing matches for <b>'+E((typeof val==='function'?val('es-model'):'')||'this model')
+        +'</b>. Showing every model \u2014 check the part fits before adding.</div>'
+      : '')
+    + ES_R25_RESULTS.map(function(p,i){
+      return '<div class="r25-row">'
+        +'<div class="r25-nm">'+E(p.l)
+          +'<div class="r25-sub">'+(p.pn?E(p.pn)+' \u00B7 ':'')+E(p.cat||'')+(p.sub&&p.sub!=='General'?' \u203A '+E(p.sub):'')+'</div>'
+        +'</div>'
+        +'<div class="r25-amt">'+(p.price>0?money(p.price):'\u20B9 ?')+'</div>'
+        +'<button type="button" class="r25-add lab" title="Put only this part\u2019s labour on the estimate, without the part" onclick="esR25AddLabourOnly('+i+')">\uD83D\uDD27</button>'
+        +'<button type="button" class="r25-add" title="Add this part (its labour comes with it)" onclick="esR25AddFromSearch('+i+')">+</button>'
+      +'</div>';
+    }).join('')
+    + (total>ES_R25_RESULTS.length
+        ? '<div class="r25-note">'+total.toLocaleString('en-IN')+' parts match \u2014 showing the first '+ES_R25_RESULTS.length+'. Type more to narrow it.</div>'
+        : '');
+}
+function esR25AddFromSearch(i){
+  var row=(ES_R25_RESULTS||[])[i]; if(!row) return;
+  var price=Number(row.price)||0;
+  if(!(price>0)){
+    var t=prompt('No price on record for '+row.l+'.\nType the price:','');
+    price=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(price>0)) return;
+    if(esR25AddPart(row, price, {typed:true})) esR25ClearSearch();
+    return;
+  }
+  if(esR25AddPart(row, price)) esR25ClearSearch();
+}
+/* Last resort: a part the master has never heard of. Accidental jobs throw
+   these up constantly and the SA cannot be stopped by a missing master row. */
+function esR25TypedAdd(){
+  var box=document.getElementById('es-part-q');
+  var name=String((box&&box.value)||'').trim();
+  name=prompt('Part name as it should read on the estimate:', name)||'';
+  name=name.trim();
+  if(!name) return;
+  var pn=String(prompt('Hero part number (leave blank if not known):','')||'').trim().toUpperCase();
+  var price=Number(String(prompt('Price for '+name+':','')||'').replace(/[^0-9.]/g,''))||0;
+  if(!(price>0)){ esR25Msg('A part cannot go on the estimate without a price.','bad'); return; }
+  if(esR25AddPart({l:name, pn:pn, price:price}, price, {typed:true})) esR25ClearSearch();
+}
+function esR25ClearSearch(){
+  var box=document.getElementById('es-part-q'); if(box) box.value='';
+  var out=document.getElementById('es-part-res'); if(out) out.innerHTML='';
+  ES_R25_RESULTS=[];
+}
+
+/* Injected into the existing add-box rather than added to the markup, so the
+   part of the screen that already works is not touched. */
+function esR25MountSearch(){
+  if(document.getElementById('es-part-q')) return;
+  var chips=document.getElementById('es-chips'); if(!chips) return;
+  var box=document.createElement('div');
+  box.className='r25-search';
+  box.innerHTML='<input id="es-part-q" type="search" autocomplete="off" '
+    +'placeholder="\uD83D\uDD0E Search any part \u2014 name or part number" '
+    +'oninput="esR25Search()" onfocus="esEnsurePartsReady()">'
+    +'<div class="r25-res" id="es-part-res"></div>'
+    +'<div class="r25-note">Search finds a part whether or not it has a category. '
+    +'<b>+</b> adds the part and its labour \u00B7 <b>\uD83D\uDD27</b> adds only the labour, without the part.</div>';
+  chips.parentNode.insertBefore(box, chips);
+}
+
+/* ==========================================================================
+   3.  PARTS TREE  —  All-India Part Finder
+   Same index the estimate uses (ModelPart), so it loads once for both.
+   ========================================================================== */
+var PFT={cat:'', sub:'', q:''};
+
+function pfTreeMount(){
+  if(document.getElementById('pf-tree')) return;
+  var anchor=document.getElementById('pf-live-wrap'); if(!anchor) return;
+  var d=document.createElement('details');
+  d.id='pf-tree';
+  d.innerHTML='<summary>\uD83C\uDF32 Browse the parts tree \u2014 category \u203A sub-category \u203A part</summary>'
+    +'<div class="pf-tb">'
+      +'<input class="pf-q" id="pf-tree-q" type="search" autocomplete="off" placeholder="\uD83D\uDD0E Search the tree by name or part number" oninput="pfTreeSearch()">'
+      +'<div class="pf-chips" id="pf-tree-cats"></div>'
+      +'<div class="pf-chips" id="pf-tree-subs"></div>'
+      +'<div class="pf-list" id="pf-tree-list"></div>'
+    +'</div>';
+  anchor.parentNode.insertBefore(d, anchor.nextSibling);
+  d.addEventListener('toggle', function(){ if(d.open) pfTreeLoad(); });
+}
+function pfTreeLoad(){
+  var list=document.getElementById('pf-tree-list'); if(!list) return;
+  var idx=(typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX) || {};
+  if(!idx.all || !idx.all.length){
+    list.innerHTML='<div class="pf-hint">Loading the all-India parts master\u2026</div>';
+    try{ esEnsurePartsReady(); }catch(e){}
+    setTimeout(function(){
+      var i2=(typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX) || {};
+      if(i2.all && i2.all.length) pfTreePaint();
+      else list.innerHTML='<div class="pf-hint">The parts master did not load. Tap \u21BB Sync Now on the home screen, then reopen this panel.</div>';
+    }, 2500);
+    return;
+  }
+  pfTreePaint();
+}
+function pfTreePaint(){
+  var idx=ES_PART_INDEX||{}, cats=Object.keys(idx.cats||{}).sort();
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var cw=document.getElementById('pf-tree-cats');
+  if(cw) cw.innerHTML=cats.map(function(c){
+    var n=0, subs=idx.cats[c]||{};
+    Object.keys(subs).forEach(function(s){ n+=subs[s].length; });
+    return '<button class="pf-chip'+(PFT.cat===c?' on':'')+'" onclick="pfTreeCat(\''+String(c).replace(/'/g,"\\'")+'\')">'
+      +E(c)+' <b style="opacity:.6">'+n+'</b></button>';
+  }).join('');
+  pfTreeSubs();
+}
+function pfTreeCat(c){ PFT.cat=(PFT.cat===c?'':c); PFT.sub=''; pfTreePaint(); }
+function pfTreeSub(s){ PFT.sub=(PFT.sub===s?'':s); pfTreePaint(); }
+function pfTreeSubs(){
+  var idx=ES_PART_INDEX||{}, sw=document.getElementById('pf-tree-subs');
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  if(!sw) return;
+  if(!PFT.cat){ sw.innerHTML=''; pfTreeList(); return; }
+  var subs=Object.keys(idx.cats[PFT.cat]||{}).sort();
+  var real=subs.filter(function(s){ return s && s!=='General'; });
+  sw.innerHTML = real.length ? subs.map(function(s){
+      return '<button class="pf-chip'+(PFT.sub===s?' on':'')+'" onclick="pfTreeSub(\''+String(s).replace(/'/g,"\\'")+'\')">'
+        +E(s)+' <b style="opacity:.6">'+(idx.cats[PFT.cat][s]||[]).length+'</b></button>';
+    }).join('') : '';
+  pfTreeList();
+}
+function pfTreeSearch(){
+  var q=document.getElementById('pf-tree-q');
+  PFT.q=String((q&&q.value)||'').trim();
+  pfTreeList();
+}
+function pfTreeList(){
+  var list=document.getElementById('pf-tree-list'); if(!list) return;
+  var idx=ES_PART_INDEX||{};
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var money=function(n){ try{ return inr(n); }catch(e){ return '\u20B9'+Math.round(n||0); } };
+  var pool=[];
+  if(PFT.q){
+    var toks=esR25Toks(PFT.q);
+    pool=(idx.all||[]).filter(function(p){
+      var hay=(String(p.l||'')+' '+String(p.pn||'')).toUpperCase();
+      return toks.every(function(t){ return hay.indexOf(t)>=0; });
+    });
+  } else if(PFT.cat && PFT.sub){ pool=(idx.cats[PFT.cat]||{})[PFT.sub]||[];
+  } else if(PFT.cat){
+    var subs=idx.cats[PFT.cat]||{};
+    Object.keys(subs).forEach(function(s){ pool=pool.concat(subs[s]); });
+  } else {
+    list.innerHTML='<div class="pf-hint">Pick a category above, or type a name or part number to search all '
+      +((idx.all||[]).length).toLocaleString('en-IN')+' parts.</div>';
+    return;
+  }
+  var seen={}, rows=[];
+  pool.forEach(function(p){
+    var k=(p.pn||'')+'|'+(p.l||''); if(seen[k]) return; seen[k]=1; rows.push(p);
+  });
+  rows.sort(function(a,b){ return String(a.l||'')<String(b.l||'')?-1:1; });
+  var show=rows.slice(0,200);
+  if(!show.length){ list.innerHTML='<div class="pf-hint">Nothing here.</div>'; return; }
+  list.innerHTML=show.map(function(p){
+    return '<div class="pf-item" onclick="pfTreePick(\''+String(p.pn||'').replace(/'/g,'')+'\')">'
+      +'<div class="n">'+E(p.l)+'<div class="p">'+(p.pn?E(p.pn):'no part number on record')+'</div></div>'
+      +'<div class="a">'+(p.price>0?money(p.price):'\u20B9 ?')+'</div>'
+      +'<div style="font-size:15px;color:#0891b2">\uD83D\uDD0E</div>'
+    +'</div>';
+  }).join('')
+  + (rows.length>show.length ? '<div class="pf-hint">'+rows.length.toLocaleString('en-IN')
+      +' parts here \u2014 showing the first '+show.length+'. Search to narrow it.</div>' : '');
+}
+/* Tapping a part in the tree is the same as typing its number and pressing
+   Find Stock — the tree exists to save the typing, not to be a second screen. */
+function pfTreePick(pn){
+  if(!pn){ if(typeof pfInfo==='function') pfInfo('That part has no part number on record, so all-India stock cannot be searched for it.','warn'); return; }
+  var box=document.getElementById('pf-partno'); if(box) box.value=pn;
+  var d=document.getElementById('pf-tree'); if(d) d.open=false;
+  try{ pfSearch(); }catch(e){}
+  var t=document.getElementById('pf-info'); if(t) t.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* ==========================================================================
+   4.  INSURANCE  —  standard reasons, the day board, and saying out loud
+       why the list is shorter than the book.
+   ========================================================================== */
+
+/* The 26 dispositions, shipped in the app. The server list wins when it sends
+   one; this is what stands in when it does not, so an SMRE is never looking at
+   a customer she has just called with no way to record the outcome.
+     temp   what the disposition means for follow-up priority
+     closes the conversation is over, won or lost
+     won    a policy was actually sold                                        */
+var INS2_STD_DISPOSITIONS=[
+  {code:'NR_NOANSWER',   label:'No answer',                 group:'Not reached', temp:'WARM'},
+  {code:'NR_SWITCHEDOFF',label:'Switched off',              group:'Not reached', temp:'WARM'},
+  {code:'NR_BUSY',       label:'Busy \u2014 asked to call later', group:'Not reached', temp:'WARM'},
+  {code:'NR_WRONG',      label:'Wrong number',              group:'Not reached', temp:'COLD', closes:true},
+  {code:'NR_NOTINSVC',   label:'Number not in service',     group:'Not reached', temp:'COLD', closes:true},
+
+  {code:'IP_CALLBACK',   label:'Call back on a date',       group:'In progress', temp:'HOT'},
+  {code:'IP_QUOTED',     label:'Quote shared',              group:'In progress', temp:'HOT'},
+  {code:'IP_COMPARING',  label:'Comparing quotes',          group:'In progress', temp:'WARM'},
+  {code:'IP_VISIT',      label:'Wants us to visit',         group:'In progress', temp:'HOT'},
+  {code:'IP_DOCS',       label:'Documents pending',         group:'In progress', temp:'HOT'},
+  {code:'IP_PAYLINK',    label:'Payment link sent',         group:'In progress', temp:'HOT'},
+  {code:'IP_NEGOTIATE',  label:'Negotiating premium',       group:'In progress', temp:'HOT'},
+
+  {code:'LO_ELSEWHERE',  label:'Renewed elsewhere',         group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_OWNAGENT',   label:'Renewed with own agent',    group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_ONLINE',     label:'Bought online himself',     group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_PRICE',      label:'Premium too high',          group:'Lost', temp:'WARM'},
+  {code:'LO_SOLD',       label:'Vehicle sold',              group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_SCRAP',      label:'Vehicle scrapped',          group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_NOTUSED',    label:'Vehicle not in use',        group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_NOTINT',     label:'Not interested',            group:'Lost', temp:'COLD', closes:true},
+  {code:'LO_COMPLAINT',  label:'Unhappy with service',      group:'Lost', temp:'WARM'},
+
+  {code:'WON_FULL',      label:'Renewed with us',           group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_OD',        label:'Renewed \u2014 OD only',    group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_TP',        label:'Renewed \u2014 third party', group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_CAR',       label:'Renewed + car policy',      group:'Won', temp:'COLD', closes:true, won:true},
+  {code:'WON_FAMILY',    label:'Renewed a family vehicle',  group:'Won', temp:'COLD', closes:true, won:true}
+];
+function ins2EnsureDispositions(){
+  if(typeof INS2==='undefined') return;
+  if(!INS2.meta) INS2.meta={};
+  var d=INS2.meta.dispositions;
+  if(!d || !d.length){ INS2.meta.dispositions=INS2_STD_DISPOSITIONS.slice(); INS2.meta._stdReasons=true; }
+}
+
+/* ---- the day board -------------------------------------------------------
+   Built from what inscrm2_stats actually answers with. The 14-day trend is
+   the only per-day series the server sends, so month-to-date is summed from
+   the days of it that fall in this month and the tile says so when the series
+   does not reach back to the 1st. Nothing here is invented. */
+function ins2DayStats(){
+  var s=(typeof INS2!=='undefined' && INS2.stats) || {};
+  var tr=s.trend||[];
+  var now=new Date(), mStart=new Date(now.getFullYear(), now.getMonth(), 1);
+  /* the series ends today — index from the end to get each day's real date */
+  var days=tr.map(function(d,i){
+    var dt=new Date(now.getFullYear(), now.getMonth(), now.getDate()-(tr.length-1-i));
+    return {calls:Number(d.calls)||0, won:Number(d.won)||0, dt:dt};
+  });
+  var today=days.length?days[days.length-1]:{calls:0,won:0};
+  var mtd={calls:0, won:0, covered:0};
+  days.forEach(function(d){ if(d.dt>=mStart){ mtd.calls+=d.calls; mtd.won+=d.won; mtd.covered++; } });
+  var elapsed=now.getDate();
+  return {
+    todayCalls:today.calls, todayWon:today.won,
+    mtdCalls:mtd.calls, mtdWon:mtd.won,
+    mtdConv: mtd.calls ? Math.round(100*mtd.won/mtd.calls) : 0,
+    partial: mtd.covered < elapsed,           /* the series does not reach the 1st */
+    covered: mtd.covered, elapsed:elapsed,
+    bookConv: (Number(s.won)||0)+(Number(s.lost)||0) ? Math.round(100*(Number(s.won)||0)/((Number(s.won)||0)+(Number(s.lost)||0))) : 0,
+    dueToday:Number(s.dueToday)||0, untouched:Number(s.untouched)||0,
+    open:Number(s.open)||0, won:Number(s.won)||0, premium:Number(s.premium)||0,
+    haveTrend: days.length>0
+  };
+}
+function ins2PaintDay(){
+  var host=document.getElementById('ins2-kpis'); if(!host) return;
+  var el=document.getElementById('ins2-day');
+  if(!el){
+    el=document.createElement('div'); el.id='ins2-day'; el.className='ins2-day';
+    host.parentNode.insertBefore(el, host);
+  }
+  var d=ins2DayStats();
+  if(!d.haveTrend && !d.won && !d.open){
+    el.innerHTML='<div class="ins2-day-h"><span>My day</span></div>'
+      +'<div class="ins2-day-l" style="font-size:11.5px;text-transform:none;letter-spacing:0">'
+      +'The summary fills in as soon as calls are saved with an outcome.</div>';
+    return;
+  }
+  var tiles=[
+    {n:d.todayCalls, l:'Called today',        c:'#2563eb'},
+    {n:d.todayWon,   l:'Closed today',        c:'#166534'},
+    {n:d.mtdCalls,   l:'Calls MTD',           c:'#0891b2'},
+    {n:d.mtdWon,     l:'Closed MTD',          c:'#15803d'},
+    {n:d.mtdConv+'%',l:'MTD conversion',      c:'#7c3aed'},
+    {n:d.dueToday,   l:'Follow-ups due',      c:'#d97706'},
+    {n:d.untouched,  l:'Never called',        c:'#64748b'},
+    {n:d.open,       l:'In progress',         c:'#b45309'}
+  ];
+  var who=(typeof ins2MyName==='function' ? ins2MyName() : '')||'';
+  el.innerHTML='<div class="ins2-day-h"><span>My day'+(who?' \u00B7 '+((typeof ins2Esc==='function')?ins2Esc(who):who):'')+'</span>'
+    +'<span class="sub">'+(d.partial
+        ? 'MTD covers the last '+d.covered+' of '+d.elapsed+' days \u2014 the server sends a 14-day series'
+        : 'month to date')
+    +(d.premium?' \u00B7 \u20B9'+d.premium.toLocaleString('en-IN')+' premium booked':'')+'</span></div>'
+    +'<div class="ins2-day-g">'+tiles.map(function(t){
+      return '<div class="ins2-day-c"><div class="ins2-day-n" style="color:'+t.c+'">'
+        +(typeof t.n==='number'?t.n.toLocaleString('en-IN'):t.n)+'</div>'
+        +'<div class="ins2-day-l">'+t.l+'</div></div>';
+    }).join('')+'</div>';
+}
+
+/* ---- why the list is shorter than the book -------------------------------
+   "why in my login insurance customers all are not seen." Because the screen
+   opens on one day's expiries and every chip narrows it further, and it never
+   said so anywhere. Now it does, and one button undoes the lot. */
+function ins2PaintScope(){
+  var bar=document.querySelector('.ins2-bar'); if(!bar) return;
+  var el=document.getElementById('ins2-scope');
+  if(!el){ el=document.createElement('div'); el.id='ins2-scope'; el.className='ins2-scope';
+           bar.parentNode.insertBefore(el, bar.nextSibling); }
+  var book=Number(INS2.bookTotal)||0, shown=Number(INS2.total)||0;
+  if(!book || shown>=book){ el.style.display='none'; return; }
+
+  var labels={overdue:'already expired',today:'expiring today',tomorrow:'expiring tomorrow',
+    week:'expiring in 7 days',fortnight:'expiring in 15 days',month:'expiring in 30 days',
+    quarter:'expiring in 90 days',all:'the whole window'};
+  var why=[ 'the <b>'+(labels[INS2.bucket]||INS2.bucket)+'</b> range' ];
+  if(INS2.mine)    why.push('<b>Mine</b> only');
+  if(INS2.car)     why.push('<b>car owners</b> only');
+  if(INS2.temp)    why.push('<b>'+INS2.temp+'</b>');
+  if(INS2.status)  why.push('<b>'+INS2.status+'</b>');
+  if(INS2.loyalty) why.push('<b>'+INS2.loyalty+'</b>');
+  if(INS2.q)       why.push('the search <b>'+((typeof ins2Esc==='function')?ins2Esc(INS2.q):INS2.q)+'</b>');
+
+  el.style.display='';
+  el.innerHTML='<div style="flex:1;min-width:180px">Showing <b>'+shown.toLocaleString('en-IN')+'</b> of <b>'
+    + book.toLocaleString('en-IN')+'</b> policies in the book \u2014 held back by '+why.join(', ')+'.</div>'
+    +'<button onclick="ins2ShowWholeBook()">\uD83D\uDCCB Show the whole book</button>';
+}
+function ins2ShowWholeBook(){
+  INS2.bucket='all'; INS2.page=0;
+  INS2.q=''; INS2.temp=''; INS2.status=''; INS2.loyalty=''; INS2.mine=false; INS2.car=false;
+  var q=document.getElementById('ins2-q'); if(q) q.value='';
+  ins2PaintChips(); ins2Load(true);
+}
+
+/* ==========================================================================
+   5.  WIRING.  Replace on window, never edit above.
+   ========================================================================== */
+(function(){
+  /* ---- estimate: chips are now the grouped part/labour panel ---- */
+  window.esDrawChips=function(){
+    var c=document.getElementById('es-chips');
+    if(c) c.innerHTML=esR25ChipsHtml();
+    try{ esUpdateLive(); }catch(e){}
+  };
+  /* the old chip ✕ still routes here from any cached page */
+  window.esRmChip=function(t,i){
+    if(t==='L') esR25RemoveLabour(i); else esR25RemovePart(i);
+  };
+
+  /* ---- the + beside the dropdowns keeps working, through the new core ---- */
+  window.esAddPartFn=function(){
+    var nm=document.getElementById('es-add-pname');
+    var items=(nm&&nm._items)||[];
+    var row=items[+(nm&&nm.value)];
+    if(!row){ esR25Msg('Pick a part from the list, or use the search box below \u2014 it finds any part by name or number.','bad'); return; }
+    var typed=Number(String((typeof val==='function'?val('es-add-pamt'):'')||'').replace(/[^0-9.]/g,''))||0;
+    var price=typed>0?typed:Number(row.price)||0;
+    if(!esR25AddPart(row, price, {typed:(typed>0 && typed!==row.price)})) return;
+    var cat=document.getElementById('es-add-pcat'); if(cat) cat.value='';
+    var sub=document.getElementById('es-add-psub'); if(sub) sub.innerHTML='<option value="">Sub-category\u2026</option>';
+    if(nm) nm.innerHTML='<option value="">Part\u2026</option>';
+    var amt=document.getElementById('es-add-pamt'); if(amt) amt.value='';
+    var sa=document.getElementById('es-add-showall'); if(sa){ sa.checked=false; ES_PART_SHOWALL=false; }
+  };
+
+  /* ---- the ✕ on a generated estimate line obeys the same rule ---- */
+  var OLD_REMOVE_ITEM=window.esRemoveItem;
+  window.esRemoveItem=function(label){
+    var c=null; try{ c=esComputeCurrent(); }catch(e){}
+    var lb=c&&c.items&&c.items.labour&&c.items.labour.filter(function(x){ return x.l===label && (x._fromPart||x._fromPn); })[0];
+    if(lb){
+      if(!(lb._grpSize>1)){
+        alert('This is the last labour on '+(lb._fromPart||'its part')+'.\n\n'
+          +'A part cannot be billed with no labour against it. Remove the part itself if there is no work to charge.');
+        return;
+      }
+      ES_UNDO_STACK.push({removed:new Set(ES_REMOVED), overrides:Object.assign({},ES_PRICE_OVERRIDES),
+        lineDiscounts:JSON.parse(JSON.stringify(ES_LINE_DISCOUNTS||{})), label:label});
+      if(ES_UNDO_STACK.length>10) ES_UNDO_STACK.shift();
+      ES_REMOVED.add(label);
+      try{ esUpdateLive(); esRenderUndoBtn(); }catch(e){}
+      return;
+    }
+    return OLD_REMOVE_ITEM.apply(this, arguments);
+  };
+
+  /* ---- and the line renders ✕ or 🔒 to match ---- */
+  var OLD_ROWS=window.esRowsEditable;
+  window.esRowsEditable=function(a, kind){
+    if(!a || !a.length) return '';
+    if(!a.some(function(x){ return x._fromPart||x._fromPn; })) return OLD_ROWS.apply(this, arguments);
+    return a.map(function(x){
+      var safe=String(x.l).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var stock=x.pn?' <button type="button" class="es-stock-link" onclick="pfQuickCheck(\''+String(x.pn).replace(/'/g,'')+'\')" title="Check all-India stock">\uD83D\uDD0E Check stock</button>':'';
+      var marks=(ES_PRICE_OVERRIDES[x.l]!==undefined?' <span class="es-line-state">Edited</span>':'')
+              + (x.lineDiscount>0?' <span class="es-line-state">Discounted</span>':'')
+              + (x._primary&&x._grpSize>1?' <span class="es-line-state" style="border-color:#86efac;background:#f0fdf4;color:#166534">\u2B50 Kept labour</span>':'');
+      var linked=(x._fromPart||x._fromPn);
+      var del = (linked && !(x._grpSize>1))
+        ? '<span class="es-line-act es-line-lock" title="The last labour on '+String(x._fromPart||'its part').replace(/"/g,'')+'. Remove the part to remove this.">\uD83D\uDD12 <span>Linked</span></span>'
+        : '<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem(\''+safe+'\')" title="Remove this item"><span aria-hidden="true">\u2715</span><span>Remove</span></button>';
+      return '<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">'+x.l+'</div>'
+        +'<div class="es-item-meta">'+stock+marks+'</div>'+esCodeHtml(x)+'</td>'
+        +'<td class="amt es-item-amt">'+esAmountHtml(x)+'</td>'
+        +'<td class="es-item-actions">'
+          +'<button type="button" class="es-line-act es-line-disc" onclick="esDiscountLine(\''+safe+'\',\''+(kind||'')+'\')" title="Discount this line"><span aria-hidden="true">%</span><span>Discount</span></button>'
+          +'<button type="button" class="es-line-act es-line-edit" onclick="esEditPrice(\''+safe+'\')" title="Correct amount"><span aria-hidden="true">\u270E</span><span>Edit</span></button>'
+          +del
+        +'</td></tr>';
+    }).join('');
+  };
+
+  /* ---- grading must be current before the estimate is computed ---- */
+  var OLD_COMPUTE=window.esComputeCurrent;
+  window.esComputeCurrent=function(){ try{ esR25Sync(); }catch(e){} return OLD_COMPUTE.apply(this, arguments); };
+
+  /* ---- the parts master failing to load must be said, not guessed at ---- */
+  var OLD_PARTS_READY=window.esEnsurePartsReady;
+  window.esEnsurePartsReady=function(){
+    var r=OLD_PARTS_READY.apply(this, arguments);
+    setTimeout(function(){
+      if(typeof ES_PARTS_READY==='undefined' || !ES_PARTS_READY) return;
+      var n=((typeof ES_PART_INDEX!=='undefined' && ES_PART_INDEX && ES_PART_INDEX.all)||[]).length;
+      var sel=document.getElementById('es-add-pcat');
+      if(!n && sel && sel.options.length<=1){
+        sel.innerHTML='<option value="">Parts master empty \u2014 use the search box below</option>';
+      }
+    }, 400);
+    return r;
+  };
+
+  /* ---- insurance: reasons, day board, scope line ---- */
+  var OLD_APPLY=window.ins2Apply;
+  if(typeof OLD_APPLY==='function') window.ins2Apply=function(res, fromCache){
+    var r=OLD_APPLY.apply(this, arguments);
+    try{ ins2EnsureDispositions(); ins2PaintScope(); ins2PaintDay(); }catch(e){}
+    return r;
+  };
+  var OLD_STATS=window.ins2LoadStats;
+  if(typeof OLD_STATS==='function') window.ins2LoadStats=function(){
+    /* ask for a month of history; a server that does not know `days` simply
+       answers with its usual 14 and the board says which it got */
+    jgetRaw('inscrm2_stats', {owner:ins2Me(), days:35}, function(res){
+      if(!res || res.ok===false) return;
+      INS2.stats=res;
+      if(res.counts && Object.keys(res.counts).length){ INS2.counts=res.counts; try{ ins2PaintChips(); }catch(e){} }
+      try{ ins2PaintKpis(); ins2PaintCharts(); ins2PaintDay(); }catch(e){}
+      var ring=document.getElementById('ins2-ring');
+      if(ring){ var won=res.won||0; ring.innerHTML=ins2Ring(won, Math.max(10, Math.ceil(won/10)*10)); }
+    }, 45000);
+  };
+  var OLD_BOOT=window.ins2Boot;
+  if(typeof OLD_BOOT==='function') window.ins2Boot=function(force){
+    try{ ins2EnsureDispositions(); }catch(e){}
+    return OLD_BOOT.apply(this, arguments);
+  };
+
+  /* ---- mount the injected UI whenever its screen is opened ---- */
+  var OLD_SHOW=window.showView;
+  if(typeof OLD_SHOW==='function') window.showView=function(name){
+    var r=OLD_SHOW.apply(this, arguments);
+    try{
+      if(name==='estimate'){ esR25MountSearch(); esR25Sync(); }
+      if(name==='partfinder') pfTreeMount();
+    }catch(e){}
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded', function(){
+    try{ esR25MountSearch(); pfTreeMount(); }catch(e){}
+  });
+  try{ esR25MountSearch(); pfTreeMount(); }catch(e){}
+})();
+</script>
+
+
+<!-- ==========================================================================
+     R26 (03-Aug-2026)  —  PARTS SCANNER UI
+
+     "uis for part scanner. now it is very boring. I had given you many many
+      mascots, robots, cartoon characters to be embedded in the app. check
+      that."   — Ravi, 03-Aug-2026
+
+     He was right: 33 characters were shipped in /assets and exactly four of
+     them appeared anywhere in the app. This screen now uses eight of them, and
+     each one is doing a job rather than decorating:
+
+       17_red_robot_superhero    the hero banner — the scanner's own face
+       19_parts_box_robot        the "what it reads" tip
+       16_parts_box_character    nothing scanned yet
+       22_standalone_star_mascot a scan saved
+       04_trophy_confetti        a milestone on the stat strip
+       29_white_bear_mechanic    the AI could not read the sticker
+       09_red_cube_mascot_waving the backend is not reachable
+       24_..._superhero_thumbs_up a part number confirmed against the master
+
+     Nothing about how the scanner WORKS changed. psPickPhoto, psAnalyze,
+     psVerifyPart and psSaveScan write to exactly the ids they always did.
+     What is new here is the shell around them, the quick-options row (every
+     tile goes somewhere that already exists), and a stat strip counted from
+     the scans the backend actually returns — no invented numbers.
+     ========================================================================== -->
+<style>
+.psx{max-width:1000px;margin:0 auto;padding:10px 12px 80px}
+.psx-card{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:13px 14px;margin-bottom:11px;
+  box-shadow:0 2px 10px rgba(15,23,42,.06)}
+.psx-h{font-size:11.5px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);
+  margin-bottom:10px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.psx-h-sub{font-weight:700;text-transform:none;letter-spacing:0;color:#94a3b8;font-size:10.5px}
+
+/* ---- hero ---- */
+.psx-hero{position:relative;overflow:hidden;border-radius:20px;padding:15px 16px 14px;margin-bottom:11px;
+  background:linear-gradient(135deg,#1e1b4b 0%,#3b1d7a 45%,#7c1d3f 100%);color:#fff;
+  box-shadow:0 14px 34px rgba(49,20,90,.32);display:flex;align-items:center;gap:10px;min-height:132px}
+.psx-hero:before{content:'';position:absolute;right:-50px;top:-70px;width:210px;height:210px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.16),rgba(255,255,255,0) 70%)}
+.psx-back{position:relative;z-index:2;flex:0 0 auto;align-self:flex-start;width:32px;height:32px;border:0;border-radius:11px;
+  background:rgba(255,255,255,.18);color:#fff;font-size:19px;font-weight:800;cursor:pointer;font-family:inherit;line-height:1}
+.psx-hero-txt{position:relative;z-index:2;flex:1;min-width:0}
+.psx-kicker{font-size:10.5px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;color:#7dd3fc}
+.psx-title{margin:3px 0 0;font-size:19px;font-weight:850;letter-spacing:-.3px;line-height:1.2}
+.psx-sub{font-size:11.5px;opacity:.86;margin-top:3px}
+.psx-pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.psx-pills span{font-size:10px;font-weight:800;letter-spacing:.02em;padding:3px 9px;border-radius:999px;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22)}
+.psx-bot{position:relative;z-index:2;width:118px;height:118px;object-fit:contain;flex:0 0 auto;margin:-6px -4px -10px 0;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.35));animation:psxBob 3.6s ease-in-out infinite}
+@keyframes psxBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+/* the scan line that says "this thing reads things" without a word */
+.psx-scanline{position:absolute;left:0;right:0;height:2px;z-index:1;
+  background:linear-gradient(90deg,rgba(125,211,252,0),rgba(125,211,252,.95),rgba(125,211,252,0));
+  box-shadow:0 0 14px 2px rgba(125,211,252,.55);animation:psxScan 3.2s ease-in-out infinite}
+@keyframes psxScan{0%{top:6%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:94%;opacity:0}}
+@media (prefers-reduced-motion:reduce){ .psx-bot,.psx-scanline{animation:none} .psx-scanline{opacity:.5;top:50%} }
+
+/* ---- tip ---- */
+.psx-tip{display:flex;gap:11px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;
+  border-radius:15px;padding:11px 13px;margin-bottom:11px;font-size:12.5px;line-height:1.55;color:#78350f}
+.psx-tip img{width:52px;height:52px;object-fit:contain;flex:0 0 auto;margin-top:-2px}
+.psx-tip b{color:#9a3412}
+
+/* ---- the two big ways in ---- */
+.psx-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px}
+.psx-act{display:flex;align-items:center;gap:10px;text-align:left;border:0;border-radius:16px;padding:14px 13px;
+  cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(15,23,42,.1);transition:transform .12s,box-shadow .12s}
+.psx-act:active{transform:translateY(1px)}
+.psx-act:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.16)}
+.psx-act.cam{background:linear-gradient(135deg,#ef4444 0%,#b91c1c 100%);color:#fff}
+.psx-act.gal{background:var(--card,#fff);color:inherit;border:1px solid var(--line)}
+.psx-act-ic{flex:0 0 auto;width:44px;height:44px;border-radius:14px;display:inline-flex;align-items:center;
+  justify-content:center;font-size:21px;background:rgba(255,255,255,.9);line-height:1}
+.psx-act.gal .psx-act-ic{background:#eff6ff}
+.psx-act-t{flex:1;min-width:0;font-size:14px;font-weight:850;line-height:1.25}
+.psx-act-t small{display:block;font-size:10.5px;font-weight:650;opacity:.82;margin-top:2px;letter-spacing:0}
+.psx-act-go{flex:0 0 auto;font-size:19px;font-weight:800;opacity:.6}
+
+/* ---- quick options ---- */
+.psx-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px}
+.psx-q{position:relative;background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;
+  padding:11px 7px 9px;text-align:center;cursor:pointer;font-family:inherit;color:inherit;transition:transform .12s,border-color .12s}
+.psx-q:hover{transform:translateY(-2px);border-color:#cbd5e1}
+.psx-q-ic{font-size:20px;line-height:1}
+.psx-q-l{font-size:10.5px;font-weight:800;margin-top:5px;line-height:1.25;color:var(--steel)}
+.psx-q-b{position:absolute;top:-6px;right:-4px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;
+  background:#dc2626;color:#fff;font-size:10px;font-weight:850;display:inline-flex;align-items:center;justify-content:center}
+
+/* ---- the scan in progress ---- */
+#ps-preview img{max-width:100%;max-height:260px;border-radius:12px;border:1px solid var(--line);display:block;margin:0 auto}
+.psx-status{font-size:12.5px;font-weight:700;margin-top:9px;line-height:1.5;display:flex;gap:8px;align-items:center}
+.psx-status img{width:38px;height:38px;object-fit:contain;flex:0 0 auto}
+
+/* ---- stat strip ---- */
+.psx-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:9px;margin-bottom:11px}
+.psx-stat{position:relative;background:var(--card,#fff);border:1px solid var(--line);border-radius:15px;padding:10px 11px;
+  box-shadow:0 2px 8px rgba(15,23,42,.05)}
+.psx-stat-n{font-size:20px;font-weight:850;line-height:1.05;letter-spacing:-.5px}
+.psx-stat-l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--steel);margin-top:3px;line-height:1.25}
+.psx-stat img{position:absolute;right:6px;top:6px;width:28px;height:28px;object-fit:contain;opacity:.95}
+
+/* ---- recent scans ---- */
+.psx-scan{display:flex;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid #eef1f5}
+.psx-scan:last-child{border-bottom:0}
+.psx-thumb{flex:0 0 auto;width:52px;height:40px;border-radius:9px;background:#f1f5f9;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:17px;letter-spacing:-2px;color:#334155;overflow:hidden}
+.psx-scan-m{flex:1;min-width:0}
+.psx-scan-t{font-size:13px;font-weight:800;line-height:1.3;overflow-wrap:anywhere}
+.psx-scan-d{font-size:11px;font-weight:650;color:var(--steel);margin-top:2px;line-height:1.4;overflow-wrap:anywhere}
+.psx-acc{flex:0 0 auto;font-size:10.5px;font-weight:850;padding:3px 8px;border-radius:7px;white-space:nowrap}
+.psx-acc.hi{background:#dcfce7;color:#166534}
+.psx-acc.mid{background:#fef3c7;color:#92400e}
+.psx-acc.lo{background:#fee2e2;color:#b91c1c}
+.psx-skel{height:52px;border-radius:11px;margin-bottom:7px;
+  background:linear-gradient(90deg,#eef2f7 25%,#f8fafc 50%,#eef2f7 75%);background-size:200% 100%;animation:psxSk 1.3s infinite}
+@keyframes psxSk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.psx-empty{text-align:center;padding:18px 8px}
+.psx-empty img{width:92px;height:92px;object-fit:contain}
+.psx-empty-t{font-size:13.5px;font-weight:800;margin-top:7px}
+.psx-empty-s{font-size:12px;color:var(--steel);margin-top:3px;line-height:1.5}
+.psx-more{display:block;width:100%;margin-top:10px;border:1px solid var(--line);background:var(--card,#fff);
+  color:var(--steel);border-radius:11px;padding:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+.psx-more:hover{border-color:#cbd5e1}
+
+@media (max-width:520px){
+  .psx-actions{grid-template-columns:1fr}
+  .psx-title{font-size:17px}
+  .psx-hero{min-height:126px;padding:14px 13px}
+  .psx-stats{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-color-scheme:dark){
+  .psx-tip{background:rgba(253,230,138,.1);border-color:rgba(253,230,138,.3);color:#fde68a}
+  .psx-tip b{color:#fdba74}
+  .psx-thumb{background:rgba(148,163,184,.14)}
+  .psx-act.gal .psx-act-ic{background:rgba(148,163,184,.16)}
+}
+</style>
+<script>
+"use strict";
+/* --------------------------------------------------------------------------
+   Quick options. Each one is a destination the app already has — a tile that
+   goes nowhere is worse than no tile.
+   -------------------------------------------------------------------------- */
+function psxQuick(){
+  var el=document.getElementById('psx-quick'); if(!el) return;
+  var pending=0; try{ pending=(getQueue()||[]).length; }catch(e){}
+  var tiles=[
+    {ic:'🔎', l:'All-India stock', go:"showView('partfinder')"},
+    {ic:'🌲', l:'Parts tree',      go:"psxOpenTree()"},
+    {ic:'☁',  l:'Pending sync',    go:"psxFlush()", b:pending},
+    {ic:'📜', l:'Scan history',    go:"psxJump()"},
+    {ic:'🔑', l:'Vision key',      go:"geSetVisionKey()", admin:true}
+  ];
+  el.innerHTML=tiles.filter(function(t){ return !t.admin || (typeof isAdmin==='function' && isAdmin()); })
+    .map(function(t){
+      return '<button class="psx-q" onclick="'+t.go+'">'
+        +(t.b?'<span class="psx-q-b">'+t.b+'</span>':'')
+        +'<div class="psx-q-ic">'+t.ic+'</div><div class="psx-q-l">'+t.l+'</div></button>';
+    }).join('');
+}
+/* the tree lives on the Part Finder screen — take them there and open it */
+function psxOpenTree(){
+  showView('partfinder');
+  setTimeout(function(){
+    try{ pfTreeMount(); var d=document.getElementById('pf-tree'); if(d){ d.open=true; pfTreeLoad(); d.scrollIntoView({behavior:'smooth',block:'start'}); } }catch(e){}
+  }, 120);
+}
+function psxJump(){
+  var el=document.getElementById('ps-recent');
+  if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function psxFlush(){
+  var n=0; try{ n=(getQueue()||[]).length; }catch(e){}
+  if(!n){ psStatus('Nothing is waiting to sync — everything scanned is saved.','ok'); return; }
+  psStatus('Sending '+n+' saved scan'+(n===1?'':'s')+' to the backend…');
+  Promise.resolve(flushQueue()).then(function(){
+    var left=0; try{ left=(getQueue()||[]).length; }catch(e){}
+    psStatus(left ? (left+' still waiting — the connection dropped. They stay saved and go up by themselves.')
+                  : '✔ Everything synced.', left?'err':'ok');
+    psxQuick();
+  });
+}
+
+/* --------------------------------------------------------------------------
+   The stat strip. Counted from the scans the backend returns — the labels say
+   "last N scans" rather than pretending to be an all-time figure the route
+   does not answer with.
+   -------------------------------------------------------------------------- */
+var PSX_ROWS=[];
+/* The sheet's Timestamp column has been written in more than one shape over
+   the life of this app. Rather than assume one and quietly report "0 scanned
+   today", read the three that actually occur and give up honestly on anything
+   else — psxStats drops the tile instead of showing a number it cannot stand
+   behind. */
+function psxDay(ts){
+  var s=String(ts||'').trim(); if(!s) return null;
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);                    /* 2026-08-03 */
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);            /* 03-08-2026, 3/8/2026 */
+  if(m) return m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2);
+  var d=new Date(s);
+  if(!isNaN(d.getTime())) return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  return null;
+}
+function psxStats(){
+  var el=document.getElementById('psx-stats'); if(!el) return;
+  var rows=PSX_ROWS||[];
+  if(!rows.length){ el.innerHTML=''; return; }
+  var identified=0, accSum=0, accN=0, added=0, dated=0;
+  var t=new Date();
+  var tKey=t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2);
+  rows.forEach(function(r){
+    if(String(r['Part No']||'').trim()) identified++;
+    var a=Number(String(r['Confidence %']||'').replace(/[^0-9.]/g,''));
+    if(a>0){ accSum+=a; accN++; }
+    var d=psxDay(r['Timestamp']);
+    if(d){ dated++; if(d===tKey) added++; }
+  });
+  var acc=accN?Math.round(accSum/accN):0;
+  var tiles=[
+    {n:rows.length,  l:'Scans on file', c:'#2563eb', img:(rows.length>=100?'04_trophy_confetti.png':'')},
+    {n:identified,   l:'Parts identified', c:'#166534'},
+    {n:acc?acc+'%':'—', l:'Avg accuracy', c:'#b45309'}
+  ];
+  /* only claim a "today" count when the timestamps could actually be read */
+  if(dated) tiles.splice(2, 0, {n:added, l:'Scanned today', c:'#7c3aed'});
+  el.innerHTML=tiles.map(function(t){
+    return '<div class="psx-stat">'
+      +(t.img?'<img src="assets/'+t.img+'" alt="" onerror="this.style.display=\'none\'">':'')
+      +'<div class="psx-stat-n" style="color:'+t.c+'">'+(typeof t.n==='number'?t.n.toLocaleString('en-IN'):t.n)+'</div>'
+      +'<div class="psx-stat-l">'+t.l+'</div></div>';
+  }).join('');
+}
+
+/* --------------------------------------------------------------------------
+   Recent scans as cards. Same route, same fields — read as a list of parts
+   rather than a wall of text.
+   -------------------------------------------------------------------------- */
+function psxRecent(){
+  var el=document.getElementById('ps-recent'); if(!el) return;
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  jget('ps_recent',{limit:200},function(res){
+    var sub=document.getElementById('psx-recent-sub');
+    if(!res || res.ok===false){
+      PSX_ROWS=[]; psxStats();
+      el.innerHTML='<div class="psx-empty"><img src="assets/09_red_cube_mascot_waving.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="psx-empty-t">Can’t reach the backend</div>'
+        +'<div class="psx-empty-s">'+E((res&&res.error)||'No answer from the server.')
+        +' Scans you take now are still saved on the phone and go up by themselves.</div></div>';
+      if(sub) sub.textContent='';
+      return;
+    }
+    var rows=res.rows||[];
+    PSX_ROWS=rows; psxStats();
+    if(!rows.length){
+      el.innerHTML='<div class="psx-empty"><img src="assets/16_parts_box_character.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="psx-empty-t">Nothing scanned yet</div>'
+        +'<div class="psx-empty-s">Point the camera at any part sticker and the first one lands here.</div></div>';
+      if(sub) sub.textContent='';
+      return;
+    }
+    if(sub) sub.textContent=rows.length>=200 ? 'latest 200' : (rows.length+' on file');
+    psxPaintScans(rows, false);
+  });
+}
+/* Eight is what fits on a phone before the screen turns into a wall. The rest
+   are one tap away rather than a scroll away. */
+function psxPaintScans(rows, all){
+  var el=document.getElementById('ps-recent'); if(!el) return;
+  var E=(typeof raviEsc==='function') ? raviEsc : function(s){ return String(s==null?'':s); };
+  var SHOW=all?rows.length:8;
+  el.innerHTML=rows.slice(0,SHOW).map(function(r){
+      var acc=Number(String(r['Confidence %']||'').replace(/[^0-9.]/g,''));
+      var cls=acc>=90?'hi':(acc>=70?'mid':'lo');
+      var pn=String(r['Part No']||r['AI Guess']||'').trim();
+      var bits=[];
+      if(r['MRP']) bits.push('₹'+E(r['MRP']));
+      if(r['Barcode']) bits.push('▮ '+E(r['Barcode']));
+      if(r['Scanned By']) bits.push(E(r['Scanned By']));
+      if(r['Timestamp']) bits.push(E(r['Timestamp']));
+      return '<div class="psx-scan">'
+        +'<div class="psx-thumb">'+(r['Barcode']?'‖‖‖':'🔩')+'</div>'
+        +'<div class="psx-scan-m">'
+          +'<div class="psx-scan-t">'+(pn?E(pn):'—')+(r['Description']?' <span style="font-weight:650;color:var(--steel)">'+E(r['Description'])+'</span>':'')+'</div>'
+          +'<div class="psx-scan-d">'+bits.join(' · ')+'</div>'
+        +'</div>'
+        +(acc?'<div class="psx-acc '+cls+'">'+acc+'%</div>':'')
+      +'</div>';
+    }).join('')
+    + (rows.length>SHOW
+        ? '<button class="psx-more" onclick="psxPaintScans(PSX_ROWS,true)">Show all '+rows.length.toLocaleString('en-IN')+' scans</button>'
+        : (all && rows.length>8
+            ? '<button class="psx-more" onclick="psxPaintScans(PSX_ROWS,false)">Show fewer</button>'
+            : ''));
+}
+
+/* --------------------------------------------------------------------------
+   Wiring. The scanner's own functions are wrapped, never rewritten: the work
+   card is revealed when a photo is taken, a mascot is put beside the status
+   line for the three outcomes that matter, and the tiles refresh after a save.
+   -------------------------------------------------------------------------- */
+(function(){
+  var OLD_STATUS=window.psStatus;
+  if(typeof OLD_STATUS==='function') window.psStatus=function(msg, kind){
+    var el=document.getElementById('ps-status');
+    if(!el) return OLD_STATUS.apply(this, arguments);
+    el.style.color = kind==='err' ? 'var(--signal-d,#b91c1c)' : (kind==='ok' ? '#166534' : 'var(--steel,#64748b)');
+    var m=String(msg||'');
+    /* one character per outcome — the bear when the sticker beat the AI, the
+       star when a scan is banked, the thumbs-up when the master confirms it */
+    var pic='';
+    if(kind==='err') pic='29_white_bear_mechanic.png';
+    else if(kind==='ok') pic=/saved|synced/i.test(m) ? '22_standalone_star_mascot.png' : '24_white_red_superhero_thumbs_up.png';
+    el.innerHTML = m ? ((pic?'<img src="assets/'+pic+'" alt="" onerror="this.style.display=\'none\'">':'')
+      + '<span>'+((typeof raviEsc==='function')?raviEsc(m):m)+'</span>') : '';
+    return;
+  };
+
+  var OLD_PICK=window.psPickPhoto;
+  if(typeof OLD_PICK==='function') window.psPickPhoto=function(mode){
+    var w=document.getElementById('psx-work'); if(w) w.style.display='block';
+    return OLD_PICK.apply(this, arguments);
+  };
+
+  var OLD_SAVE=window.psSaveScan;
+  if(typeof OLD_SAVE==='function') window.psSaveScan=function(){
+    var r=OLD_SAVE.apply(this, arguments);
+    setTimeout(function(){ try{ psxQuick(); psxRecent(); }catch(e){} }, 900);
+    return r;
+  };
+
+  /* psBootMod called psLoadRecent; it now paints the whole screen. The old
+     function is left in place and still works if anything else calls it. */
+  var OLD_BOOT=window.psBootMod;
+  window.psBootMod=function(){
+    try{ psxQuick(); psxRecent(); }catch(e){ if(typeof OLD_BOOT==='function') return OLD_BOOT.apply(this, arguments); }
+  };
+
+  var OLD_SHOW=window.showView;
+  if(typeof OLD_SHOW==='function') window.showView=function(name){
+    var r=OLD_SHOW.apply(this, arguments);
+    try{ if(name==='partscan') psxQuick(); }catch(e){}
+    return r;
+  };
+})();
+</script>
+
+
+<!-- ==========================================================================
+     R27 (03-Aug-2026)  —  DATE OF SALE, AND FREEZING THE MODEL THE RECORDS GAVE
+
+     "dos not fetching from back, model not freezed if taken from database
+      after scanning at gate."   — Ravi, 03-Aug-2026
+
+     Both features were written. Neither could fire. Two separate root causes:
+
+     1. DATE OF SALE — heroCustLookup is local-first and SHORT-CIRCUITS:
+
+            heroCustFind(query, function(local){
+              if(local && local.found){ cb(local); return; }   <-- server never asked
+              jgetRaw('customer_find', ...)
+
+        The phone's copy of the customer master is written by custWriteBatch as
+            { reg, vin, mob, alt, mdl, nm, loc, dos:r.d }
+        so a chunk row that arrives without `d` is cached with dos:''. From that
+        moment the reg IS found on the phone, the lookup returns immediately,
+        and customer_find on the server — which does have the sale date — is
+        never called for that vehicle again. Date of Sale could only ever be
+        typed by hand. It is not a backend problem and no amount of re-syncing
+        fixes it, because the sync is what writes the blank.
+
+        Fixed by resolving a vehicle rather than merely finding one:
+        heroVehicleResolve() takes the phone's answer, and if the FIELDS THE
+        ESTIMATE ACTUALLY NEEDS (model, sale date) are missing from it, asks the
+        server and merges. The phone still answers instantly when it is
+        complete, so nothing got slower for the common case.
+
+     2. MODEL FREEZE — the confirmation modal beat the records lookup.
+
+        esOnGatePick ends with esMaybeAskModel(g), which opens the "Confirm the
+        model" modal SYNCHRONOUSLY on every single gate pick. The DMS lock in
+        s35 runs off an async heroCustLookup callback that lands afterwards. So
+        the SA was always asked to choose a model — and esModelConfirm teaches
+        the chosen one back to the backend at SA authority — while the freeze
+        arrived a moment later and locked whatever had happened. A frozen field
+        the app just asked you to fill in is not frozen.
+
+        Fixed by holding the question until the records have answered. If the
+        customer master supplies a model that exists in the model list, it is
+        set, frozen, and NOT asked about. Only when records have no model — a
+        genuinely new vehicle, or one the master has never seen — is the SA
+        asked, exactly as before.
+
+     Additive: esOnGatePick, esMaybeAskModel and esNewEstimate are wrapped on
+     window after parsing. heroCustLookup itself is left alone — it is used by
+     the gate screen too, and this file does not change behaviour there.
+     ========================================================================== -->
+<style>
+#es-dos-src,#es-model-src{font-size:11px;margin-top:3px;font-weight:700;line-height:1.4}
+#es-dos-src a,#es-model-src a{font-weight:800}
+/* A frozen field has to LOOK frozen. s35 already styled #es-model.es-locked,
+   but a later rule outranked it and the locked select still rendered plain
+   white — so the DMS model lock has never actually looked locked on screen.
+   Both are set here at #view-estimate #id.es-locked so nothing outranks them. */
+#view-estimate #es-model.es-locked,
+#view-estimate #es-dos.es-locked{
+  background:#f1f5f9;color:#334155;font-weight:750;border-color:#cbd5e1;cursor:not-allowed}
+@media (prefers-color-scheme:dark){
+  #view-estimate #es-model.es-locked,
+  #view-estimate #es-dos.es-locked{background:rgba(148,163,184,.16);color:#e2e8f0;border-color:rgba(148,163,184,.35)}
+}
+.es-r27-wait{font-size:11px;font-weight:700;color:var(--steel);margin-top:3px;display:flex;gap:6px;align-items:center}
+.es-r27-wait:before{content:'';width:11px;height:11px;border-radius:50%;flex:0 0 11px;
+  border:2px solid #cbd5e1;border-top-color:#0f172a;animation:esR27Spin .7s linear infinite}
+@keyframes esR27Spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .es-r27-wait:before{animation:none} }
+</style>
+<script>
+"use strict";
+/* --------------------------------------------------------------------------
+   1.  RESOLVE a vehicle — phone first, server only for what is missing.
+
+   heroCustFind answers from IndexedDB. heroCustLookup returns that answer and
+   stops. This asks the server as well WHENEVER the phone's answer is missing a
+   field the estimate needs, then merges the two, server winning on conflict and
+   the phone filling any gap the server leaves.
+
+   cb({found:true|false|null, vehicle:{...}, source:'phone'|'server'|'phone+server'})
+     found:false  the server checked and there is no such vehicle
+     found:null   nobody could answer — do NOT treat that as a new vehicle
+   -------------------------------------------------------------------------- */
+function esR27Str(v){ return String(v==null?'':v).trim(); }
+
+/* the sale date arrives under whichever key the answering layer happens to use */
+function esR27SaleDate(v){
+  if(!v) return '';
+  return esR27Str(v.saleDate || v.dos || v.d
+    || v['Date of Sale'] || v['Sale Date'] || v['Purchase Date'] || v['DateOfSale'] || '');
+}
+function esR27Model(v){
+  if(!v) return '';
+  return esR27Str(v.model || v.mdl || v['Model'] || v['MODEL'] || '');
+}
+
+function heroVehicleResolve(query, cb){
+  var q=esR27Str(query);
+  if(!q){ cb({found:false, source:'none'}); return; }
+  var fired=false;
+  var finish=function(o){ if(fired) return; fired=true; try{ cb(o); }catch(e){} };
+
+  heroCustFind(q, function(local){
+    var lv=(local && local.found && local.vehicle) || null;
+    var haveModel=!!esR27Model(lv), haveDos=!!esR27SaleDate(lv);
+
+    /* the phone's copy is complete — answer from it and touch no network */
+    if(lv && haveModel && haveDos){
+      lv.saleDate=esR27SaleDate(lv); lv.model=esR27Model(lv);
+      finish({found:true, vehicle:lv, source:'phone'});
+      return;
+    }
+
+    /* something the estimate needs is missing. THIS is the call the old
+       short-circuit skipped, and the reason Date of Sale was always blank. */
+    jgetRaw('customer_find', {q:q}, function(res){
+      var sv=(res && res.ok && res.found && res.vehicle) || null;
+      if(!sv && !lv){
+        finish({found:(res && res.ok===true) ? false : null,
+                source:(res && res.ok===true) ? 'server' : 'unavailable'});
+        return;
+      }
+      var m={};
+      if(lv) Object.keys(lv).forEach(function(k){ m[k]=lv[k]; });
+      if(sv) Object.keys(sv).forEach(function(k){ if(esR27Str(sv[k])) m[k]=sv[k]; });
+      m.saleDate=esR27SaleDate(sv)||esR27SaleDate(lv)||'';
+      m.model   =esR27Model(sv)||esR27Model(lv)||'';
+      finish({found:true, vehicle:m, source: sv ? (lv?'phone+server':'server') : 'phone'});
+    }, 12000);
+  });
+
+  /* IndexedDB can sit on a blocked transaction and never call back at all.
+     The screen must not wait on it forever. */
+  setTimeout(function(){
+    if(fired) return;
+    jgetRaw('customer_find', {q:q}, function(res){
+      var sv=(res && res.ok && res.found && res.vehicle) || null;
+      if(!sv){ finish({found:(res&&res.ok===true)?false:null, source:'unavailable'}); return; }
+      sv.saleDate=esR27SaleDate(sv); sv.model=esR27Model(sv);
+      finish({found:true, vehicle:sv, source:'server'});
+    }, 12000);
+  }, 2500);
+}
+
+/* --------------------------------------------------------------------------
+   2.  DATE OF SALE onto the form.
+   dd-mm-yyyy is what the field, raviParseDMY and esMonthsSince all expect.
+   -------------------------------------------------------------------------- */
+function esR27Dmy(raw){
+  var s=esR27Str(raw); if(!s) return '';
+  if(/^\d{2}-\d{2}-\d{4}$/.test(s)) return s;                                  /* already right */
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);                                   /* 2019-06-14 */
+  if(m) return m[3]+'-'+m[2]+'-'+m[1];
+  m=s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);                           /* 14/6/2019 */
+  if(m) return ('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2)+'-'+m[3];
+  var d=new Date(s);
+  if(!isNaN(d.getTime())) return ('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+d.getFullYear();
+  return '';                                                                   /* unreadable — leave it blank, never guess */
+}
+function esR27DosLine(html, colour){
+  var wrap=document.getElementById('es-dos'); if(!wrap) return;
+  var el=document.getElementById('es-dos-src');
+  if(!el){
+    el=document.createElement('div'); el.id='es-dos-src';
+    wrap.parentNode.appendChild(el);
+  }
+  if(!html){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block'; el.style.color=colour||'var(--steel)'; el.innerHTML=html;
+}
+/* FROZEN, like the model (Ravi 03-Aug-2026 — asked for, then confirmed).
+   The record wins. The date of sale decides the free-service stage and what the
+   owner manual says is due, so a typed date that disagrees with DMS changes
+   what the customer is charged for; if it is going to be authoritative it has
+   to be authoritative in one direction only. An <input> takes readOnly
+   natively, so the lock needs no event guard the way the <select> did — but
+   one is added anyway so tapping it explains itself instead of doing nothing.
+   WM / GM / CEO can unlock, exactly as with the model. */
+var ES_R27_DOS_LOCKED='';
+function esR27FreezeDos(dmy, source, replaced){
+  var el=document.getElementById('es-dos'); if(!el) return;
+  el.value=dmy;
+  el.readOnly=true;
+  el.classList.add('es-locked');
+  el.setAttribute('data-locked','1');
+  ES_R27_DOS_LOCKED=dmy;
+  esR27DosLine('🔒 Date of sale <b>'+dmy+'</b> from '
+    +(source==='phone'?'the customer master on this phone':'DMS records')
+    +' — not editable.'
+    + (replaced ? ' It replaced <b>'+String(replaced).replace(/</g,'&lt;')+'</b>.' : '')
+    + (esR27CanUnlock() ? ' <a href="#" onclick="esR27UnlockDos();return false">Unlock</a>' : ''), '#047857');
+  try{ el.dispatchEvent(new Event('change')); }catch(e){}
+  try{ esUpdateLive(); }catch(e){}
+  try{ esLoadServiceDue(); }catch(e){}
+}
+function esR27UnlockDos(){
+  if(!esR27CanUnlock()){ alert('Only the WM, GM or CEO can change a date of sale that came from DMS records.'); return; }
+  esR27UnfreezeDos();
+  esR27DosLine('🔓 Unlocked — a change here overrides the DMS record.', '#b45309');
+}
+function esR27UnfreezeDos(){
+  var el=document.getElementById('es-dos'); if(!el) return;
+  el.readOnly=false;
+  el.classList.remove('es-locked');
+  el.removeAttribute('data-locked');
+  ES_R27_DOS_LOCKED='';
+}
+function esR27FillDos(v, source){
+  var el=document.getElementById('es-dos'); if(!el) return false;
+  var dmy=esR27Dmy(esR27SaleDate(v));
+  if(!dmy){
+    esR27UnfreezeDos();
+    esR27DosLine('⚠️ No date of sale on record for this vehicle — type it if the customer knows it. '
+      +'It decides the free-service stage and what the owner manual says is due.', '#b45309');
+    return false;
+  }
+  /* Anything already in the box came either from the original pick's own
+     lookup (same record, same value) or from the SA typing inside the second
+     it took records to answer. Either way the record is what stands — and if
+     it displaced something different, the line says so rather than swapping
+     it silently. */
+  var had=esR27Str(el.value);
+  esR27FreezeDos(dmy, source, (had && had!==dmy) ? had : '');
+  return true;
+}
+/* An input honours readOnly on its own; this only makes the refusal audible. */
+(function(){
+  var el=document.getElementById('es-dos'); if(!el) return;
+  el.addEventListener('click', function(){
+    if(this.getAttribute('data-locked')!=='1') return;
+    alert('This date of sale came from DMS records and cannot be changed here.'
+      +(esR27CanUnlock()?'\n\nUse Unlock below the field if the record is genuinely wrong.':''));
+  });
+})();
+
+/* --------------------------------------------------------------------------
+   3.  FREEZE the model when the records supplied it — and don't ask.
+   -------------------------------------------------------------------------- */
+var ES_R27_HOLD=false;          /* the confirm modal is held while records load */
+var ES_R27_PENDING=null;        /* the gate row to ask about if records fail us */
+var ES_R27_LOCKED='';           /* the model the records froze, '' when free */
+
+function esR27MatchModel(dm){
+  var sel=document.getElementById('es-model'); if(!sel || !dm) return '';
+  var want=String(dm).toUpperCase();
+  for(var i=0;i<sel.options.length;i++){
+    var o=sel.options[i]; if(!o.value) continue;
+    if(o.value.toUpperCase()===want) return o.value;
+  }
+  if(typeof heroOilKey==='function'){
+    var k=heroOilKey(dm);
+    for(var j=0;j<sel.options.length;j++){
+      var o2=sel.options[j];
+      if(o2.value && heroOilKey(o2.value)===k) return o2.value;
+    }
+  }
+  return '';
+}
+/* s35's ES_MODEL_SRC / esModelSrcLine / esUnlockModel live inside an IIFE and
+   are NOT reachable from here — assigning to them would throw under "use
+   strict" and leave the model neither frozen nor asked about. So the lock is
+   applied directly to the things that ARE shared: the data-locked attribute
+   that s35's own mousedown/keydown guards read off the element, and the
+   #es-model-src line. Nothing in s35 is referenced. */
+function esR27CanUnlock(){
+  try{
+    var lv=String((USER&&(USER.level||USER.Level))||'').toLowerCase();
+    var rl=String((USER&&(USER.role||USER.Role))||'').toUpperCase();
+    return lv==='admin'||lv==='superadmin'||rl==='WM'||rl==='GM'||rl==='CEO';
+  }catch(e){ return false; }
+}
+function esR27ModelLine(html, colour){
+  var el=document.getElementById('es-model-src'); if(!el) return;
+  if(!html){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block'; el.style.color=colour||'var(--steel)'; el.innerHTML=html;
+}
+function esR27FreezeModel(hit, gateModel){
+  var sel=document.getElementById('es-model'); if(!sel) return;
+  if(sel.value!==hit){ sel.value=hit; try{ sel.dispatchEvent(new Event('change')); }catch(e){} }
+  sel.classList.add('es-locked');
+  sel.setAttribute('data-locked','1');          /* s35's guards enforce this on the element */
+  ES_R27_LOCKED=hit;
+  var gm=String(gateModel||'').trim();
+  var clash=(gm && esR27MatchModel(gm)!==hit)
+    ? ' The gate had recorded <b>'+gm.replace(/</g,'&lt;')+'</b>.' : '';
+  esR27ModelLine('🔒 <b>'+hit.replace(/</g,'&lt;')+'</b> from DMS records — not editable.'+clash
+    + (esR27CanUnlock() ? ' <a href="#" onclick="esR27Unlock();return false">Unlock</a>' : ''), '#047857');
+  /* the question is settled — close it if it managed to open */
+  try{ esCloseModelModal(); }catch(e){}
+}
+function esR27Unlock(){
+  if(!esR27CanUnlock()){ alert('Only the WM, GM or CEO can change a model that came from DMS records.'); return; }
+  var sel=document.getElementById('es-model'); if(!sel) return;
+  sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+  ES_R27_LOCKED='';
+  esR27ModelLine('🔓 Unlocked — a change here overrides the DMS record.', '#b45309');
+}
+function esR27UnfreezeModel(){
+  var sel=document.getElementById('es-model'); if(!sel) return;
+  sel.classList.remove('es-locked'); sel.removeAttribute('data-locked');
+  ES_R27_LOCKED='';
+}
+function esR27WaitLine(on){
+  if(on) esR27ModelLine('<span class="es-r27-wait">Checking DMS records for this vehicle…</span>', 'var(--steel)');
+}
+/* records could not settle it: the model stands on the gate's word alone, so
+   say so and leave it editable — this is the case the SA MUST look at. */
+function esR27GateLine(g){
+  esR27UnfreezeModel();
+  var gm=String((g&&g.model)||'').trim();
+  esR27ModelLine(gm
+    ? '⚠️ <b>'+gm.replace(/</g,'&lt;')+'</b> recorded at the gate, not confirmed by records — check it against the vehicle.'
+    : '⚠️ No model on record for this vehicle — pick it from the list.', '#b45309');
+}
+/* records could not settle it — ask, exactly as the app always did */
+function esR27ReleaseAsk(){
+  ES_R27_HOLD=false;
+  var g=ES_R27_PENDING; ES_R27_PENDING=null;
+  if(!g) return;
+  try{ esMaybeAskModel(g); }catch(e){}
+}
+
+/* --------------------------------------------------------------------------
+   4.  WIRING
+   -------------------------------------------------------------------------- */
+(function(){
+  /* the modal is held, not cancelled — esR27ReleaseAsk opens it if records fail */
+  var OLD_ASK=window.esMaybeAskModel;
+  if(typeof OLD_ASK==='function') window.esMaybeAskModel=function(g){
+    if(ES_R27_HOLD){ ES_R27_PENDING=g; return; }
+    return OLD_ASK.apply(this, arguments);
+  };
+
+  var OLD_PICK=window.esOnGatePick;
+  if(typeof OLD_PICK==='function') window.esOnGatePick=function(g){
+    ES_R27_HOLD=true; ES_R27_PENDING=null;
+    esR27DosLine(''); esR27UnfreezeDos();
+    var r=OLD_PICK.apply(this, arguments);          /* fills name/mob/reg/km, holds the ask */
+    try{ esR27WaitLine(true); }catch(e){}
+
+    var reg=(g && g.reg) || '';
+    if(!reg){ esR27ReleaseAsk(); return r; }
+
+    var settled=false;
+    /* records are allowed 7 seconds. After that the SA is asked rather than
+       left staring at a spinner — a slow master must not stop a job card. */
+    var giveUp=setTimeout(function(){
+      if(settled) return; settled=true;
+      esR27UnfreezeDos();
+      esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309');
+      esR27GateLine(g);
+      esR27ReleaseAsk();
+    }, 7000);
+
+    heroVehicleResolve(reg, function(res){
+      if(settled) return; settled=true; clearTimeout(giveUp);
+      var v=(res && res.found && res.vehicle) || null;
+
+      /* DATE OF SALE — the whole point of the resolver */
+      if(v) esR27FillDos(v, res.source);
+      else if(res && res.found===false){ esR27UnfreezeDos();
+        esR27DosLine('ℹ️ This vehicle is not in the customer master — type the date of sale.', '#b45309'); }
+      else { esR27UnfreezeDos();
+        esR27DosLine('⚠️ Could not reach the customer master — type the date of sale.', '#b45309'); }
+
+      /* MODEL — frozen when records have it, asked about when they do not */
+      var hit=v ? esR27MatchModel(esR27Model(v)) : '';
+      if(hit){
+        esR27FreezeModel(hit, g && g.model);
+        ES_R27_HOLD=false; ES_R27_PENDING=null;      /* settled — never ask */
+        return;
+      }
+      /* no usable model on record — back to the SA, as before */
+      esR27GateLine(g);
+      esR27ReleaseAsk();
+    });
+    return r;
+  };
+
+  /* a fresh estimate must not inherit the last vehicle's date or its lock */
+  var OLD_NEW=window.esNewEstimate;
+  if(typeof OLD_NEW==='function') window.esNewEstimate=function(){
+    var r=OLD_NEW.apply(this, arguments);
+    try{ ES_R27_HOLD=false; ES_R27_PENDING=null;
+         esR27DosLine(''); esR27ModelLine('');
+         esR27UnfreezeModel(); esR27UnfreezeDos(); }catch(e){}
+    return r;
+  };
+})();
+</script>
+
 </body></html>

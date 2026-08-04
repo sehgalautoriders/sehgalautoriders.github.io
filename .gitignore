@@ -33,3 +33,14 @@
 # .nojekyll: Pages' Jekyll build silently DROPS dot-folders, so without this
 # file /.well-known/assetlinks.json 404s and the APK grows a browser URL bar.
 !.nojekyll
+#
+# R27 (04-Aug-2026): CLAUDE.md carries Ravi's Level 5 IIMK Human communication
+# standard and the project's working rules. It has to be committed, because that
+# is the only way it loads automatically at the start of every future session —
+# that is the whole point of it. Widened by NAME, one file, per the rule above.
+#
+# NOTE: this repo is public, so CLAUDE.md is readable by anyone. It deliberately
+# holds NO customer data, credentials, GCP project numbers, sheet IDs, .gs code
+# or personal data — only working rules, architecture notes and house style.
+# Keep it that way. Anything confidential belongs somewhere else.
+!CLAUDE.md
