@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 24;
-window.HERO_BUILD = 'R27-2026.08.04.2';
+window.HERO_RELEASE = 25;
+window.HERO_BUILD = 'R28-2026.08.04.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1966,6 +1966,12 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
      so this screen can be reverted by swapping which boot function runs.
      ========================================================================= -->
 <div id="view-insurance" style="display:none">
+
+  <!-- R28 (04-Aug-2026). The whole screen is built by JS into this one div, so
+       the R23 markup below is untouched and reverting is one line in the boot
+       switch. ins3Boot() hides the .ins2 block; ins2Boot() hides this one. -->
+  <div class="ins3" id="ins3-root" style="display:none"></div>
+
   <div class="ins2">
 
     <!-- hero strip: who is working, what the day looks like -->
@@ -3460,8 +3466,11 @@ function openModule(id){
   /* R23: the redesigned Insurance CRM. insBootMod (R22) is still in the file and
      still works against the old inscrm_* routes — swap this line back to fall
      back to the old screen without touching anything else. */
+  /* R28: the offline, priority-ranked screen. Delete the ins3Boot line to fall
+     straight back to the R23 screen — nothing else has to change. */
   if(id==='insurance'){
-    if(typeof ins2Boot==='function') ins2Boot();
+    if(typeof ins3Boot==='function') ins3Boot();
+    else if(typeof ins2Boot==='function') ins2Boot();
     else if(typeof insBootMod==='function') insBootMod();
   }
   showView(id);
@@ -14246,5 +14255,927 @@ function ins2MarutiUpload(inp){
     rd.readAsArrayBuffer(f);
   });
 }
+</script>
+
+<style>
+/* ===========================================================================
+   R28 — INSURANCE CRM, OFFLINE + RANKED   (04-Aug-2026)
+
+   Everything is scoped under .ins3 so it cannot leak into any other module.
+
+   THE OVERFLOW BUG, AND WHY IT KEPT COMING BACK
+   ---------------------------------------------
+   .ins2-deck was repeat(auto-fill,minmax(330px,1fr)). On a 360px phone a 330px
+   minimum column plus the page's own padding is already wider than the screen,
+   and every fix that only changed the card padding left the 330px in place. The
+   two rules that actually stop it are below and they are not optional:
+     * every grid/flex track is minmax(0,...) or has min-width:0, because a grid
+       item's default min-width is auto — it refuses to shrink below its content
+       and pushes the page sideways no matter what the container says;
+     * every horizontal strip of chips scrolls inside itself.
+   =========================================================================== */
+
+.ins3, .ins3 *{box-sizing:border-box}
+.ins3{max-width:100%;overflow-x:hidden;font-size:13px}
+
+/* ---- top bar ---- */
+.ins3-top{display:flex;align-items:center;gap:9px;padding:10px 12px;background:linear-gradient(135deg,#b91c1c,#7f1d1d);
+  color:#fff;border-radius:0 0 16px 16px;min-width:0}
+.ins3-back{border:0;background:rgba(255,255,255,.16);color:#fff;width:30px;height:30px;border-radius:9px;
+  font-size:17px;cursor:pointer;flex:0 0 auto;font-family:inherit;line-height:1}
+.ins3-top-txt{flex:1;min-width:0}
+.ins3-top-hi{font-size:14.5px;font-weight:850;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-top-sub{font-size:11px;opacity:.9;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-mascot{width:34px;height:34px;object-fit:contain;flex:0 0 auto}
+
+/* ---- sync bar ---- */
+.ins3-sync{margin:8px 12px 0;border-radius:11px;padding:8px 11px;font-size:11.5px;font-weight:750;
+  display:flex;align-items:center;gap:8px;min-width:0}
+.ins3-sync.busy{background:#eff6ff;color:#1d4ed8}
+.ins3-sync.ok{background:#f0fdf4;color:#166534}
+.ins3-sync.bad{background:#fef2f2;color:#b91c1c}
+.ins3-sync-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ins3-bar{height:4px;border-radius:3px;background:#dbeafe;overflow:hidden;margin-top:5px}
+.ins3-bar i{display:block;height:100%;background:#2563eb;transition:width .25s;border-radius:3px}
+.ins3-sync-btn{border:0;background:rgba(0,0,0,.07);border-radius:8px;padding:4px 9px;font-size:11px;
+  font-weight:800;cursor:pointer;font-family:inherit;color:inherit;flex:0 0 auto}
+
+/* ---- search ---- */
+.ins3-searchwrap{padding:9px 12px 0}
+.ins3-search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line,#e5e7eb);border-radius:13px;
+  padding:9px 12px;background:var(--card,#fff);min-width:0}
+.ins3-search input{flex:1;min-width:0;border:0;outline:0;font-size:14px;font-family:inherit;background:transparent;color:inherit}
+.ins3-search .x{border:0;background:transparent;font-size:16px;cursor:pointer;color:#94a3b8;padding:0 2px;font-family:inherit}
+.ins3-searchhint{font-size:10.5px;color:#94a3b8;font-weight:650;margin:5px 2px 0;line-height:1.45}
+
+/* ---- chip strips. Each one scrolls INSIDE itself — this is the overflow fix. ---- */
+.ins3-strip{display:flex;gap:6px;overflow-x:auto;padding:9px 12px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.ins3-strip::-webkit-scrollbar{display:none}
+.ins3-chip{flex:0 0 auto;border:1.5px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:999px;
+  padding:6px 12px;font-size:11.5px;font-weight:750;cursor:pointer;font-family:inherit;color:inherit;white-space:nowrap}
+.ins3-chip.on{background:#0f172a;border-color:#0f172a;color:#fff}
+.ins3-chip b{margin-left:5px;opacity:.7;font-weight:850}
+.ins3-chip.tierA.on{background:#166534;border-color:#166534}
+.ins3-chip.tierB.on{background:#1d4ed8;border-color:#1d4ed8}
+
+/* ---- the split pane ---- */
+.ins3-pane{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:10px 12px 20px;min-width:0}
+@media(min-width:900px){
+  .ins3-pane{grid-template-columns:minmax(0,1fr) minmax(0,430px);align-items:start}
+  .ins3-detail{position:sticky;top:10px;max-height:calc(100vh - 22px);overflow:auto}
+}
+.ins3-listwrap{min-width:0}
+.ins3-count{font-size:11.5px;font-weight:750;color:var(--steel,#64748b);margin:0 2px 7px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.ins3-sort{border:1.5px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:8px;padding:4px 9px;
+  font-size:11px;font-weight:750;font-family:inherit;color:inherit;cursor:pointer}
+
+/* ---- a row. Light: one line of identity, one of proof, one of facts. ---- */
+.ins3-r{display:flex;gap:10px;align-items:stretch;background:var(--card,#fff);border-radius:13px;padding:10px 11px;
+  margin-bottom:7px;cursor:pointer;border:1.5px solid transparent;box-shadow:0 1px 4px rgba(15,23,42,.06);
+  min-width:0;-webkit-tap-highlight-color:transparent;transition:border-color .12s,box-shadow .12s}
+.ins3-r:hover{border-color:#cbd5e1}
+.ins3-r.sel{border-color:#b91c1c;box-shadow:0 3px 14px rgba(185,28,28,.16)}
+.ins3-r.other{opacity:.55}
+.ins3-tier{flex:0 0 auto;width:34px;border-radius:9px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;font-weight:850;color:#fff;line-height:1}
+.ins3-tier .t{font-size:13px}
+.ins3-tier .s{font-size:9px;opacity:.85;margin-top:1px}
+.ins3-tA{background:#166534}.ins3-tB{background:#2563eb}.ins3-tC{background:#d97706}.ins3-tD{background:#94a3b8}
+.ins3-rmain{flex:1;min-width:0}
+.ins3-rname{font-size:13.5px;font-weight:800;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-rreg{font-size:11px;font-weight:700;color:var(--steel,#64748b);font-family:ui-monospace,Menlo,Consolas,monospace;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.ins3-rwhy{font-size:10.5px;color:#166534;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-rwhy.warn{color:#b45309}
+.ins3-rexp{flex:0 0 auto;text-align:right;min-width:0}
+.ins3-rdays{font-size:15px;font-weight:850;line-height:1;letter-spacing:-.4px}
+.ins3-rdl{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;margin-top:2px;white-space:nowrap}
+.ins3-pills{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
+.ins3-p{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;white-space:nowrap}
+
+/* ---- detail panel ---- */
+.ins3-detail{background:var(--card,#fff);border-radius:15px;padding:13px 14px;box-shadow:0 2px 12px rgba(15,23,42,.09);min-width:0}
+.ins3-dh{display:flex;gap:9px;align-items:flex-start;min-width:0}
+.ins3-dname{font-size:16px;font-weight:850;letter-spacing:-.3px;line-height:1.25;word-break:break-word}
+.ins3-dreg{font-size:12px;font-weight:750;color:var(--steel,#64748b);font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:2px}
+.ins3-dclose{border:0;background:#f1f5f9;width:28px;height:28px;border-radius:8px;font-size:15px;cursor:pointer;
+  flex:0 0 auto;font-family:inherit;color:inherit;line-height:1}
+.ins3-acts{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
+.ins3-a{flex:1 1 auto;min-width:96px;border:0;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:800;
+  cursor:pointer;font-family:inherit;text-decoration:none;text-align:center;display:inline-flex;align-items:center;
+  justify-content:center;gap:5px}
+.ins3-a.call{background:#dbeafe;color:#1d4ed8}
+.ins3-a.wa{background:#dcfce7;color:#15803d}
+.ins3-a.copy{background:#f1f5f9;color:#334155}
+.ins3-sec{font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:13px 0 6px}
+.ins3-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;min-width:0}
+.ins3-f{background:#f8fafc;border-radius:9px;padding:6px 9px;min-width:0}
+.ins3-fl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8}
+.ins3-fv{font-size:12.5px;font-weight:750;margin-top:1px;word-break:break-word}
+.ins3-fv.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
+.ins3-fv.miss{color:#b45309;font-weight:700}
+.ins3-scorebox{background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1.5px solid #bbf7d0;border-radius:11px;padding:9px 11px;margin-top:4px}
+.ins3-scorebox.low{background:linear-gradient(135deg,#fffbeb,#fef3c7);border-color:#fde68a}
+.ins3-scoren{font-size:19px;font-weight:850;letter-spacing:-.5px}
+.ins3-scorew{font-size:11px;font-weight:700;color:#334155;margin-top:3px;line-height:1.5}
+.ins3-disps{display:flex;flex-wrap:wrap;gap:5px}
+.ins3-d{border:1.5px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:8px;padding:6px 10px;
+  font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;color:inherit;text-align:left}
+.ins3-d.on{color:#fff;border-color:transparent}
+.ins3-in{width:100%;border:1.5px solid var(--line,#e5e7eb);border-radius:9px;padding:8px 10px;font-size:13px;
+  font-family:inherit;background:var(--card,#fff);color:inherit;margin-top:7px}
+.ins3-save{width:100%;border:0;border-radius:10px;background:#0f172a;color:#fff;font-weight:800;font-size:13px;
+  padding:11px;cursor:pointer;font-family:inherit;margin-top:9px}
+.ins3-save[disabled]{opacity:.5;cursor:default}
+.ins3-lockpill{font-size:10.5px;font-weight:800;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;
+  border-radius:7px;padding:4px 9px;display:inline-block;margin-top:8px}
+.ins3-empty{text-align:center;padding:26px 14px}
+.ins3-empty img{width:96px;height:96px;object-fit:contain;opacity:.9}
+.ins3-empty-t{font-size:14px;font-weight:800;margin-top:8px}
+.ins3-empty-s{font-size:12px;color:var(--steel,#64748b);margin-top:4px;line-height:1.5}
+.ins3-more{width:100%;border:1.5px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:11px;
+  padding:11px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;color:inherit;margin-top:4px}
+.ins3-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0f172a;color:#fff;
+  padding:11px 16px;border-radius:11px;font-size:12.5px;font-weight:750;z-index:99999;max-width:88vw;
+  box-shadow:0 8px 28px rgba(0,0,0,.28)}
+.ins3-toast.bad{background:#b91c1c}
+.ins3-toast.good{background:#166534}
+</style>
+
+<script>
+/* ============================================================================
+   ===== R28 (04-Aug-2026) — INSURANCE CRM: OFFLINE, SEARCHABLE, RANKED =======
+
+   Ravi's four complaints and the line each one died on:
+
+   "It should search by everything here."
+       ins2Match_ searched five fields. Chassis and engine were added to the
+       book by R27 and never added to the matcher; policy number never was
+       either. Here the server ships a prebuilt haystack (ins3Hay_) containing
+       every column of Renwal Data Jun 25 to Dec25.xlsx, so there is one
+       definition of "searchable" and the phone cannot disagree with it.
+
+   "It is very slow for searching... IndexedDB like Appsheet."
+       Every keystroke was a JSONP round trip that read up to 25,000 sheet rows.
+       The book now lives in IndexedDB and search is a memory scan.
+
+   "Searching is happening only in the enabled tabs."
+       True, and it was a server bug, not a UI one: insCrmWorklist2 computed its
+       date window before it ever looked at the query. Here the tab is a VIEW,
+       never a pre-filter — ins3Filter() searches all 71,255 rows and the tab
+       only decides what is shown when the search box is empty.
+
+   "Priority is very important. We cannot call all customers."
+       Every row arrives already scored by ins3Score_ (ModulesR28.gs) on the
+       four signals Ravi ranked, in his order: bought from us > chassis+engine
+       on file > serviced with us > has renewed before. The list sorts on it and
+       the card says why.
+
+   Also fixed here: two SMREs no longer see each other's work (rows assigned or
+   owned by somebody else are hidden unless you ask for the whole book), and the
+   page can no longer scroll sideways.
+   ========================================================================== */
+
+/* Column positions in a snapshot row — must match INS3_SNAP_COLS in
+   ModulesR28.gs. New fields are appended there, never inserted, so an older
+   cached copy on a phone keeps reading correctly. */
+const C3 = { reg:0, cust:1, mob:2, alt:3, model:4, expDay:5, expSrc:6, co:7,
+             policy:8, dos:9, lastSvc:10, nextSvc:11, loyalty:12, rel:13,
+             city:14, bill:15, freeSvc:16, car:17, carModels:18, carDue:19,
+             chassis:20, engine:21, score:22, tier:23, why:24, hay:25 };
+
+const INS3 = {
+  rows:[], keys:[], state:{}, meta:null,
+  ver:'', total:0, todayDay:0,
+  bucket:'today', q:'', tier:'', sort:'score',
+  mine:false, whole:false, quotableOnly:false,
+  view:[], shown:120, sel:-1,
+  ready:false, syncing:false, manager:false
+};
+
+const INS3_BUCKETS = [
+  {code:'today',     label:'Expiring today', from:0,   to:0},
+  {code:'tomorrow',  label:'Tomorrow',       from:1,   to:1},
+  {code:'overdue',   label:'Already expired',from:-45, to:-1},
+  {code:'week',      label:'Next 7 days',    from:0,   to:7},
+  {code:'fortnight', label:'Next 15 days',   from:0,   to:15},
+  {code:'month',     label:'Next 30 days',   from:0,   to:30},
+  {code:'quarter',   label:'Next 90 days',   from:0,   to:90},
+  {code:'all',       label:'Whole book',     from:-99999, to:99999}
+];
+const INS3_TIERC = {A:'#166534', B:'#2563eb', C:'#d97706', D:'#94a3b8'};
+const INS3_LOYC  = {REGULAR:'#166534', LAPSED:'#b45309', LOST:'#b91c1c', NEW:'#2563eb', PROSPECT:'#7c3aed'};
+
+function ins3Esc(s){
+  return (typeof raviEsc==='function') ? raviEsc(s==null?'':s)
+    : String(s==null?'':s).replace(/[&<>"']/g,function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+}
+function ins3Me(){ return (typeof USER!=='undefined' && USER && USER.empno) ? String(USER.empno) : ''; }
+function ins3MyName(){ return (typeof USER!=='undefined' && USER && USER.personName) ? String(USER.personName) : ins3Me(); }
+function ins3Norm(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function ins3Key(s){ return ins3Norm(s); }
+
+function ins3Toast(msg, kind){
+  const old=document.getElementById('ins3-toast'); if(old) old.remove();
+  const t=document.createElement('div');
+  t.id='ins3-toast'; t.className='ins3-toast'+(kind?' '+kind:'');
+  t.textContent=msg; document.body.appendChild(t);
+  setTimeout(function(){ if(t.parentNode) t.remove(); }, kind==='bad'?4500:2400);
+}
+
+/* ======================== IndexedDB — the local book ========================
+   Rows are stored in PAGES, not one record per customer. 71,255 individual puts
+   would take minutes and lock the UI thread on a mid-range phone; fifteen puts
+   of five thousand rows each take well under a second. The page is exactly the
+   page the server sent, so a sync that dies halfway resumes at the next page
+   instead of starting again.                                                */
+const INS3_DB='heroIns3', INS3_DBV=1, INS3_STORE='book', INS3_META='meta';
+
+function ins3Open(){
+  return new Promise(function(res, rej){
+    if(!window.indexedDB){ rej(new Error('no indexeddb')); return; }
+    const rq=indexedDB.open(INS3_DB, INS3_DBV);
+    rq.onupgradeneeded=function(e){
+      const db=e.target.result;
+      if(!db.objectStoreNames.contains(INS3_STORE)) db.createObjectStore(INS3_STORE, {keyPath:'p'});
+      if(!db.objectStoreNames.contains(INS3_META))  db.createObjectStore(INS3_META,  {keyPath:'k'});
+    };
+    rq.onsuccess=function(e){ res(e.target.result); };
+    rq.onerror=function(){ rej(rq.error||new Error('indexeddb open failed')); };
+  });
+}
+function ins3Put(db, store, val){
+  return new Promise(function(res, rej){
+    const tx=db.transaction(store,'readwrite');
+    tx.objectStore(store).put(val);
+    tx.oncomplete=function(){ res(); };
+    tx.onerror=function(){ rej(tx.error); };
+  });
+}
+function ins3GetAll(db, store){
+  return new Promise(function(res, rej){
+    const tx=db.transaction(store,'readonly');
+    const rq=tx.objectStore(store).getAll();
+    rq.onsuccess=function(){ res(rq.result||[]); };
+    rq.onerror=function(){ rej(rq.error); };
+  });
+}
+function ins3Clear(db, store){
+  return new Promise(function(res, rej){
+    const tx=db.transaction(store,'readwrite');
+    tx.objectStore(store).clear();
+    tx.oncomplete=function(){ res(); };
+    tx.onerror=function(){ rej(tx.error); };
+  });
+}
+
+/* ------------------------------- the sync -------------------------------- */
+function ins3Say(kind, txt, pct){
+  const el=document.getElementById('ins3-sync'); if(!el) return;
+  el.className='ins3-sync '+kind;
+  el.innerHTML='<div style="flex:1;min-width:0">'
+    +'<div class="ins3-sync-txt">'+ins3Esc(txt)+'</div>'
+    +(pct==null?'':'<div class="ins3-bar"><i style="width:'+Math.round(pct)+'%"></i></div>')
+    +'</div>'
+    +(kind==='busy'?'':'<button class="ins3-sync-btn" onclick="ins3Sync(true)">↻ Sync now</button>');
+}
+
+/* Loads the book. Uses the local copy when the server says it is still current,
+   which is the whole point — after the first visit this costs one small call. */
+async function ins3Load(force){
+  if(INS3.syncing) return;
+  INS3.syncing=true;
+  let db=null;
+  try{ db=await ins3Open(); }
+  catch(e){
+    /* No IndexedDB (private mode, old webview). Not fatal — fall back to the
+       server-side worklist so the screen still works, just without offline
+       search. Never leave the SMRE with a blank screen. */
+    INS3.syncing=false;
+    ins3Say('bad','This browser will not store the book offline — using the server instead.');
+    ins3FallbackToR23();
+    return;
+  }
+
+  /* what the server has */
+  const ver = await new Promise(function(res){
+    jgetRaw('inscrm3_ver', {}, function(r){ res(r||null); }, 30000);
+  });
+  if(!ver || ver.ok===false){
+    /* Guard on SHAPE, not on ok — an undeployed route answers ok:true with no
+       payload (CodeAppEntry doGet's else branch). See the R24 scanner bug. */
+    ins3Say('bad', (ver&&ver.error) || 'Backend has not been updated yet — R28 routes are not live.');
+    await ins3LoadLocal(db);
+    INS3.syncing=false; return;
+  }
+  if(typeof ver.ver!=='string'){
+    ins3Say('bad','Backend is on an older version — ask for the Apps Script deployment to be updated.');
+    await ins3LoadLocal(db);
+    INS3.syncing=false; return;
+  }
+
+  const metaRows = await ins3GetAll(db, INS3_META);
+  const local = metaRows.find(function(m){ return m.k==='book'; });
+
+  if(!force && local && local.ver===ver.ver && local.done){
+    ins3Say('ok','Book is up to date · '+(local.total||0).toLocaleString('en-IN')+' policies on this device');
+    await ins3LoadLocal(db);
+    INS3.syncing=false;
+    ins3LoadStates();
+    return;
+  }
+
+  /* Full sync. Resumable: if the version still matches what we were part-way
+     through, carry on from the page we reached. */
+  const resume = (!force && local && local.ver===ver.ver && !local.done) ? (local.next||0) : 0;
+  if(!resume) await ins3Clear(db, INS3_STORE);
+
+  let page=resume, pages=null, got=0;
+  ins3Say('busy', resume ? 'Resuming download…' : 'Downloading the renewal book to this device…', 0);
+
+  while(true){
+    const res = await new Promise(function(r){
+      jgetRaw('inscrm3_snapshot', {page:page, size:5000}, function(x){ r(x||null); }, 120000);
+    });
+    if(!res || res.ok===false || !Array.isArray(res.rows)){
+      ins3Say('bad','Download stopped at page '+(page+1)+((res&&res.error)?' — '+res.error:'')+'. Tap Sync now to continue.');
+      await ins3Put(db, INS3_META, {k:'book', ver:ver.ver, next:page, done:false, total:ver.rows});
+      await ins3LoadLocal(db);
+      INS3.syncing=false; return;
+    }
+    if(res.ver && res.ver!==ver.ver){
+      /* The book was rebuilt underneath us. Mixing pages from two builds would
+         silently duplicate or lose customers, so start again. */
+      ins3Say('busy','The book changed on the server — starting again…', 0);
+      await ins3Clear(db, INS3_STORE);
+      page=0; got=0; continue;
+    }
+    pages = res.pages || pages;
+    if(res.rows.length) await ins3Put(db, INS3_STORE, {p:page, rows:res.rows});
+    got += res.rows.length;
+    page++;
+    const pct = pages ? Math.min(100, page*100/pages) : null;
+    ins3Say('busy','Downloading… '+got.toLocaleString('en-IN')+' of '+(ver.rows||0).toLocaleString('en-IN')+' policies', pct);
+    await ins3Put(db, INS3_META, {k:'book', ver:ver.ver, next:page, done:!!res.done, total:ver.rows});
+    if(res.done || !res.rows.length) break;
+  }
+
+  ins3Say('ok','Downloaded · '+got.toLocaleString('en-IN')+' policies now searchable offline');
+  await ins3LoadLocal(db);
+  INS3.syncing=false;
+  ins3LoadStates();
+}
+
+/* Reads every stored page into memory and builds the search index. */
+async function ins3LoadLocal(db){
+  let pages=[];
+  try{ pages = await ins3GetAll(db, INS3_STORE); }catch(e){}
+  pages.sort(function(a,b){ return a.p-b.p; });
+
+  const rows=[];
+  for(let i=0;i<pages.length;i++){
+    const r=pages[i].rows||[];
+    for(let j=0;j<r.length;j++) rows.push(r[j]);
+  }
+  INS3.rows=rows;
+  INS3.total=rows.length;
+
+  /* Build the searchable text here rather than downloading it. It is only the
+     other columns of the same row joined up, and shipping it cost ~13 MB of the
+     ~40 MB first sync — mobile data spent sending a copy of the payload back to
+     itself. MUST stay field-for-field identical to ins3Hay_ in ModulesR28.gs.
+
+     The punctuation-stripped copy is built once, here. Doing it inside the
+     search loop would turn every keystroke into 74,865 regex replacements —
+     that is the slowness we are removing, moved somewhere else. */
+  const keys=new Array(rows.length);
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+    const hay=[r[C3.reg], r[C3.cust], r[C3.mob], r[C3.alt], r[C3.model],
+               r[C3.chassis], r[C3.engine], r[C3.policy],
+               r[C3.co], r[C3.city], r[C3.dos], r[C3.loyalty], r[C3.rel]]
+              .join(' ').toUpperCase();
+    r[C3.hay]=hay;
+    keys[i]=ins3Norm(hay);
+  }
+  INS3.keys=keys;
+
+  INS3.todayDay = Math.floor(new Date().setHours(0,0,0,0)/86400000);
+  INS3.ready = rows.length>0;
+  ins3Render();
+}
+
+/* Call outcomes, ownership and today's assignments. Small sheet, one call, and
+   it is what makes the screen agree with what the other SMREs have done. */
+function ins3LoadStates(){
+  jgetRaw('inscrm3_states', {}, function(res){
+    if(!res || !Array.isArray(res.rows)) return;
+    const m={};
+    for(let i=0;i<res.rows.length;i++){
+      const v=res.rows[i];
+      m[v[0]]={ owner:v[1], ownerName:v[2], temp:v[3], calls:v[4], lastCall:v[5],
+                status:v[6], reason:v[7], remarks:v[8], nextFollowUp:v[9],
+                won:!!v[10], premium:v[11], lockedBy:v[12], lockedByName:v[13],
+                lockedSecondsLeft:v[14], assignedTo:v[15] };
+    }
+    INS3.state=m;
+    ins3Render();
+  }, 45000);
+  /* dispositions, for the outcome buttons */
+  if(!INS3.meta) jgetRaw('inscrm2_meta', {}, function(r){
+    if(r && r.meta){ INS3.meta=r.meta; ins3Render(); }
+  }, 30000);
+  jgetRaw('inscrm2_manager', {owner:ins3Me()}, function(r){
+    if(r && typeof r.manager==='boolean'){ INS3.manager=r.manager; ins3Render(); }
+  }, 30000);
+}
+
+/* If IndexedDB is unavailable there is still a working screen in this file. */
+function ins3FallbackToR23(){
+  const root=document.getElementById('ins3-root'); if(root) root.style.display='none';
+  const old=document.querySelector('#view-insurance .ins2'); if(old) old.style.display='';
+  if(typeof ins2Boot==='function') ins2Boot();
+}
+
+/* ============================== filtering ==================================
+   THE FIX Ravi asked for. Search runs over the WHOLE book, always. The day tab
+   only narrows the list when the search box is empty — it is a view, not a
+   gate. A customer expiring in November is findable while "Expiring today" is
+   selected, which was impossible before.                                    */
+function ins3Filter(){
+  const q = INS3.q.trim();
+  const qRaw = q.toUpperCase();
+  const qKey = ins3Norm(q);
+  const searching = q.length>0;
+
+  const b = INS3_BUCKETS.find(function(x){ return x.code===INS3.bucket; }) || INS3_BUCKETS[0];
+  const lo = INS3.todayDay + b.from, hi = INS3.todayDay + b.to;
+
+  const me = ins3Me();
+  const rows=INS3.rows, keys=INS3.keys, st=INS3.state;
+  const out=[];
+
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+
+    if(searching){
+      /* both forms: raw so "26-06-2026" matches a date, stripped so
+         "mh14mn6821" matches "MH14 MN 6821" */
+      if(keys[i].indexOf(qKey)<0 && String(r[C3.hay]).indexOf(qRaw)<0) continue;
+    } else {
+      const d=r[C3.expDay];
+      if(d==null || d<lo || d>hi) continue;
+    }
+
+    if(INS3.tier && r[C3.tier]!==INS3.tier) continue;
+    if(INS3.quotableOnly && !(r[C3.chassis] && r[C3.engine])) continue;
+
+    const s = st[ins3Key(r[C3.reg])] || null;
+    const owner = s ? s.owner : '';
+    const asgn  = s ? s.assignedTo : '';
+
+    if(INS3.mine){
+      if(owner!==me && asgn!==me) continue;
+    } else if(!INS3.whole && !searching){
+      /* THE OWNERSHIP FIX. Somebody else's customer is not on my screen at all
+         unless I ask for the whole book. Searching always ignores this — if a
+         customer walks in and asks, the SMRE must be able to find him whoever
+         owns him; he just cannot save over the owner. */
+      if(owner && owner!==me) continue;
+      if(asgn && asgn!==me) continue;
+    }
+
+    out.push(i);
+  }
+
+  const dir = INS3.sort;
+  out.sort(function(a,b2){
+    const ra=rows[a], rb=rows[b2];
+    if(dir==='date'){
+      const da=ra[C3.expDay], db2=rb[C3.expDay];
+      if(da==null) return 1; if(db2==null) return -1;
+      return da-db2 || rb[C3.score]-ra[C3.score];
+    }
+    /* priority: score first, then the sooner expiry as the tie-break */
+    const sd = rb[C3.score]-ra[C3.score];
+    if(sd) return sd;
+    const da=ra[C3.expDay]==null?9e9:ra[C3.expDay], db3=rb[C3.expDay]==null?9e9:rb[C3.expDay];
+    return da-db3;
+  });
+
+  INS3.view=out;
+  return out;
+}
+
+/* ================================ rendering ================================ */
+function ins3Boot(force){
+  const old=document.querySelector('#view-insurance .ins2'); if(old) old.style.display='none';
+  const root=document.getElementById('ins3-root'); if(root) root.style.display='';
+  ins3Shell();
+  if(INS3.ready && !force){ ins3Render(); ins3LoadStates(); }
+  else ins3Load(force);
+}
+
+function ins3Shell(){
+  const root=document.getElementById('ins3-root'); if(!root) return;
+  const h=new Date().getHours();
+  const hi=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+(ins3MyName()?', '+ins3MyName().split(' ')[0]:'');
+  root.innerHTML=
+    '<div class="ins3-top">'
+      +'<button class="ins3-back" onclick="showView(\'home\')">‹</button>'
+      +'<img class="ins3-mascot" src="assets/23_white_red_superhero_jump.png" alt="" onerror="this.style.display=\'none\'">'
+      +'<div class="ins3-top-txt">'
+        +'<div class="ins3-top-hi">'+ins3Esc(hi)+'</div>'
+        +'<div class="ins3-top-sub" id="ins3-sub">Renewal call list</div>'
+      +'</div>'
+    +'</div>'
+    +'<div class="ins3-sync ok" id="ins3-sync"></div>'
+    +'<div class="ins3-searchwrap">'
+      +'<div class="ins3-search">'
+        +'<span>🔎</span>'
+        +'<input id="ins3-q" placeholder="Name, reg, mobile, chassis, engine, policy no…" '
+          +'oninput="ins3OnQ(this.value)" autocomplete="off" spellcheck="false">'
+        +'<button class="x" onclick="ins3ClearQ()" title="Clear">✕</button>'
+      +'</div>'
+      +'<div class="ins3-searchhint" id="ins3-hint">Searches all '
+        +'<b id="ins3-tot">0</b> policies — every column of the renewal sheet, whichever tab is selected.</div>'
+    +'</div>'
+    +'<div class="ins3-strip" id="ins3-buckets"></div>'
+    +'<div class="ins3-strip" id="ins3-filters"></div>'
+    +'<div class="ins3-pane">'
+      +'<div class="ins3-listwrap">'
+        +'<div class="ins3-count" id="ins3-count"></div>'
+        +'<div id="ins3-list"></div>'
+        +'<div id="ins3-more"></div>'
+      +'</div>'
+      +'<div id="ins3-detailwrap"></div>'
+    +'</div>';
+  ins3Say('busy','Starting…');
+}
+
+/* Drop the current selection AND hand the soft lock back.
+   Caught in browser testing 04-Aug-2026: every one of these actions set
+   INS3.sel = -1 directly, which closes the card but leaves the 10-minute lock
+   standing on the server. An SMRE who opened Santosh and then typed a new
+   search left Santosh locked against everybody else for ten minutes, with
+   nothing on her screen to say so. Only ins3Close() released it, and that is
+   the one path an SMRE in a hurry never takes. */
+function ins3Deselect(){
+  const r = INS3.sel>=0 ? INS3.rows[INS3.sel] : null;
+  INS3.sel=-1;
+  if(r) jgetRaw('inscrm2_lock', {reg:r[C3.reg], by:ins3Me(), act:'release'}, function(){}, 15000);
+}
+
+function ins3OnQ(v){
+  INS3.q=v; INS3.shown=120; ins3Deselect();
+  clearTimeout(INS3._t);
+  INS3._t=setTimeout(ins3Render, 90);      /* local, so this can be short */
+}
+function ins3ClearQ(){
+  INS3.q=''; const e=document.getElementById('ins3-q'); if(e) e.value='';
+  INS3.shown=120; ins3Deselect(); ins3Render();
+}
+function ins3SetBucket(c){ INS3.bucket=c; INS3.shown=120; ins3Deselect(); ins3Render(); }
+function ins3Toggle(k){
+  if(k==='mine') INS3.mine=!INS3.mine;
+  else if(k==='whole') INS3.whole=!INS3.whole;
+  else if(k==='quotable') INS3.quotableOnly=!INS3.quotableOnly;
+  INS3.shown=120; ins3Render();
+}
+function ins3SetTier(t){ INS3.tier = (INS3.tier===t?'':t); INS3.shown=120; ins3Render(); }
+function ins3SetSort(v){ INS3.sort=v; ins3Render(); }
+function ins3More(){ INS3.shown+=120; ins3Render(); }
+
+function ins3Render(){
+  if(!document.getElementById('ins3-root')) return;
+  const tot=document.getElementById('ins3-tot');
+  if(tot) tot.textContent=(INS3.total||0).toLocaleString('en-IN');
+
+  ins3PaintChips();
+  const view=ins3Filter();
+
+  /* counts line */
+  const cEl=document.getElementById('ins3-count');
+  if(cEl){
+    const searching=INS3.q.trim().length>0;
+    let tierN={A:0,B:0,C:0,D:0};
+    for(let i=0;i<view.length;i++) tierN[INS3.rows[view[i]][C3.tier]]++;
+    cEl.innerHTML=
+      '<b>'+view.length.toLocaleString('en-IN')+'</b>&nbsp;'
+      +(searching?'match'+(view.length===1?'':'es')+' across the whole book'
+                 :'to call in this range')
+      +'<span style="color:#166534;font-weight:800">A '+tierN.A+'</span>'
+      +'<span style="color:#2563eb;font-weight:800">B '+tierN.B+'</span>'
+      +'<span style="color:#d97706;font-weight:800">C '+tierN.C+'</span>'
+      +'<span style="color:#94a3b8;font-weight:800">D '+tierN.D+'</span>'
+      +'<span style="flex:1"></span>'
+      +'<select class="ins3-sort" onchange="ins3SetSort(this.value)">'
+        +'<option value="score"'+(INS3.sort==='score'?' selected':'')+'>Priority first</option>'
+        +'<option value="date"'+(INS3.sort==='date'?' selected':'')+'>Expiry date first</option>'
+      +'</select>';
+  }
+
+  /* the list */
+  const list=document.getElementById('ins3-list');
+  if(list){
+    if(!INS3.ready){
+      list.innerHTML='<div class="ins3-empty">'
+        +'<img src="assets/17_red_robot_superhero.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="ins3-empty-t">Getting your book</div>'
+        +'<div class="ins3-empty-s">The renewal book is downloading to this device. It only happens once — after this, searching is instant and works without signal.</div></div>';
+    } else if(!view.length){
+      list.innerHTML='<div class="ins3-empty">'
+        +'<img src="assets/21_gift_star_mascot.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="ins3-empty-t">'+(INS3.q?'Nobody matches that':'Nothing here')+'</div>'
+        +'<div class="ins3-empty-s">'+(INS3.q
+            ? 'Searched all '+(INS3.total||0).toLocaleString('en-IN')+' policies on name, reg no, both mobiles, chassis, engine, policy number, model and city.'
+            : 'No policies in this range that are yours to call. Tap “Whole book” to see everyone.')
+        +'</div></div>';
+    } else {
+      const n=Math.min(INS3.shown, view.length);
+      let html='';
+      for(let i=0;i<n;i++) html+=ins3Row(view[i]);
+      list.innerHTML=html;
+    }
+  }
+
+  const more=document.getElementById('ins3-more');
+  if(more) more.innerHTML = (INS3.ready && view.length>INS3.shown)
+    ? '<button class="ins3-more" onclick="ins3More()">Show more · '+(view.length-INS3.shown).toLocaleString('en-IN')+' left</button>' : '';
+
+  ins3PaintDetail();
+
+  const sub=document.getElementById('ins3-sub');
+  if(sub) sub.textContent = INS3.total
+    ? INS3.total.toLocaleString('en-IN')+' policies on this device'
+    : 'Renewal call list';
+}
+
+function ins3PaintChips(){
+  const bw=document.getElementById('ins3-buckets');
+  if(bw){
+    bw.innerHTML=INS3_BUCKETS.map(function(b){
+      let n=0;
+      if(INS3.ready){
+        const lo=INS3.todayDay+b.from, hi=INS3.todayDay+b.to;
+        for(let i=0;i<INS3.rows.length;i++){
+          const d=INS3.rows[i][C3.expDay];
+          if(d!=null && d>=lo && d<=hi) n++;
+        }
+      }
+      return '<button class="ins3-chip'+(INS3.bucket===b.code?' on':'')+'" onclick="ins3SetBucket(\''+b.code+'\')">'
+        +ins3Esc(b.label)+'<b>'+n.toLocaleString('en-IN')+'</b></button>';
+    }).join('');
+  }
+  const fw=document.getElementById('ins3-filters');
+  if(fw){
+    fw.innerHTML=
+       '<button class="ins3-chip tierA'+(INS3.tier==='A'?' on':'')+'" onclick="ins3SetTier(\'A\')">🟢 Tier A — call first</button>'
+      +'<button class="ins3-chip tierB'+(INS3.tier==='B'?' on':'')+'" onclick="ins3SetTier(\'B\')">🔵 Tier B</button>'
+      +'<button class="ins3-chip'+(INS3.quotableOnly?' on':'')+'" onclick="ins3Toggle(\'quotable\')">🔧 Can be quoted</button>'
+      +'<button class="ins3-chip'+(INS3.mine?' on':'')+'" onclick="ins3Toggle(\'mine\')">👤 Mine only</button>'
+      +'<button class="ins3-chip'+(INS3.whole?' on':'')+'" onclick="ins3Toggle(\'whole\')">📚 Whole book</button>'
+      +'<button class="ins3-chip" onclick="ins3Sync(true)">↻ Re-sync</button>';
+  }
+}
+
+function ins3Days(d){
+  if(d==null) return {n:'—', l:'', c:'#64748b'};
+  const k=d-INS3.todayDay;
+  return { n: k===0?'TODAY':Math.abs(k),
+           l: k<0?(k===-1?'day overdue':'days overdue'):k===0?'last day':k===1?'day left':'days left',
+           c: k<0?'#b45309':k<=1?'#dc2626':k<=7?'#d97706':k<=30?'#2563eb':'#64748b' };
+}
+
+function ins3Row(i){
+  const r=INS3.rows[i];
+  const s=INS3.state[ins3Key(r[C3.reg])]||null;
+  const me=ins3Me();
+  const owner=s?s.owner:'';
+  const other = owner && owner!==me;
+  const d=ins3Days(r[C3.expDay]);
+  const tier=r[C3.tier]||'D';
+
+  const pills=[];
+  if(s && s.reason) pills.push('<span class="ins3-p" style="background:#0f172a10;color:#334155">'+ins3Esc(s.reason)+'</span>');
+  if(r[C3.loyalty]) pills.push('<span class="ins3-p" style="background:'+(INS3_LOYC[r[C3.loyalty]]||'#64748b')+'18;color:'+(INS3_LOYC[r[C3.loyalty]]||'#64748b')+'">'+ins3Esc(r[C3.loyalty])+'</span>');
+  if(r[C3.car]==='Y') pills.push('<span class="ins3-p" style="background:#7c3aed18;color:#7c3aed">🚗 CAR</span>');
+  if(r[C3.expSrc]==='DERIVED') pills.push('<span class="ins3-p" style="background:#94a3b818;color:#64748b" title="Sale anniversary, not a real policy date">~EST</span>');
+  if(owner===me) pills.push('<span class="ins3-p" style="background:#16653418;color:#166534">MINE</span>');
+  else if(other) pills.push('<span class="ins3-p" style="background:#64748b18;color:#64748b">'+ins3Esc(s.ownerName||owner)+'</span>');
+  if(s && s.won) pills.push('<span class="ins3-p" style="background:#16653418;color:#166534">✓ RENEWED</span>');
+
+  const missing=[];
+  if(!r[C3.chassis]) missing.push('no chassis');
+  if(!r[C3.engine])  missing.push('no engine no');
+  if(!r[C3.mob])     missing.push('no mobile');
+
+  const why = missing.length
+    ? '<div class="ins3-rwhy warn">⚠ '+ins3Esc(missing.join(' · '))+'</div>'
+    : (r[C3.why] ? '<div class="ins3-rwhy">'+ins3Esc(r[C3.why])+'</div>' : '');
+
+  return '<div class="ins3-r'+(INS3.sel===i?' sel':'')+(other?' other':'')+'" onclick="ins3Sel('+i+')">'
+    +'<div class="ins3-tier ins3-t'+tier+'"><div class="t">'+tier+'</div><div class="s">'+r[C3.score]+'</div></div>'
+    +'<div class="ins3-rmain">'
+      +'<div class="ins3-rname">'+ins3Esc(r[C3.cust]||'(no name)')+'</div>'
+      +'<div class="ins3-rreg">'+ins3Esc(r[C3.reg]||'—')+(r[C3.model]?' · '+ins3Esc(r[C3.model]):'')+'</div>'
+      +why
+      +'<div class="ins3-pills">'+pills.join('')+'</div>'
+    +'</div>'
+    +'<div class="ins3-rexp">'
+      +'<div class="ins3-rdays" style="color:'+d.c+'">'+d.n+'</div>'
+      +'<div class="ins3-rdl">'+d.l+'</div>'
+    +'</div>'
+  +'</div>';
+}
+
+function ins3Sel(i){
+  /* Moving straight from one customer to another must hand the first one back,
+     or a caller working down her list locks every row she touches. */
+  if(INS3.sel>=0 && INS3.sel!==i) ins3Deselect();
+  INS3.sel=i;
+  ins3Render();
+  const r=INS3.rows[i];
+  /* take the soft lock so another SMRE sees "on this call" */
+  jgetRaw('inscrm2_lock', {reg:r[C3.reg], by:ins3Me(), byName:ins3MyName(), act:'take',
+    customer:r[C3.cust], mobile:r[C3.mob]}, function(res){
+    if(res && res.ok===false && res.error==='locked'){
+      ins3Toast('🔒 '+(res.lockedByName||res.lockedBy)+' is on this call right now','bad');
+      const k=ins3Key(r[C3.reg]);
+      INS3.state[k]=INS3.state[k]||{};
+      INS3.state[k].lockedBy=res.lockedBy; INS3.state[k].lockedByName=res.lockedByName;
+      ins3PaintDetail();
+    }
+  }, 15000);
+  if(window.innerWidth<900){
+    const w=document.getElementById('ins3-detailwrap');
+    if(w) w.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+}
+
+function ins3PaintDetail(){
+  const w=document.getElementById('ins3-detailwrap'); if(!w) return;
+  if(INS3.sel<0 || !INS3.rows[INS3.sel]){ w.innerHTML=''; return; }
+
+  const i=INS3.sel, r=INS3.rows[i];
+  const s=INS3.state[ins3Key(r[C3.reg])]||{};
+  const me=ins3Me();
+  const lockedByOther = s.lockedBy && s.lockedBy!==me;
+  const ownedByOther  = s.owner && s.owner!==me;
+  const d=ins3Days(r[C3.expDay]);
+  const tier=r[C3.tier]||'D';
+
+  function f(l,v,cls){
+    return '<div class="ins3-f"><div class="ins3-fl">'+ins3Esc(l)+'</div>'
+      +'<div class="ins3-fv '+(cls||'')+'">'+(v?ins3Esc(v):'<span class="miss">not on file</span>')+'</div></div>';
+  }
+
+  const dispositions=(INS3.meta&&INS3.meta.dispositions)||[];
+  const groups={};
+  dispositions.forEach(function(x){ (groups[x.group]=groups[x.group]||[]).push(x); });
+  let dispHtml='';
+  Object.keys(groups).forEach(function(g){
+    dispHtml+='<div class="ins3-sec" style="margin:9px 0 5px">'+ins3Esc(g)+'</div><div class="ins3-disps">'
+      +groups[g].map(function(x){
+        const on = s.status===x.code;
+        const c = g==='Won'?'#166534':g==='Lost'?'#b91c1c':g==='In progress'?'#d97706':'#64748b';
+        return '<button class="ins3-d'+(on?' on':'')+'" '+(on?'style="background:'+c+'"':'')
+          +' onclick="ins3Pick(\''+x.code+'\')">'+ins3Esc(x.label)+'</button>';
+      }).join('')+'</div>';
+  });
+
+  w.innerHTML='<div class="ins3-detail">'
+    +'<div class="ins3-dh">'
+      +'<div style="flex:1;min-width:0">'
+        +'<div class="ins3-dname">'+ins3Esc(r[C3.cust]||'(no name)')+'</div>'
+        +'<div class="ins3-dreg">'+ins3Esc(r[C3.reg]||'—')+'</div>'
+      +'</div>'
+      +'<button class="ins3-dclose" onclick="ins3Close()">✕</button>'
+    +'</div>'
+
+    +'<div class="ins3-scorebox'+(r[C3.score]<43?' low':'')+'">'
+      +'<div class="ins3-scoren" style="color:'+(INS3_TIERC[tier])+'">Tier '+tier+' · '+r[C3.score]+'/100</div>'
+      +'<div class="ins3-scorew">'+(r[C3.why]?ins3Esc(r[C3.why]):'Nothing on file that says he will renew with us.')+'</div>'
+    +'</div>'
+
+    +(lockedByOther?'<div class="ins3-lockpill">🔒 '+ins3Esc(s.lockedByName||s.lockedBy)+' is on this call — saving is blocked</div>':'')
+    +(ownedByOther&&!lockedByOther?'<div class="ins3-lockpill">👤 This customer belongs to '+ins3Esc(s.ownerName||s.owner)+'</div>':'')
+
+    +'<div class="ins3-acts">'
+      +(r[C3.mob]?'<a class="ins3-a call" href="tel:+91'+ins3Esc(r[C3.mob])+'">📞 Call</a>':'')
+      +(r[C3.mob]?'<button class="ins3-a wa" onclick="ins3Wa('+i+')">🟢 WhatsApp</button>':'')
+      +'<button class="ins3-a copy" onclick="ins3Copy('+i+')">📋 Copy details</button>'
+    +'</div>'
+
+    +'<div class="ins3-sec">Policy — what you need to quote him</div>'
+    +'<div class="ins3-facts">'
+      +f('Expiry', (r[C3.expDay]!=null? d.n+' '+d.l : '')+(r[C3.expSrc]==='DERIVED'?' (estimated)':''))
+      +f('Chassis / VIN', r[C3.chassis], 'mono')
+      +f('Engine no', r[C3.engine], 'mono')
+      +f('Policy no', r[C3.policy], 'mono')
+      +f('Insurer', r[C3.co])
+      +f('Date of sale', r[C3.dos])
+    +'</div>'
+
+    +'<div class="ins3-sec">Relationship</div>'
+    +'<div class="ins3-facts">'
+      +f('Loyalty', r[C3.loyalty])
+      +f('Last service', r[C3.lastSvc])
+      +f('Next service due', r[C3.nextSvc])
+      +f('Last bill', r[C3.bill]?('₹'+Number(r[C3.bill]).toLocaleString('en-IN')):'')
+      +f('Free services used', r[C3.freeSvc])
+      +f('City', r[C3.city])
+    +'</div>'
+
+    +'<div class="ins3-sec">Contact</div>'
+    +'<div class="ins3-facts">'
+      +f('Mobile', r[C3.mob], 'mono')
+      +f('Alt mobile', r[C3.alt], 'mono')
+      +(r[C3.car]==='Y'?f('Also owns a car', r[C3.carModels]+(r[C3.carDue]?' · due '+r[C3.carDue]:'')):'')
+    +'</div>'
+
+    +(s.calls?'<div class="ins3-sec">History</div><div class="ins3-facts">'
+      +f('Calls made', String(s.calls))+f('Last call', s.lastCall)+f('Outcome', s.reason)
+      +f('Follow up', s.nextFollowUp)+'</div>':'')
+
+    +'<div class="ins3-sec">Outcome of this call</div>'
+    +dispHtml
+    +'<input class="ins3-in" id="ins3-prem" placeholder="Premium quoted (optional)" inputmode="numeric" value="'+ins3Esc(s.premium||'')+'">'
+    +'<input class="ins3-in" id="ins3-rem" placeholder="Remark (optional)" value="'+ins3Esc(s.remarks||'')+'">'
+    +'<button class="ins3-save" id="ins3-savebtn"'+(lockedByOther?' disabled':'')+' onclick="ins3Save()">'
+      +(lockedByOther?'Locked by '+ins3Esc(s.lockedByName||s.lockedBy):'Save outcome')+'</button>'
+  +'</div>';
+}
+
+function ins3Close(){ ins3Deselect(); ins3Render(); }
+function ins3Pick(code){
+  const r=INS3.rows[INS3.sel]; if(!r) return;
+  const k=ins3Key(r[C3.reg]);
+  INS3.state[k]=INS3.state[k]||{};
+  INS3.state[k].status=code;
+  ins3PaintDetail();
+}
+function ins3Wa(i){
+  const r=INS3.rows[i]; if(!r||!r[C3.mob]) return;
+  const d=ins3Days(r[C3.expDay]);
+  const msg='Namaste '+(r[C3.cust]||'')+', Sehgal Autoriders here. Your '+(r[C3.model]||'two-wheeler')
+    +' ('+r[C3.reg]+') insurance is due — '+(d.n==='TODAY'?'today':d.n+' '+d.l)
+    +'. Shall I send you the renewal quote?';
+  window.open('https://wa.me/91'+r[C3.mob]+'?text='+encodeURIComponent(msg),'_blank','noopener');
+}
+function ins3Copy(i){
+  const r=INS3.rows[i]; if(!r) return;
+  const txt=[r[C3.cust], r[C3.reg], r[C3.model],
+    'Chassis: '+(r[C3.chassis]||'—'), 'Engine: '+(r[C3.engine]||'—'),
+    'Policy: '+(r[C3.policy]||'—'), 'Insurer: '+(r[C3.co]||'—'),
+    'Mobile: '+(r[C3.mob]||'—')].join('\n');
+  if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){ ins3Toast('Copied','good'); });
+  else ins3Toast('Copy not available on this browser','bad');
+}
+
+function ins3Save(){
+  const r=INS3.rows[INS3.sel]; if(!r) return;
+  const k=ins3Key(r[C3.reg]);
+  const s=INS3.state[k]||{};
+  const prem=(document.getElementById('ins3-prem')||{}).value||'';
+  const rem =(document.getElementById('ins3-rem') ||{}).value||'';
+  const btn=document.getElementById('ins3-savebtn');
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+
+  /* Snapshot BEFORE the optimistic write. Taking it inside the save would
+     capture the edit we are trying to be able to undo — the R23 lesson. */
+  const before=JSON.parse(JSON.stringify(s));
+
+  INS3.state[k]=Object.assign({}, s, {remarks:rem, premium:prem,
+    calls:(Number(s.calls)||0)+1, owner:s.owner||ins3Me(), ownerName:s.ownerName||ins3MyName()});
+  ins3Render();
+
+  jgetRaw('inscrm2_save', {reg:r[C3.reg], customer:r[C3.cust], mobile:r[C3.mob],
+    expiry:'', by:ins3Me(), byName:ins3MyName(), status:s.status||'',
+    remarks:rem, premium:prem, called:'1'}, function(res){
+    if(btn){ btn.disabled=false; btn.textContent='Save outcome'; }
+    if(res && res.ok===false){
+      INS3.state[k]=before;                          /* roll back */
+      ins3Render();
+      ins3Toast(res.error==='locked'
+        ? '🔒 Not saved — '+(res.lockedByName||res.lockedBy)+' has this customer open'
+        : 'Not saved: '+(res.error||'unknown'), 'bad');
+      return;
+    }
+    if(res && res.owner){
+      INS3.state[k].owner=res.owner; INS3.state[k].ownerName=res.ownerName;
+      INS3.state[k].status=res.status; INS3.state[k].reason=res.statusLabel;
+      INS3.state[k].nextFollowUp=res.nextFollowUp; INS3.state[k].won=!!res.converted;
+    }
+    ins3Toast('Saved','good');
+    ins3Render();
+  }, 30000);
+}
+
+/* Manual re-sync. force=true always re-downloads; used by the ↻ chip and by the
+   sync bar's own button. */
+function ins3Sync(force){ ins3Load(!!force); }
 </script>
 </body></html>
