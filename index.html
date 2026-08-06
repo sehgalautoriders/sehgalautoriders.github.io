@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 28;
-window.HERO_BUILD = 'R31-2026.08.06.3';
+window.HERO_BUILD = 'R31-2026.08.06.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10303,7 +10303,10 @@ function pfStockNote(){
     }
     el.innerHTML='📦 Stock: <b>'+(res.rows||0).toLocaleString('en-IN')+'</b> rows across our outlets · '
       +'stock taken <b>'+raviEsc(res.stockDate||'—')+'</b> · loaded '+raviEsc(res.uploadedAt||'—')
-      +(res.sorted?'':' · <b style="color:#b91c1c">tab is out of order — reload it</b>');
+      /* Sortedness is a SPEED property, not a correctness one — mp_stock
+         re-checks the part number on every row it reads. The old wording sent
+         the reader off to reload a tab that was answering perfectly well. */
+      +(res.sorted?'':' · <span style="opacity:.75">not in part-number order, so searches are a little slower</span>');
     el.style.display='block'; el.style.background='#ecfeff'; el.style.color='#0e7490';
   }, 20000);
 }
