@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 25;
-window.HERO_BUILD = 'R28-2026.08.04.5';
+window.HERO_RELEASE = 26;
+window.HERO_BUILD = 'R29-2026.08.06.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2195,6 +2195,36 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       </div>
     </div>
     <div id="pf-info" style="display:none;font-size:12px;font-weight:600;padding:8px 12px;border-radius:8px;margin-bottom:12px"></div>
+
+    <!-- ====================================================================
+         CATALOGUE BROWSER — added R29, 06-Aug-2026.
+         Until now this screen could only answer "where is part X", which
+         assumed you already knew X. All 55,681 all-India parts are now
+         reachable by Category -> Sub-category -> Part without knowing any
+         number. The tab is never downloaded; parts_tree / parts_in resolve
+         each step server-side (ModulesR29.gs).
+         ==================================================================== -->
+    <div id="pf-cat-wrap" style="margin-bottom:12px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--card,#fff)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700">🗂️ Browse the catalogue <span id="pf-cat-count" style="font-weight:500;color:var(--steel);font-size:11px"></span></div>
+        <button class="hu-actbtn sm" style="background:#475569" onclick="pfTreeBoot(1)">↻ Reload tree</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:170px">
+          <label style="font-size:11px;font-weight:700;color:var(--steel)">Category</label>
+          <select id="pf-t-cat" onchange="pfTreeCat()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;background:#fff"><option value="">Loading…</option></select>
+        </div>
+        <div style="flex:1;min-width:170px">
+          <label style="font-size:11px;font-weight:700;color:var(--steel)">Sub-category</label>
+          <select id="pf-t-sub" onchange="pfTreeSub()" disabled style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;background:#fff"><option value="">Pick a category first…</option></select>
+        </div>
+        <div style="flex:1;min-width:170px">
+          <label style="font-size:11px;font-weight:700;color:var(--steel)">Search inside</label>
+          <input id="pf-t-q" type="text" placeholder="number or description…" oninput="pfTreeQueryDebounced()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px">
+        </div>
+      </div>
+      <div id="pf-t-results" style="margin-top:10px"></div>
+    </div>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
       <div style="flex:1;min-width:200px">
@@ -5200,8 +5230,21 @@ function esRenderPartSubDropdown(){
     return;
   }
   sub.style.display='';
-  sub.innerHTML='<option value="">Sub-category…</option>'+subs.map(function(x){return '<option value="'+x+'">'+x+'</option>';}).join('');
-  if(nm) nm.innerHTML='<option value="">Select sub-category…</option>';
+  /* CHANGED 06-Aug-2026. Ravi: "All parts which are coming after category are
+     together. Just seeing everything together."
+     The blank first option used to be a dead placeholder — it showed "Select
+     sub-category first…" in the parts box, so the only way to see a category's
+     parts was to guess a sub-category one at a time. It is now a real choice:
+     picking it lists the whole category GROUPED by sub-category (optgroups in
+     esRenderPartDropdown), which is what "not all together" actually means. */
+  var total=0;
+  subs.forEach(function(s){ total+=((ES_PART_INDEX.cats[cat]||{})[s]||[]).length; });
+  sub.innerHTML='<option value="">All sub-categories ('+total+')</option>'+
+    subs.map(function(x){
+      var n=((ES_PART_INDEX.cats[cat]||{})[x]||[]).length;
+      return '<option value="'+x+'">'+x+' ('+n+')</option>';
+    }).join('');
+  esRenderPartDropdown();
 }
 
 function esRenderPartDropdown(){
@@ -5209,18 +5252,47 @@ function esRenderPartDropdown(){
   var nm=document.getElementById('es-add-pname');
   var amt=document.getElementById('es-add-pamt');
   if(!nm) return;
-  if(!cat || !sub){ nm.innerHTML='<option value="">Select sub-category first…</option>'; if(amt) amt.value=''; return; }
-  var items=((ES_PART_INDEX.cats[cat]||{})[sub]||[]).filter(esPartMatchesModel);
-  var seen={}; items=items.filter(function(x){ var k=x.pn+'|'+x.l; if(seen[k]) return false; seen[k]=1; return true; });
-  items.sort(function(a,b){ return a.l>b.l?1:-1; });
+  if(!cat){ nm.innerHTML='<option value="">Select a category first…</option>'; if(amt) amt.value=''; return; }
+
+  /* One flat list per sub-category as before, OR — when no sub-category is
+     chosen — the whole category grouped into <optgroup>s. The grouped form is
+     the fix for "just seeing everything together": the same parts, but the SA
+     can see where one group ends and the next begins while scrolling.
+     _items stays a FLAT array in render order so esAddPartFn's index lookup is
+     unchanged; only the markup around it groups. */
+  var groups=[];
+  if(sub){
+    groups.push({name:sub, items:((ES_PART_INDEX.cats[cat]||{})[sub]||[])});
+  } else {
+    var subsAll=Object.keys(ES_PART_INDEX.cats[cat]||{}).sort();
+    subsAll.forEach(function(s){ groups.push({name:s, items:(ES_PART_INDEX.cats[cat][s]||[])}); });
+  }
+
+  var seen={}, flat=[], html='';
+  groups.forEach(function(g){
+    var items=g.items.filter(esPartMatchesModel).filter(function(x){
+      var k=x.pn+'|'+x.l; if(seen[k]) return false; seen[k]=1; return true;
+    });
+    items.sort(function(a,b){ return a.l>b.l?1:-1; });
+    if(!items.length) return;
+    var opts=items.map(function(p){
+      var i=flat.length; flat.push(p);
+      var pr=p.price>0?(' — '+inr(p.price)):' — ₹ type';
+      return '<option value="'+i+'" data-price="'+p.price+'">'+p.l+(p.pn?(' ['+p.pn+']'):'')+pr+'</option>';
+    }).join('');
+    /* Only wrap in an optgroup when there is more than one group to separate;
+       a single lonely heading is noise. */
+    html += (groups.length>1)
+      ? '<optgroup label="'+String(g.name).replace(/"/g,'&quot;')+' ('+items.length+')">'+opts+'</optgroup>'
+      : opts;
+  });
+
+  var items=flat;
   nm._items=items;
   if(!items.length){
     nm.innerHTML='<option value="">No parts for this model — tick Show all</option>';
   } else {
-    nm.innerHTML='<option value="">Select part…</option>'+items.map(function(p,i){
-      var pr=p.price>0?(' — '+inr(p.price)):' — ₹ type';
-      return '<option value="'+i+'" data-price="'+p.price+'">'+p.l+(p.pn?(' ['+p.pn+']'):'')+pr+'</option>';
-    }).join('');
+    nm.innerHTML='<option value="">Select part… ('+items.length+')</option>'+html;
   }
   nm.onchange=function(){
     var it=(nm._items||[])[+nm.value];
@@ -5756,16 +5828,113 @@ function esRenderServiceDue(res){
   if(res&&res.note) html+='<div class="hint" style="margin-top:6px">'+res.note+'</div>';
   list.innerHTML=html;
 }
-/* Puts the item in the demanded/complaint box so it is recorded in the
-   advisor's own words. It does NOT silently price anything. */
+/* ---------------------------------------------------------------------------
+   esAddDueItem — CHANGED 06-Aug-2026.
+
+   Ravi: "whatever is recommended is also not able to take."
+
+   He was right, and it was not a glitch — this function never added anything.
+   It appended the item's NAME to the complaint text box and told the advisor to
+   go and find the part themselves. So the manual recommends BRAKE FLUID, the
+   advisor taps Add, and the estimate is unchanged.
+
+   Now the tap resolves the recommendation to a real part and adds it through
+   esAddPartFn — the SAME path as picking it by hand, so it inherits everything
+   that path already guarantees: the auto-added fitment labour, the lock that
+   stops that labour being deleted on its own, the learn-back, and the chips.
+   Nothing is duplicated here.
+
+   Three outcomes, in order, and it never invents a price:
+     1. one confident priced match  -> added to the estimate outright
+     2. matches but ambiguous/unpriced -> dropdowns pre-set to it, SA picks
+     3. nothing recognisable        -> old behaviour, name into the complaint box
+   --------------------------------------------------------------------------- */
+function esDueWords(s){
+  /* Words worth matching on. The manual writes "ENGINE OIL", the master writes
+     "OIL ENGINE 10W30" — order cannot be relied on, so match on the set. */
+  return String(s||'').toUpperCase().split(/[^A-Z0-9]+/).filter(function(w){
+    return w.length>=3 && !/^(THE|AND|FOR|WITH|COMP|ASSY|KIT|SET)$/.test(w);
+  });
+}
+function esResolveDueItem(name){
+  var want=esDueWords(name);
+  if(!want.length || !ES_PART_INDEX || !ES_PART_INDEX.all) return [];
+  var out=[];
+  ES_PART_INDEX.all.forEach(function(p){
+    var hay=String(p.l||'').toUpperCase();
+    var hit=0;
+    want.forEach(function(w){ if(hay.indexOf(w)>=0) hit++; });
+    if(!hit) return;
+    /* every word present is a far stronger claim than one word present */
+    var score=hit/want.length;
+    if(score<0.5) return;
+    /* prefer a part that fits this bike, and one we can actually price */
+    if(esPartMatchesModel(p)) score+=0.30;
+    if(p.price>0)             score+=0.15;
+    out.push({p:p, score:score, exact:(hay===String(name||'').toUpperCase())});
+  });
+  out.sort(function(a,b){
+    if(b.exact!==a.exact) return b.exact?1:-1;
+    return b.score-a.score;
+  });
+  return out;
+}
 function esAddDueItem(name){
+  const m=document.getElementById('es-msg');
+  const say=(txt,ok)=>{
+    if(!m) return;
+    m.style.color = ok ? 'var(--ok)' : 'var(--steel)';
+    m.textContent = txt;
+    setTimeout(()=>{ if(m.textContent===txt) m.textContent=''; }, 7000);
+  };
+
+  const hits=esResolveDueItem(name);
+  const best=hits[0];
+
+  /* 1 — one clear, priced match: put it on the estimate. */
+  if(best && best.score>=0.95 && best.p.price>0 &&
+     (!hits[1] || hits[1].score < best.score-0.15)){
+    const cat=document.getElementById('es-add-pcat');
+    const sub=document.getElementById('es-add-psub');
+    const nm =document.getElementById('es-add-pname');
+    if(cat && sub && nm){
+      cat.value=best.p.cat; esRenderPartSubDropdown();
+      sub.value=best.p.sub; esRenderPartDropdown();
+      const idx=(nm._items||[]).findIndex(function(x){ return x.pn===best.p.pn && x.l===best.p.l; });
+      if(idx>=0){
+        nm.value=String(idx);
+        if(nm.onchange) nm.onchange();
+        esAddPartFn();                       /* the real add path, not a copy */
+        say('📖 Owner manual: '+name+' → added '+best.p.l+' '+inr(best.p.price)+
+            (best.p.pn?(' ['+best.p.pn+']'):'')+'.', true);
+        return;
+      }
+    }
+  }
+
+  /* 2 — we know roughly what it is, but not well enough to price it silently. */
+  if(best){
+    const cat=document.getElementById('es-add-pcat');
+    const sub=document.getElementById('es-add-psub');
+    if(cat && sub){
+      cat.value=best.p.cat; esRenderPartSubDropdown();
+      sub.value=best.p.sub; esRenderPartDropdown();
+      const anchor=document.getElementById('es-add-pname');
+      if(anchor && anchor.scrollIntoView) anchor.scrollIntoView({block:'center', behavior:'smooth'});
+      say('📖 '+name+' — opened '+best.p.cat+' › '+best.p.sub+
+          '. Pick the exact part'+(best.p.price>0?'':' and type its price')+'.', false);
+      return;
+    }
+  }
+
+  /* 3 — nothing in the parts master resembles it. Record it in the advisor's
+         own words, exactly as this function did before. */
   const box=document.getElementById('es-add-dem');
   if(box){
     const cur=String(box.value||'').trim();
     if(cur.toLowerCase().indexOf(name.toLowerCase())<0) box.value=(cur?cur+', ':'')+name;
   }
-  const m=document.getElementById('es-msg');
-  if(m){ m.style.color='var(--ok)'; m.textContent='📖 Added from the owner manual: '+name+'. Price it from the parts list.'; setTimeout(()=>{ if(m.textContent.indexOf('owner manual')>-1) m.textContent=''; },6000); }
+  say('📖 Added from the owner manual: '+name+'. No matching part in the master — price it manually.', false);
 }
 
 function esComputeCurrent(){
@@ -9840,8 +10009,159 @@ function pfBoot(){
     if(!st.rows){ pfInfo('No stock uploaded yet — upload your daily stock export (Final_Stock.xlsx) once to search instantly.','warn'); }
     else pfInfo('Stock loaded: '+st.rows+' rows · Stock date '+(st.stockDate||'—')+' · Last upload '+(st.lastUpload||'—'),'ok');
   },15000);
+  pfTreeBoot(0);
 }
 function pfVal(id){ return (document.getElementById(id)||{}).value||''; }
+
+/* ===========================================================================
+   CATALOGUE BROWSER — R29, 06-Aug-2026.
+
+   Three dependent steps over MD_Parts_AllIndia, each resolved on the server:
+   Category -> Sub-category -> part. Nothing about the 55,681-row tab is ever
+   downloaded; that is the whole design of ModulesR24/R29 and this screen does
+   not break it.
+
+   State is kept on PFT and is deliberately NOT rebuilt on every render, so
+   coming back to this screen does not throw away the category you had open.
+   =========================================================================== */
+var PFT = {cat:'', sub:'', q:'', page:1, rows:[], total:0, pages:1, busy:false, qt:null};
+
+function pfTreeSet(id, html, disabled){
+  var el=document.getElementById(id); if(!el) return;
+  el.innerHTML=html;
+  if(disabled!==undefined) el.disabled=!!disabled;
+}
+
+function pfTreeBoot(fresh){
+  pfTreeSet('pf-t-cat','<option value="">Loading…</option>', true);
+  jgetRaw('parts_tree', fresh?{fresh:'1'}:{}, function(res){
+    if(!res||res.ok===false||!res.items){
+      pfTreeSet('pf-t-cat','<option value="">Catalogue unavailable</option>', true);
+      var c=document.getElementById('pf-cat-count');
+      if(c) c.textContent = (res&&res.error==='PARTS_MASTER_MISSING')
+        ? '— MD_Parts_AllIndia not imported yet'
+        : '— could not load';
+      return;
+    }
+    var cnt=document.getElementById('pf-cat-count');
+    if(cnt) cnt.textContent='— '+(res.rows||0).toLocaleString('en-IN')+' parts in '+res.items.length+' categories';
+    pfTreeSet('pf-t-cat','<option value="">Category…</option>'+res.items.map(function(it){
+      return '<option value="'+raviEsc(it.name)+'">'+raviEsc(it.name)+' ('+it.count+')</option>';
+    }).join(''), false);
+    /* restore what the user had open, if anything */
+    if(PFT.cat){
+      var sel=document.getElementById('pf-t-cat');
+      if(sel){ sel.value=PFT.cat; pfTreeCat(true); }
+    }
+  },20000);
+}
+
+function pfTreeCat(restoring){
+  var cat=pfVal('pf-t-cat');
+  PFT.cat=cat; if(!restoring){ PFT.sub=''; PFT.q=''; PFT.page=1; }
+  var q=document.getElementById('pf-t-q'); if(q && !restoring) q.value='';
+  document.getElementById('pf-t-results').innerHTML='';
+  if(!cat){
+    pfTreeSet('pf-t-sub','<option value="">Pick a category first…</option>', true);
+    return;
+  }
+  pfTreeSet('pf-t-sub','<option value="">Loading…</option>', true);
+  jgetRaw('parts_tree', {cat:cat}, function(res){
+    if(!res||res.ok===false||!res.items){
+      pfTreeSet('pf-t-sub','<option value="">Could not load</option>', true); return;
+    }
+    /* "All of <category>" is a real choice, not a placeholder — a category with
+       one meaningless sub-category is exactly the case Ravi complained about,
+       where everything lands in one bucket and you scroll a flat list. */
+    pfTreeSet('pf-t-sub','<option value="">All of '+raviEsc(cat)+' ('+(res.count||0)+')</option>'+
+      res.items.map(function(it){
+        return '<option value="'+raviEsc(it.name)+'">'+raviEsc(it.name)+' ('+it.count+')</option>';
+      }).join(''), false);
+    if(restoring && PFT.sub){
+      var s=document.getElementById('pf-t-sub'); if(s) s.value=PFT.sub;
+    }
+    pfTreeLoad();
+  },20000);
+}
+
+function pfTreeSub(){ PFT.sub=pfVal('pf-t-sub'); PFT.page=1; pfTreeLoad(); }
+
+function pfTreeQueryDebounced(){
+  clearTimeout(PFT.qt);
+  PFT.qt=setTimeout(function(){ PFT.q=pfVal('pf-t-q').trim(); PFT.page=1; pfTreeLoad(); }, 350);
+}
+
+function pfTreePage(n){ PFT.page=n; pfTreeLoad(); }
+
+function pfTreeLoad(){
+  if(!PFT.cat) return;
+  var box=document.getElementById('pf-t-results'); if(!box) return;
+  if(PFT.busy) return;
+  PFT.busy=true;
+  box.innerHTML='<div style="padding:16px;text-align:center;color:var(--steel);font-size:13px">Loading parts…</div>';
+  jgetRaw('parts_in', {cat:PFT.cat, sub:PFT.sub, q:PFT.q, page:String(PFT.page)}, function(res){
+    PFT.busy=false;
+    if(!res||res.ok===false){
+      box.innerHTML='<div style="padding:14px;color:#b91c1c;font-size:13px">Could not load parts'+
+        (res&&res.error?(' — '+raviEsc(res.error)):'')+'</div>';
+      return;
+    }
+    PFT.rows=res.rows||[]; PFT.total=res.total||0; PFT.pages=res.pages||1;
+    pfTreeRender();
+  },25000);
+}
+
+function pfTreeRender(){
+  var box=document.getElementById('pf-t-results'); if(!box) return;
+  if(!PFT.rows.length){
+    box.innerHTML='<div style="padding:16px;text-align:center;color:var(--steel);font-size:13px">'+
+      (PFT.q?'No part here matches “'+raviEsc(PFT.q)+'”.':'No parts in this sub-category.')+'</div>';
+    return;
+  }
+  var head='<div style="font-size:12px;color:var(--steel);margin-bottom:6px">Showing '+
+    PFT.rows.length+' of '+PFT.total.toLocaleString('en-IN')+' part'+(PFT.total===1?'':'s')+
+    (PFT.pages>1?(' · page '+PFT.page+' of '+PFT.pages):'')+'</div>';
+
+  var rows=PFT.rows.map(function(r){
+    /* An unknown price is shown as "—", never as ₹0. 36,642 of these rows have
+       no price the dealer has ever seen and a rupee-zero line on an estimate is
+       worse than no line at all. (Same rule as paRow_ in ModulesR24.) */
+    var price = (r.mrp && r.mrp>0) ? inr(r.mrp) : '<span style="color:var(--steel)">—</span>';
+    var tags='';
+    if(r.supersededBy) tags+='<span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">superseded</span>';
+    if(r.inTree) tags+='<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">labour linked</span>';
+    if(r.timesUsed) tags+='<span style="background:#e0e7ff;color:#3730a3;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">used '+r.timesUsed+'×</span>';
+    return '<div style="display:flex;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--line)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-weight:700;font-size:13px">'+raviEsc(r.desc||'(no description)')+tags+'</div>'+
+        '<div style="font-size:11px;color:var(--steel);font-family:monospace">'+raviEsc(r.part)+'</div>'+
+      '</div>'+
+      '<div style="font-weight:700;font-size:13px;white-space:nowrap">'+price+'</div>'+
+      '<button class="hu-actbtn sm" style="background:#0891b2;white-space:nowrap" onclick="pfTreePick(\''+
+        String(r.part).replace(/'/g,"\\'")+'\')">Find stock</button>'+
+    '</div>';
+  }).join('');
+
+  var pager='';
+  if(PFT.pages>1){
+    pager='<div style="display:flex;gap:8px;justify-content:center;align-items:center;padding:10px 0">'+
+      '<button class="hu-actbtn sm" style="background:#475569"'+(PFT.page<=1?' disabled':'')+
+        ' onclick="pfTreePage('+(PFT.page-1)+')">‹ Prev</button>'+
+      '<span style="font-size:12px;color:var(--steel)">'+PFT.page+' / '+PFT.pages+'</span>'+
+      '<button class="hu-actbtn sm" style="background:#475569"'+(PFT.page>=PFT.pages?' disabled':'')+
+        ' onclick="pfTreePage('+(PFT.page+1)+')">Next ›</button>'+
+    '</div>';
+  }
+  box.innerHTML=head+'<div style="max-height:340px;overflow-y:auto;border-top:1px solid var(--line)">'+rows+'</div>'+pager;
+}
+
+/* Picking a part hands it to the stock search that already exists, rather than
+   duplicating it. One part-number box, one answer. */
+function pfTreePick(pn){
+  var inp=document.getElementById('pf-partno');
+  if(inp){ inp.value=pn; }
+  if(typeof pfSearch==='function') pfSearch();
+}
 
 /* ---- daily stock upload ---- */
 function pfLocalDate(v){
@@ -13197,6 +13517,10 @@ async function psAnalyze(dataUrl){
     if(resp.error) throw new Error(resp.error.message||'Vision error');
     const g=psParseVision_(resp);
     PS_LAST.guess=g; PS_LAST.extra=g.extra&&typeof g.extra==='object'?g.extra:{};
+    /* Everything Vision read, kept for the dictionary pass below. The parsed
+       part_no is one candidate; the full block is what lets part_ocr try the
+       others and score them against the description on the label. */
+    PS_LAST.fullText=(resp.fullTextAnnotation&&resp.fullTextAnnotation.text)||'';
     document.getElementById('ps-partno').value=String(g.part_no||'');
     document.getElementById('ps-desc').value=String(g.description||g.part_guess||'');
     document.getElementById('ps-mrp').value=String(g.mrp||'').replace(/[₹,\s]/g,'');
@@ -13213,7 +13537,8 @@ async function psAnalyze(dataUrl){
     } else gw.style.display='none';
     document.getElementById('ps-result').style.display='block';
     psStatus(g.label_found?'✔ Label read. Check the fields, correct anything, then save.':'No label found — AI identification shown. Add what you know and save.','ok');
-    psVerifyPart();   /* R24 — see below. Never blocks the save. */
+    psCorrectFromCatalogue();   /* R29 — the dictionary. Never blocks the save. */
+    psVerifyPart();             /* R24 — see below. Never blocks the save. */
   }catch(e){
     psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err');
   }
@@ -13350,7 +13675,107 @@ function psVerifyPart(){
 }
 function psTakePart(pn){
   const el=document.getElementById('ps-partno'); if(!el) return;
-  el.value=String(pn||'').toUpperCase(); psVerifyPart();
+  el.value=String(pn||'').toUpperCase(); psCorrectHide(); psVerifyPart();
+}
+
+/* ---------------------------------------------------------------------------
+   R29 — THE DICTIONARY.  Added 06-Aug-2026.
+
+   Ravi, 03-Aug: "it does not match the captured part numbers against the real
+   part list", and again 06-Aug on reading quality. Measured cause (LEDGER B5):
+   the scanner reads and then trusts itself. Google Lens is not reading better
+   than this — it is checking its reading against a catalogue and correcting it.
+
+   part_ocr (ModulesR29.gs) takes the WHOLE OCR block, not the one number this
+   file guessed, and:
+     - tries every part-number-shaped token exactly
+     - re-tries each with the substitutions a camera actually makes
+       (0/O, 1/I, 5/S, 8/B, 2/Z, 6/G, 4/A, V/U, 7/T)
+     - looks either side of where the number would sort, for a dropped or extra
+       trailing character
+     - scores what survives by how well the catalogue description agrees with
+       the words also printed on the label
+
+   IMDTY890 -> IMDTY8901 is one edit, and when the label says SPACER and the
+   catalogue row says SPACER the correction is provable rather than plausible.
+
+   Obeys the three rules this screen already has (see psVerifyPart):
+     1. Never overwrites what the advisor sees. A correction is OFFERED on a
+        button unless the field is empty, in which case there is nothing to
+        overwrite and it is filled.
+     2. Never blocks a save — route missing, timeout, backend not deployed, the
+        box simply does not appear.
+     3. Never invents. Below the confidence floor the server says so and the
+        near-misses are offered instead.
+   --------------------------------------------------------------------------- */
+let PS_CSEQ=0;
+function psCorrectHide(){
+  const el=document.getElementById('ps-correct');
+  if(el){ el.style.display='none'; el.innerHTML=''; }
+}
+function psCorrectBox(html){
+  let el=document.getElementById('ps-correct');
+  if(!el){
+    const anchor=document.getElementById('ps-verify');
+    if(!anchor||!anchor.parentNode) return;
+    el=document.createElement('div');
+    el.id='ps-correct';
+    el.style.cssText='display:none;margin:6px 0;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.45';
+    anchor.parentNode.insertBefore(el, anchor);
+  }
+  if(!html){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.style.background='#eff6ff'; el.style.border='1px solid #bfdbfe'; el.style.color='#1e40af';
+  el.innerHTML=html;
+}
+function psCorrectFromCatalogue(){
+  const text=String((PS_LAST&&PS_LAST.fullText)||'').trim();
+  psCorrectHide();
+  if(!text) return;
+  const field=document.getElementById('ps-partno');
+  const read=String((field&&field.value)||'').trim().toUpperCase();
+  const my=++PS_CSEQ;
+  const desc=String((document.getElementById('ps-desc')||{}).value||'');
+
+  jgetRaw('part_ocr',{text:text, desc:desc}, function(res){
+    if(my!==PS_CSEQ) return;                        /* a newer scan already won */
+    /* An undeployed route falls through to {ok:true,msg:'…live'} — ok proves
+       nothing. typeof found is the real test. Same trap as psVerifyPart. */
+    if(!res || res.ok===false || typeof res.found!=='boolean'){ psCorrectHide(); return; }
+
+    const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+
+    if(res.found && res.best){
+      const p=res.best.part;
+      if(norm(p.part)===norm(read)){ psCorrectHide(); return; }  /* already right */
+
+      if(!read){                       /* nothing to overwrite — just fill it */
+        field.value=p.part;
+        psCorrectBox('🔤 Read from the label and matched in the catalogue: <b>'+raviEsc(p.part)+
+          '</b> · '+raviEsc(p.desc||'')+' <span style="color:#64748b">('+res.best.score+'% — '+
+          raviEsc(res.best.why||'')+')</span>');
+        psVerifyPart();
+        return;
+      }
+      psCorrectBox('🔤 Read as <b>'+raviEsc(read)+'</b>, but the catalogue says <b>'+
+        raviEsc(p.part)+'</b> — '+raviEsc(p.desc||'')+
+        '<div style="color:#64748b;margin-top:2px">'+res.best.score+'% · '+raviEsc(res.best.why||'')+'</div>'+
+        '<div style="margin-top:6px"><button class="btn ghost sm" onclick="psTakePart(\''+
+        String(p.part).replace(/'/g,"\\'")+'\')">Use '+raviEsc(p.part)+'</button> '+
+        '<button class="btn ghost sm" onclick="psCorrectHide()">Keep my reading</button></div>');
+      return;
+    }
+
+    /* Not confident enough. Offer the near-misses rather than guessing — and
+       say nothing at all if there is nothing worth offering. */
+    const c=(res.candidates||[]).slice(0,4);
+    if(!c.length){ psCorrectHide(); return; }
+    psCorrectBox('🔤 Could not confirm this number against the catalogue. Closest reads:'+
+      c.map(x=>'<div style="margin-top:4px"><a href="#" onclick="psTakePart(\''+
+        String(x.part.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800">'+
+        raviEsc(x.part.part)+'</a> · '+raviEsc(x.part.desc||'')+
+        ' <span style="color:#64748b">('+x.score+'%)</span></div>').join(''));
+  },20000);
 }
 function psUseOfficial(){
   if(!PS_VERIFY||!PS_VERIFY.found) return;
@@ -15147,10 +15572,52 @@ function ins3PaintDetail(){
     +'<div class="ins3-sec">Outcome of this call</div>'
     +dispHtml
     +'<input class="ins3-in" id="ins3-prem" placeholder="Premium quoted (optional)" inputmode="numeric" value="'+ins3Esc(s.premium||'')+'">'
-    +'<input class="ins3-in" id="ins3-rem" placeholder="Remark (optional)" value="'+ins3Esc(s.remarks||'')+'">'
+    /* CHANGED 06-Aug-2026 with the A1 backend fix.
+       The box used to be PRE-FILLED with the stored remark, which is why the
+       SMRE's note kept disappearing: she would tap a disposition, the box would
+       re-submit whatever was sitting in it, and one empty submit wiped the lot.
+       The box is now always empty — a remark typed here is a NEW remark — and
+       what was said before is shown underneath, read-only, newest first. */
+    +'<input class="ins3-in" id="ins3-rem" placeholder="Add a remark…" value="">'
+    +ins3RemarkThread(s.remarks)
     +'<button class="ins3-save" id="ins3-savebtn"'+(lockedByOther?' disabled':'')+' onclick="ins3Save()">'
       +(lockedByOther?'Locked by '+ins3Esc(s.lockedByName||s.lockedBy):'Save outcome')+'</button>'
   +'</div>';
+}
+
+/* ---------------------------------------------------------------------------
+   ins3RemarkThread — added 06-Aug-2026.
+
+   The Remarks cell now holds the latest remark on line 1 and the dated history
+   below a '--' separator (ins2RemarkAppend_ in ModulesR23.gs). This renders it
+   as a thread. Old rows that carry a bare single remark and no separator still
+   render correctly — they simply have no history.
+   --------------------------------------------------------------------------- */
+function ins3RemarkThread(raw){
+  const all=String(raw==null?'':raw).trim();
+  if(!all) return '';
+  const parts=all.split(/\n--\n/);
+  const latest=(parts[0]||'').trim();
+  const history=(parts.slice(1).join('\n--\n')||'').split('\n')
+                  .map(x=>x.trim()).filter(Boolean);
+  let h='<div class="ins3-sec">Remarks</div>';
+  if(latest){
+    h+='<div style="font-size:13px;font-weight:600;padding:6px 8px;border-radius:6px;'
+      +'background:rgba(148,163,184,.12);margin-bottom:4px">'+ins3Esc(latest)+'</div>';
+  }
+  if(history.length){
+    h+='<div style="max-height:132px;overflow-y:auto">'+history.map(function(line){
+      /* "[06-Aug-2026 14:32 · Priya] the text" — split so the stamp can be
+         greyed and the words the SMRE actually wrote stay readable. */
+      const m=line.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+      const when=m?m[1]:'';
+      const text=m?m[2]:line;
+      return '<div style="font-size:12px;padding:3px 8px;border-left:2px solid rgba(148,163,184,.35);margin:2px 0">'
+        +(when?'<span style="color:var(--steel);font-size:10.5px">'+ins3Esc(when)+'</span><br>':'')
+        +ins3Esc(text)+'</div>';
+    }).join('')+'</div>';
+  }
+  return h;
 }
 
 function ins3Close(){ ins3Deselect(); ins3Render(); }
