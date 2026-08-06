@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 27;
-window.HERO_BUILD = 'R30-2026.08.06.2';
+window.HERO_RELEASE = 28;
+window.HERO_BUILD = 'R31-2026.08.06.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2195,6 +2195,9 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       </div>
     </div>
     <div id="pf-info" style="display:none;font-size:12px;font-weight:600;padding:8px 12px;border-radius:8px;margin-bottom:12px"></div>
+    <!-- R31: how old the stock number is. It is printed rather than assumed —
+         the file loaded 06-Aug-2026 was taken on 23-Jun-2026. -->
+    <div id="pf-stock-note" style="display:none;font-size:12px;font-weight:600;padding:8px 12px;border-radius:8px;margin-bottom:12px"></div>
 
     <!-- ====================================================================
          CATALOGUE BROWSER — added R29, 06-Aug-2026.
@@ -2210,6 +2213,16 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
         <button class="hu-actbtn sm" style="background:#475569" onclick="pfTreeBoot(1)">↻ Reload tree</button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <!-- R31, 06-Aug-2026. Ravi: "the model is the first part that is only
+             not given." It was not given because nothing in MD_Parts_AllIndia
+             knows which bike a part fits — see the header of ModulesR31.gs.
+             Picking a model narrows the other three dropdowns to the parts this
+             workshop has actually fitted to it; leaving it on "All models"
+             keeps R29's whole 55,681-part catalogue exactly as it was. -->
+        <div style="flex:1;min-width:170px">
+          <label style="font-size:11px;font-weight:700;color:var(--steel)">Model</label>
+          <select id="pf-t-model" onchange="pfTreeModel()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;background:#fff;font-weight:700"><option value="">Loading…</option></select>
+        </div>
         <div style="flex:1;min-width:170px">
           <label style="font-size:11px;font-weight:700;color:var(--steel)">Category</label>
           <select id="pf-t-cat" onchange="pfTreeCat()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;background:#fff"><option value="">Loading…</option></select>
@@ -10013,11 +10026,10 @@ function pfInfo(msg,kind){
   el.textContent=msg;
 }
 function pfBoot(){
-  jgetRaw('part_stock_status',{},function(st){
-    if(!st||st.ok===false) return;
-    if(!st.rows){ pfInfo('No stock uploaded yet — upload your daily stock export (Final_Stock.xlsx) once to search instantly.','warn'); }
-    else pfInfo('Stock loaded: '+st.rows+' rows · Stock date '+(st.stockDate||'—')+' · Last upload '+(st.lastUpload||'—'),'ok');
-  },15000);
+  /* R31: the stock line moved to pfStockNote(), called from pfTreeBoot.
+     part_stock_status returns Stock Date as a raw spreadsheet Date — it printed
+     "Tue Jun 23 2026 12:30:00 GMT+0530 (India Standard Time)" on screen, which
+     is the same defect as ledger C14. mp_status formats it. */
   pfTreeBoot(0);
 }
 function pfVal(id){ return (document.getElementById(id)||{}).value||''; }
@@ -10033,7 +10045,8 @@ function pfVal(id){ return (document.getElementById(id)||{}).value||''; }
    State is kept on PFT and is deliberately NOT rebuilt on every render, so
    coming back to this screen does not throw away the category you had open.
    =========================================================================== */
-var PFT = {cat:'', sub:'', q:'', page:1, rows:[], total:0, pages:1, busy:false, qt:null};
+var PFT = {model:'', cat:'', sub:'', q:'', page:1, rows:[], total:0, pages:1,
+           busy:false, qt:null, models:null, modelErr:''};
 
 function pfTreeSet(id, html, disabled){
   var el=document.getElementById(id); if(!el) return;
@@ -10041,28 +10054,105 @@ function pfTreeSet(id, html, disabled){
   if(disabled!==undefined) el.disabled=!!disabled;
 }
 
+/* ===========================================================================
+   R31, 06-Aug-2026 — THE MODEL LEVEL.
+
+   Ravi: "the model is the first part that is only not given."
+
+   It was not given because no file behind this screen knew it. MD_Parts_AllIndia
+   is the all-India Hero catalogue and carries no model column at all, so R29's
+   tree could only ever begin at Category. MD_Model_PartTree (ModulesR31.gs) is
+   the model→part tree, built from what this dealership has actually billed:
+   99 models, 5,190 parts, with the sub-category, MRP, our stock and the linked
+   labour on the same row.
+
+   TWO UNIVERSES, AND THE SCREEN NEVER PRETENDS THEY ARE ONE:
+     model = ''      R29's whole all-India catalogue, 55,681 parts, unchanged.
+     model = X       only parts fitted to X here. Smaller on purpose, and the
+                     count is printed so nobody thinks a part has vanished.
+   =========================================================================== */
+function pfTreeModelOn(){ return !!PFT.model; }
+
 function pfTreeBoot(fresh){
+  pfTreeLoadModels(fresh);
+  pfTreeLoadCats(fresh);
+  pfStockNote();
+}
+
+/* The model dropdown. Loaded once and kept — coming back to this screen must
+   not throw away the model the advisor had open, same rule as the category. */
+function pfTreeLoadModels(fresh){
+  var sel=document.getElementById('pf-t-model'); if(!sel) return;
+  if(PFT.models && !fresh){ pfTreePaintModels(); return; }
+  pfTreeSet('pf-t-model','<option value="">Loading models…</option>', true);
+  jgetRaw('mp_tree', fresh?{fresh:'1'}:{}, function(res){
+    if(!res||res.ok===false||!res.items||!res.items.length){
+      PFT.models=null;
+      PFT.modelErr=(res&&(res.error==='MODEL_TREE_MISSING'||res.error==='MODEL_TREE_EMPTY'))
+        ? 'model tree not loaded on the server yet' : 'could not load models';
+      /* Degrade to exactly the R29 screen rather than to a dead dropdown. */
+      pfTreeSet('pf-t-model','<option value="">All models — '+raviEsc(PFT.modelErr)+'</option>', true);
+      return;
+    }
+    PFT.models=res.items; PFT.modelErr='';
+    pfTreePaintModels();
+  },25000);
+}
+
+function pfTreePaintModels(){
+  var items=PFT.models||[];
+  var total=0; for(var i=0;i<items.length;i++) total+=items[i].count;
+  pfTreeSet('pf-t-model',
+    '<option value="">All models · whole Hero catalogue</option>'+
+    items.map(function(it){
+      return '<option value="'+raviEsc(it.name)+'">'+raviEsc(it.name)+' ('+it.count+')</option>';
+    }).join(''), false);
+  var s=document.getElementById('pf-t-model');
+  if(s && PFT.model) s.value=PFT.model;
+}
+
+/* Categories for whichever universe is selected. */
+function pfTreeLoadCats(fresh, restoring){
   pfTreeSet('pf-t-cat','<option value="">Loading…</option>', true);
-  jgetRaw('parts_tree', fresh?{fresh:'1'}:{}, function(res){
+  var route = pfTreeModelOn() ? 'mp_tree' : 'parts_tree';
+  var args  = pfTreeModelOn() ? {model:PFT.model} : (fresh?{fresh:'1'}:{});
+  jgetRaw(route, args, function(res){
+    var cnt=document.getElementById('pf-cat-count');
     if(!res||res.ok===false||!res.items){
       pfTreeSet('pf-t-cat','<option value="">Catalogue unavailable</option>', true);
-      var c=document.getElementById('pf-cat-count');
-      if(c) c.textContent = (res&&res.error==='PARTS_MASTER_MISSING')
-        ? '— MD_Parts_AllIndia not imported yet'
+      if(cnt) cnt.textContent = (res&&(res.error==='PARTS_MASTER_MISSING'||res.error==='MODEL_TREE_MISSING'))
+        ? '— catalogue not imported on the server yet'
         : '— could not load';
       return;
     }
-    var cnt=document.getElementById('pf-cat-count');
-    if(cnt) cnt.textContent='— '+(res.rows||0).toLocaleString('en-IN')+' parts in '+res.items.length+' categories';
+    var n=0; for(var i=0;i<res.items.length;i++) n+=res.items[i].count;
+    if(cnt) cnt.textContent = pfTreeModelOn()
+      /* The honest sentence. A model shows the parts THIS workshop has fitted
+         to it, not every part Hero makes for it — saying so here is cheaper
+         than an advisor deciding the finder is broken. */
+      ? '— '+n.toLocaleString('en-IN')+' parts fitted to '+PFT.model+' here, in '+res.items.length+' categories'
+      : '— '+(res.rows||n).toLocaleString('en-IN')+' parts in '+res.items.length+' categories';
     pfTreeSet('pf-t-cat','<option value="">Category…</option>'+res.items.map(function(it){
       return '<option value="'+raviEsc(it.name)+'">'+raviEsc(it.name)+' ('+it.count+')</option>';
     }).join(''), false);
-    /* restore what the user had open, if anything */
-    if(PFT.cat){
+    if(restoring && PFT.cat){
       var sel=document.getElementById('pf-t-cat');
       if(sel){ sel.value=PFT.cat; pfTreeCat(true); }
     }
-  },20000);
+  },25000);
+}
+
+/* Changing the model resets everything under it. Deliberately NOT preserved:
+   "Brakes" under SPLENDOR PLUS and "Brakes" under XPULSE are different lists,
+   and silently keeping the old sub-category would show one model's parts under
+   another model's name. */
+function pfTreeModel(){
+  PFT.model=pfVal('pf-t-model');
+  PFT.cat=''; PFT.sub=''; PFT.q=''; PFT.page=1; PFT.rows=[];
+  var q=document.getElementById('pf-t-q'); if(q) q.value='';
+  pfTreeSet('pf-t-sub','<option value="">Pick a category first…</option>', true);
+  var box=document.getElementById('pf-t-results'); if(box) box.innerHTML='';
+  pfTreeLoadCats(false);
 }
 
 function pfTreeCat(restoring){
@@ -10075,7 +10165,9 @@ function pfTreeCat(restoring){
     return;
   }
   pfTreeSet('pf-t-sub','<option value="">Loading…</option>', true);
-  jgetRaw('parts_tree', {cat:cat}, function(res){
+  var route = pfTreeModelOn() ? 'mp_tree' : 'parts_tree';
+  var args  = pfTreeModelOn() ? {model:PFT.model, cat:cat} : {cat:cat};
+  jgetRaw(route, args, function(res){
     if(!res||res.ok===false||!res.items){
       pfTreeSet('pf-t-sub','<option value="">Could not load</option>', true); return;
     }
@@ -10090,7 +10182,7 @@ function pfTreeCat(restoring){
       var s=document.getElementById('pf-t-sub'); if(s) s.value=PFT.sub;
     }
     pfTreeLoad();
-  },20000);
+  },25000);
 }
 
 function pfTreeSub(){ PFT.sub=pfVal('pf-t-sub'); PFT.page=1; pfTreeLoad(); }
@@ -10108,7 +10200,10 @@ function pfTreeLoad(){
   if(PFT.busy) return;
   PFT.busy=true;
   box.innerHTML='<div style="padding:16px;text-align:center;color:var(--steel);font-size:13px">Loading parts…</div>';
-  jgetRaw('parts_in', {cat:PFT.cat, sub:PFT.sub, q:PFT.q, page:String(PFT.page)}, function(res){
+  var route = pfTreeModelOn() ? 'mp_in' : 'parts_in';
+  var args  = {cat:PFT.cat, sub:PFT.sub, q:PFT.q, page:String(PFT.page)};
+  if(pfTreeModelOn()) args.model=PFT.model;
+  jgetRaw(route, args, function(res){
     PFT.busy=false;
     if(!res||res.ok===false){
       box.innerHTML='<div style="padding:14px;color:#b91c1c;font-size:13px">Could not load parts'+
@@ -10117,7 +10212,7 @@ function pfTreeLoad(){
     }
     PFT.rows=res.rows||[]; PFT.total=res.total||0; PFT.pages=res.pages||1;
     pfTreeRender();
-  },25000);
+  },30000);
 }
 
 function pfTreeRender(){
@@ -10129,6 +10224,7 @@ function pfTreeRender(){
   }
   var head='<div style="font-size:12px;color:var(--steel);margin-bottom:6px">Showing '+
     PFT.rows.length+' of '+PFT.total.toLocaleString('en-IN')+' part'+(PFT.total===1?'':'s')+
+    (pfTreeModelOn()?' for '+raviEsc(PFT.model):'')+
     (PFT.pages>1?(' · page '+PFT.page+' of '+PFT.pages):'')+'</div>';
 
   var rows=PFT.rows.map(function(r){
@@ -10138,13 +10234,24 @@ function pfTreeRender(){
     var price = (r.mrp && r.mrp>0) ? inr(r.mrp) : '<span style="color:var(--steel)">—</span>';
     var tags='';
     if(r.supersededBy) tags+='<span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">superseded</span>';
-    if(r.inTree) tags+='<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">labour linked</span>';
+    if(r.inTree||r.labour) tags+='<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">labour linked</span>';
     if(r.timesUsed) tags+='<span style="background:#e0e7ff;color:#3730a3;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;margin-left:6px">used '+r.timesUsed+'×</span>';
+    /* Our own stock, straight off the tree row, so the commonest question at
+       the counter — "have we got it?" — is answered without a second tap.
+       Only the model tree carries it; the all-India rows have no stock column
+       and must not show a fabricated zero. */
+    var stock='';
+    if(r.stock!=null && pfTreeModelOn()){
+      stock = r.stock>0
+        ? '<span style="background:#dcfce7;color:#166534;font-size:11px;font-weight:800;padding:2px 7px;border-radius:99px;white-space:nowrap">'+r.stock+' in stock</span>'
+        : '<span style="background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;padding:2px 7px;border-radius:99px;white-space:nowrap">0 here</span>';
+    }
     return '<div style="display:flex;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--line)">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-weight:700;font-size:13px">'+raviEsc(r.desc||'(no description)')+tags+'</div>'+
         '<div style="font-size:11px;color:var(--steel);font-family:monospace">'+raviEsc(r.part)+'</div>'+
       '</div>'+
+      stock+
       '<div style="font-weight:700;font-size:13px;white-space:nowrap">'+price+'</div>'+
       '<button class="hu-actbtn sm" style="background:#0891b2;white-space:nowrap" onclick="pfTreePick(\''+
         String(r.part).replace(/'/g,"\\'")+'\')">Find stock</button>'+
@@ -10165,11 +10272,40 @@ function pfTreeRender(){
 }
 
 /* Picking a part hands it to the stock search that already exists, rather than
-   duplicating it. One part-number box, one answer. */
+   duplicating it. One part-number box, one answer.
+
+   R31: the number is also SCROLLED TO and the box flashed. Ravi, 06-Aug:
+   "Then that part no should directly come for searching." It did call
+   pfSearch() before, but on a phone the part-number box and the results are
+   below the fold, so the tap looked like it had done nothing at all. */
 function pfTreePick(pn){
   var inp=document.getElementById('pf-partno');
-  if(inp){ inp.value=pn; }
+  if(inp){
+    inp.value=pn;
+    try{ inp.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+    inp.style.transition='box-shadow .3s';
+    inp.style.boxShadow='0 0 0 3px rgba(8,145,178,.45)';
+    setTimeout(function(){ inp.style.boxShadow=''; }, 900);
+  }
   if(typeof pfSearch==='function') pfSearch();
+}
+
+/* How old the stock figure is. Printed, never assumed: the file loaded on
+   06-Aug-2026 was taken on 23-Jun-2026, and a 44-day-old quantity presented as
+   today's is how a customer gets told a part is on the shelf when it is not. */
+function pfStockNote(){
+  jgetRaw('mp_status', {}, function(res){
+    var el=document.getElementById('pf-stock-note'); if(!el) return;
+    if(!res||res.ok===false){
+      el.innerHTML='<b>No stock file loaded.</b> "Find stock" can only say whether the part exists, not where it is.';
+      el.style.display='block'; el.style.background='#fff7ed'; el.style.color='#b45309';
+      return;
+    }
+    el.innerHTML='📦 Stock: <b>'+(res.rows||0).toLocaleString('en-IN')+'</b> rows across our outlets · '
+      +'stock taken <b>'+raviEsc(res.stockDate||'—')+'</b> · loaded '+raviEsc(res.uploadedAt||'—')
+      +(res.sorted?'':' · <b style="color:#b91c1c">tab is out of order — reload it</b>');
+    el.style.display='block'; el.style.background='#ecfeff'; el.style.color='#0e7490';
+  }, 20000);
 }
 
 /* ---- daily stock upload ---- */
@@ -10231,18 +10367,74 @@ function pfHandleStockFile(input){
 }
 
 /* ---- search (backend stock) ---- */
+/* ---------------------------------------------------------------------------
+   pfSearch — R31, 06-Aug-2026.
+
+   Ravi: "Stock is already there in backend. It is not searching that also."
+
+   Two separate faults were behind that, and only the second one is in this
+   function:
+
+   1. The PartStock tab was EMPTY. Measured on the live backend 06-Aug-2026:
+      part_stock_status -> {"rows":0}. findPartStock had been answering "No
+      stock uploaded yet" since the day it was written. 27,179 rows across our
+      four outlets are now loaded (push_parts_r31.py).
+
+   2. findPartStock reads the WHOLE tab on every search — 27,179 x 15 cells,
+      408,000 reads, to answer one part. That is fine at zero rows and slow at
+      27,179. mp_stock binary-searches a tab written in part-number order and
+      answers in about 15 reads plus one window.
+
+   The old route is kept as the fallback for the moment the R31 backend is not
+   yet deployed, so this change cannot take the screen backwards.
+   --------------------------------------------------------------------------- */
 function pfSearch(){
   const pn=pfVal('pf-partno').trim().toUpperCase();
   if(!pn){ pfInfo('Enter a part number first.','warn'); return; }
   PF_PART=pn;
-  document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">Searching all-India stock for '+pn+'…</div>';
+  document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">Searching stock for '+pn+'…</div>';
+  jgetRaw('mp_stock',{pn:pn},function(res){
+    if(!res || res.ok===false || res.error==='model tree not deployed'){ pfSearchLegacy(pn); return; }
+    PF_RESULT=pfStockResult(res, pn);
+    if(!PF_RESULT.rows.length){
+      pfInfo(res.loaded
+        ? 'No stock for '+pn+' at any of our outlets as of '+(res.stockDate||'the last stock file')+'. Try the live Power BI fetch below for all-India availability.'
+        : 'No stock file has been loaded on the server yet.', 'warn');
+      pfIdentify(pn);
+    } else {
+      pfInfo('✓ '+pn+(res.summary.desc?' — '+res.summary.desc:'')+' · '+res.summary.totalQty
+        +' pc across '+res.summary.outlets+' of our outlets · stock as of '+(res.stockDate||'—'),'ok');
+    }
+    pfBuildFilters(); pfRender();
+  },25000);
+}
+
+/* mp_stock's rows into the shape pfRender/pfDownload already speak. Written out
+   field by field rather than passed through, because a missing `pune` or `own`
+   would silently change the sort order the whole screen is built on. */
+function pfStockResult(res, pn){
+  const rows=(res.rows||[]).map(function(r){
+    return {pn:r.pn||pn, desc:r.desc||'', dealerCode:r.dealerCode||'', dealer:r.dealer||'',
+            zonal:'', area:r.area||'', town:r.town||'', loc:r.loc||'',
+            ptype:'', pcat:'', qty:Number(r.qty||0), dlc:Number(r.dlc||0),
+            dlcVal:Number(r.dlc||0)*Number(r.qty||0), date:r.date||'',
+            own:!!r.own, pune:!!r.own};
+  });
+  return {ok:true, pn:pn, rows:rows, ours:true, stockDate:res.stockDate||'',
+          summary:{rows:rows.length, totalQty:(res.summary&&res.summary.totalQty)||0,
+                   dealers:(res.summary&&res.summary.outlets)||0,
+                   desc:(res.summary&&res.summary.desc)||'', zonal:[]}};
+}
+
+/* The pre-R31 path. Only reached when the R31 backend is not deployed. */
+function pfSearchLegacy(pn){
   jgetRaw('find_part_stock',{pn:pn},function(res){
     if(!res||res.ok===false){ pfInfo('Search failed — check connection.','error'); return; }
     PF_RESULT=res;
     if(!res.rows.length){ pfInfo('No stock found for '+pn+' in the uploaded data. Try the live Power BI fetch below for all-India availability.','warn'); pfIdentify(pn); }
     else pfInfo('Found '+pn+(res.summary.desc?' — '+res.summary.desc:'')+' at '+res.summary.dealers+' dealers.','ok');
     pfBuildFilters(); pfRender();
-  },20000);
+  },30000);
 }
 
 /* ---- R24: "no stock" and "no such part" are different answers -------------
@@ -10416,16 +10608,25 @@ function pfRender(){
   const dealers=new Set(rows.map(r=>r.dealerCode)).size;
   const ownQty=rows.filter(r=>r.own).reduce((s,r)=>s+r.qty,0);
   const puneQty=rows.filter(r=>r.pune).reduce((s,r)=>s+r.qty,0);
-  document.getElementById('pf-kpi-row').innerHTML=[
+  /* R31: the labels follow the SOURCE. mp_stock answers from our own four
+     outlets, so calling that figure "Total Qty (India)" would be a lie printed
+     in 22px — the live Power BI fetch is the only path that really is India. */
+  const ours=!!PF_RESULT.ours;
+  document.getElementById('pf-kpi-row').innerHTML=(ours?[
+    {ic:'📦',n:totalQty,label:'Qty at our outlets',color:'#16a34a'},
+    {ic:'🏢',n:dealers,label:'Outlets holding it',color:'#2563eb'},
+    {ic:'🧾',n:rows.length,label:'Storage locations',color:'#d97706'}
+  ]:[
     {ic:'📦',n:totalQty,label:'Total Qty (India)',color:'#0891b2'},
     {ic:'🏢',n:dealers,label:'Dealers',color:'#2563eb'},
     {ic:'🏠',n:ownQty,label:'Sehgal Own Stock',color:'#16a34a'},
     {ic:'📍',n:puneQty,label:'Pune Area Qty',color:'#7c3aed'},
     {ic:'🧾',n:rows.length,label:'Locations',color:'#d97706'}
-  ].map(k=>`<div class="hu-kpi-tile" style="--ktc:${k.color}"><span class="kt-ic">${k.ic}</span><div class="kt-body"><div class="kt-n">${k.n}</div><div class="kt-label">${k.label}</div></div></div>`).join('');
+  ]).map(k=>`<div class="hu-kpi-tile" style="--ktc:${k.color}"><span class="kt-ic">${k.ic}</span><div class="kt-body"><div class="kt-n">${k.n}</div><div class="kt-label">${k.label}</div></div></div>`).join('');
 
   const strip=document.getElementById('pf-zonal-strip');
-  if(strip && PF_RESULT.summary && PF_RESULT.summary.zonal){
+  if(strip) strip.style.display='none';
+  if(strip && PF_RESULT.summary && PF_RESULT.summary.zonal && PF_RESULT.summary.zonal.length){
     strip.style.display='flex';
     strip.innerHTML='<span class="hu-slicer-label">Zonal:</span>'+PF_RESULT.summary.zonal.map(z=>`<span class="hu-sl-btn" style="cursor:default">${z.zonal||'—'} <span class="sl-count">${z.qty}</span> · ${z.dealers}d</span>`).join('');
   }
@@ -10435,8 +10636,8 @@ function pfRender(){
   if(window.innerWidth<=760){
     wrap.innerHTML=rows.map(r=>`<div class="blm-card" style="border-left-color:${r.own?'#16a34a':r.pune?'#7c3aed':'#0891b2'}">
       <div class="blm-top"><div><span class="blm-reg" style="font-size:14px">${r.dealer||r.dealerCode}</span>${r.own?'<span class="blm-hu" style="background:#dcfce7;color:#166534;border-color:#86efac">SEHGAL</span>':r.pune?'<span class="blm-hu" style="background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe">PUNE</span>':''}</div><span style="font-weight:800;color:#0891b2">${r.qty} pc</span></div>
-      <div class="blm-mid">${r.town||''} · ${r.area||''} · ${r.loc||''}</div>
-      <div class="blm-mid" style="font-size:10px">DLC ₹${r.dlc} · Value ₹${Math.round(r.dlcVal)}</div>
+      <div class="blm-mid">${[r.town,r.area,r.loc].filter(Boolean).join(' · ')}</div>
+      <div class="blm-mid" style="font-size:10px">DLC ₹${r.dlc} · Value ₹${Math.round(r.dlcVal)}${r.date?' · stock '+r.date:''}</div>
     </div>`).join('');
     return;
   }
