@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 34;
-window.HERO_BUILD = 'R41-2026.08.07.1';
+window.HERO_RELEASE = 35;
+window.HERO_BUILD = 'R42-2026.08.07.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3310,9 +3310,16 @@ function showView(name){
      before the display switches below collapse the document height, is the only
      moment it is still the real number. Restored in ins3Boot(). Zero is never
      recorded: "she was at the top" needs no memory. Ledger A3. */
+  /* R42: the Hub is an app frame now, so the WINDOW is no longer the scroller —
+     #ins3-listwrap is. Read that. The window branch stays as the fallback so
+     this keeps working if the frame is ever reverted. */
   try{
     var _ir=document.getElementById('ins3-root');
-    if(name!=='insurance' && _ir && _ir.offsetHeight>0 && window.scrollY>0) INS3._scroll=window.scrollY;
+    if(name!=='insurance' && _ir && _ir.offsetHeight>0){
+      var _lw=document.getElementById('ins3-listwrap');
+      var _y=_lw ? _lw.scrollTop : window.scrollY;
+      if(_y>0) INS3._scroll=_y;
+    }
   }catch(e){}
   ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard'].forEach(v=>{
     const el = document.getElementById('view-'+v);
@@ -15105,21 +15112,56 @@ function ins2MarutiUpload(inp){
    =========================================================================== */
 
 .ins3, .ins3 *{box-sizing:border-box}
-.ins3{max-width:100%;overflow-x:hidden;font-size:13px}
+/* ---------------------------------------------------------------------------
+   R42 — ONE INSURANCE DESIGN SYSTEM (08-Aug-2026)
+
+   Focus Mode (R35) and the Board (R41) were both built as app frames with
+   near-black ink. The Hub — the screen the SMREs actually sit in all day —
+   was neither: the whole PAGE scrolled, and nine separate places used
+   #94a3b8 (slate-400) for WORDS. Both are standing rules, not preferences:
+     CLAUDE.md rule 8   app frames, page never scrolls, ~8 choices at once
+     [-5 spectacles]    near-black ink for words; light is for LINES only
+
+   --i-dim is the one that matters. It was #94a3b8; it is now #475569, which
+   is four steps darker and still reads as secondary. Borders keep the light
+   value under --i-line, because borders are not words.
+   --------------------------------------------------------------------------- */
+.ins3{--i-ink:#111827;--i-mid:#334155;--i-dim:#475569;--i-line:#dfe3ea;
+      --i-bg:#f4f6f9;--i-card:#fff;--i-red:#b91c1c;--i-grn:#166534;
+      --i-amb:#b45309;--i-blu:#1d4ed8;
+      max-width:100%;overflow-x:hidden;font-size:13px}
+
+/* ---- THE FRAME. header / controls / stage, and only the stage scrolls.
+   --ins3-top is the app's global .top bar, measured at paint time by
+   ins3FitFrame() — the Board learned this the hard way in R41: a hard-coded
+   100dvh left the document taller than the viewport, so the page scrolled
+   anyway, which is the exact thing rule 8 forbids. ---- */
+.ins3-frame{display:grid;grid-template-rows:auto auto minmax(0,1fr);
+  height:calc(100dvh - var(--ins3-top,0px));background:var(--i-bg);
+  min-width:0;overflow:hidden}
 
 /* ---- top bar ---- */
-.ins3-top{display:flex;align-items:center;gap:9px;padding:10px 12px;background:linear-gradient(135deg,#b91c1c,#7f1d1d);
-  color:#fff;border-radius:0 0 16px 16px;min-width:0}
+.ins3-top{display:flex;align-items:center;gap:9px;padding:9px 12px;background:linear-gradient(135deg,#b91c1c,#7f1d1d);
+  color:#fff;min-width:0}
 .ins3-back{border:0;background:rgba(255,255,255,.16);color:#fff;width:30px;height:30px;border-radius:9px;
   font-size:17px;cursor:pointer;flex:0 0 auto;font-family:inherit;line-height:1}
 .ins3-top-txt{flex:1;min-width:0}
 .ins3-top-hi{font-size:14.5px;font-weight:850;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ins3-top-sub{font-size:11px;opacity:.9;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ins3-mascot{width:34px;height:34px;object-fit:contain;flex:0 0 auto}
+.ins3-top-sub{font-size:11px;opacity:.92;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-mascot{width:30px;height:30px;object-fit:contain;flex:0 0 auto}
+/* R42: the two tools that used to be full-width buttons in their own band.
+   They are tools, not choices — they belong in the header, not in her
+   eight. Excel in, Excel out, and a re-sync. */
+.ins3-tool{flex:0 0 auto;border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:9px;
+  min-width:34px;height:34px;padding:0 9px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;line-height:1}
+.ins3-tool:active{transform:translateY(1px)}
 
-/* ---- sync bar ---- */
+/* ---- sync bar. R42: it lives INSIDE the header block now and hides itself
+   when there is nothing to say — an "all good" bar is a band of screen that
+   costs her a row of customers every time she looks at it. ---- */
 .ins3-sync{margin:8px 12px 0;border-radius:11px;padding:8px 11px;font-size:11.5px;font-weight:750;
   display:flex;align-items:center;gap:8px;min-width:0}
+.ins3-sync.hush{display:none}
 .ins3-sync.busy{background:#eff6ff;color:#1d4ed8}
 .ins3-sync.ok{background:#f0fdf4;color:#166534}
 .ins3-sync.bad{background:#fef2f2;color:#b91c1c}
@@ -15134,8 +15176,13 @@ function ins2MarutiUpload(inp){
 .ins3-search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line,#e5e7eb);border-radius:13px;
   padding:9px 12px;background:var(--card,#fff);min-width:0}
 .ins3-search input{flex:1;min-width:0;border:0;outline:0;font-size:14px;font-family:inherit;background:transparent;color:inherit}
-.ins3-search .x{border:0;background:transparent;font-size:16px;cursor:pointer;color:#94a3b8;padding:0 2px;font-family:inherit}
-.ins3-searchhint{font-size:10.5px;color:#94a3b8;font-weight:650;margin:5px 2px 0;line-height:1.45}
+.ins3-search .x{border:0;background:transparent;font-size:16px;cursor:pointer;color:var(--i-dim);padding:0 2px;font-family:inherit}
+/* R42: was a three-line paragraph explaining the working window, in #94a3b8,
+   sitting between her and the list on every single visit. "One line of label,
+   no prose" — the device count moved into the header subtitle, and this now
+   only speaks while something is genuinely wrong or still arriving. */
+.ins3-searchhint{font-size:11px;color:var(--i-mid);font-weight:750;margin:5px 2px 0;line-height:1.4}
+.ins3-searchhint:empty{display:none}
 
 /* ---- chip strips. Each one scrolls INSIDE itself — this is the overflow fix. ---- */
 .ins3-strip{display:flex;gap:6px;overflow-x:auto;padding:9px 12px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -15147,18 +15194,74 @@ function ins2MarutiUpload(inp){
 .ins3-chip.tierA.on{background:#166534;border-color:#166534}
 .ins3-chip.tierB.on{background:#1d4ed8;border-color:#1d4ed8}
 
-/* ---- the split pane ---- */
-.ins3-pane{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:10px 12px 20px;min-width:0}
+/* ===== R42 — THE CONTROL BLOCK, and getting back under ~8 choices ==========
+   Counted on the R41 screen, before a single customer row: 3 call-to-action
+   buttons + 8 range chips + 7 filter chips + a sort box = 19 controls, in
+   nine stacked bands. Rule 8 caps it at about eight.
+
+   What changed:
+     * the two Excel buttons and the re-sync became header tools (not choices)
+     * the seven filter chips moved into a dependent sheet behind ONE button
+       that carries a count, so "what is filtering my list" is answerable at
+       a glance instead of by reading seven chips
+     * the range chips stayed — they are the primary axis and they carry live
+       counts, and they read as one control because they scroll as one rail
+   Visible now: start calling, eight ranges, one filter button.
+   ========================================================================= */
+.ins3-ctrl{min-width:0}
+.ins3-go{display:block;width:calc(100% - 24px);margin:8px 12px 0;min-height:52px;border:0;border-radius:14px;
+  cursor:pointer;font-family:inherit;background:linear-gradient(135deg,#dc2626,#f43f5e);color:#fff;
+  font-size:16px;font-weight:900;box-shadow:0 4px 14px rgba(220,38,38,.28);padding:7px 12px;text-align:center}
+.ins3-go span{display:block;font-size:11.5px;font-weight:700;opacity:.95;margin-top:1px}
+.ins3-go:active{transform:translateY(1px)}
+.ins3-striprow{display:flex;align-items:center;gap:6px;padding-right:12px;min-width:0}
+.ins3-striprow .ins3-strip{flex:1;min-width:0}
+.ins3-filtbtn{flex:0 0 auto;border:1.5px solid var(--i-line);background:var(--i-card);border-radius:999px;
+  padding:6px 12px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--i-ink);
+  white-space:nowrap;margin-top:7px}
+.ins3-filtbtn.on{background:var(--i-ink);border-color:var(--i-ink);color:#fff}
+.ins3-filtbtn b{margin-left:4px}
+
+/* the dependent step. Slides up INSIDE the frame, same idea as Focus Mode's
+   premium sheet — detail goes behind one press, never into more buttons. */
+.ins3-fsw{position:fixed;inset:0;z-index:70;background:rgba(15,23,42,.34);
+  opacity:0;pointer-events:none;transition:opacity .16s}
+.ins3-fsw.on{opacity:1;pointer-events:auto}
+.ins3-fs{position:absolute;left:0;right:0;bottom:0;background:var(--i-card);border-radius:18px 18px 0 0;
+  border-top:2px solid var(--i-ink);box-shadow:0 -12px 40px rgba(15,23,42,.28);padding:14px 14px 18px;
+  transform:translateY(105%);transition:transform .18s;max-height:82vh;overflow-y:auto}
+.ins3-fsw.on .ins3-fs{transform:none}
+.ins3-fsh{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.ins3-fsh b{font-size:16px;font-weight:900;color:var(--i-ink);flex:1;min-width:0}
+.ins3-fsx{border:0;background:#eef1f5;width:34px;height:34px;border-radius:10px;font-size:17px;font-weight:900;
+  color:var(--i-ink);cursor:pointer;font-family:inherit;flex:0 0 auto;line-height:1}
+.ins3-fsl{font-size:10.5px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--i-mid);margin:11px 0 6px}
+.ins3-fsg{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.ins3-fsg .ins3-chip{width:100%;text-align:left;padding:10px 12px;font-size:12.5px;border-radius:11px}
+.ins3-fsdone{width:100%;border:0;border-radius:13px;min-height:50px;background:var(--i-ink);color:#fff;
+  font-size:15px;font-weight:900;cursor:pointer;font-family:inherit;margin-top:14px}
+.ins3-fsclear{width:100%;border:1.5px solid var(--i-line);border-radius:13px;min-height:44px;background:#fff;
+  color:var(--i-ink);font-size:13px;font-weight:850;cursor:pointer;font-family:inherit;margin-top:7px}
+
+/* ---- the split pane — R42: this is now the FRAME'S STAGE, the only part of
+   the screen that scrolls. It is the 1fr row of .ins3-frame, so it is exactly
+   the height left over after the header and the controls, and each column
+   scrolls inside itself.
+
+   This also retires the R37 sticky hack rather than papering over it. Sticky
+   was there to keep the customer panel beside her as the PAGE scrolled; with
+   the page frozen, the rail is simply its own scroll area and has no travel to
+   get wrong. The bug that made a click look dead — a sticky child inside a
+   grid item shrunk to content height, repainting 2,000px above the viewport —
+   is now structurally impossible, not merely fixed. ---- */
+.ins3-pane{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:10px 12px 14px;
+  min-width:0;min-height:0;overflow:hidden}
+.ins3-listwrap{overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;padding-right:2px}
 @media(min-width:900px){
-  .ins3-pane{grid-template-columns:minmax(0,1fr) minmax(0,430px);align-items:start}
-  /* R37: sticky moved from .ins3-detail to the RAIL. align-items:start shrinks
-     the grid item to its content, so a sticky INSIDE it had zero room to
-     travel — that is why clicking a row far down the list appeared to do
-     nothing: the panel repainted 2,000px above the viewport. The rail is the
-     grid item, its grid AREA is the full column height, so sticky on the rail
-     follows her down the whole list. */
-  .ins3-rail{position:sticky;top:10px;max-height:calc(100vh - 22px);display:flex;flex-direction:column;gap:10px;min-width:0}
-  .ins3-detail{flex:0 1 auto;overflow:auto;min-height:0}
+  .ins3-pane{grid-template-columns:minmax(0,1fr) minmax(0,430px);align-items:stretch}
+  .ins3-rail{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;overflow-y:auto}
+  .ins3-detail{flex:0 0 auto}
   #ins3-pile{flex:0 0 auto}
 }
 /* R37: the tap must land where she can SEE it — panel pulses on selection */
@@ -15170,14 +15273,41 @@ function ins2MarutiUpload(inp){
 .ins3-pilecard{background:var(--card,#fff);border-radius:15px;padding:11px 12px;box-shadow:0 2px 12px rgba(15,23,42,.09);min-width:0}
 .ins3-pilehead{display:flex;align-items:baseline;gap:8px;margin-bottom:7px}
 .ins3-pilehead b{font-size:13px;font-weight:850;color:#171717}
-.ins3-pilehead span{font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.ins3-pilehead span{font-size:10.5px;font-weight:800;color:var(--i-dim);text-transform:uppercase;letter-spacing:.04em}
 .ins3-pilerows{max-height:34vh;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.ins3-pilecaret{flex:0 0 auto;font-size:13px;font-weight:900;color:var(--i-dim);transition:transform .15s;display:none}
+@media(max-width:899px){.ins3-pilecaret{display:inline-block;transform:rotate(180deg)}
+  #ins3-pile.open .ins3-pilecaret{transform:none}}
+/* R42: the pile as a table — number, time, who, outcome, money. Same five-column
+   discipline as the queue; the colour still says won / hot / warm / cold, but it
+   tints a ROW instead of drawing a card. */
+.ins3-ptbl{width:100%;border-collapse:collapse;table-layout:fixed}
+.ins3-ptbl td{padding:4px 6px;border-bottom:1px solid #eef1f5;vertical-align:middle;min-width:0}
+.ins3-ptbl tr:last-child td{border-bottom:0}
+.ins3-ptr{cursor:pointer;animation:ins3PileIn .3s}
+.ins3-ptr:hover td{background:#f6f8fb}
+.ins3-ptbl .pn{width:22px;font-size:9.5px;font-weight:800;color:var(--i-dim);text-align:right;
+  font-variant-numeric:tabular-nums}
+.ins3-ptbl .pt{width:36px;font-size:10px;font-weight:800;color:var(--i-mid);font-variant-numeric:tabular-nums}
+.ins3-ptbl .pnm{min-width:0}
+.ins3-ptbl .pnm span{display:block;font-size:11.5px;font-weight:800;color:var(--i-ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-ptbl .pnm small{display:block;font-size:9.5px;font-weight:700;color:var(--i-dim);
+  font-family:ui-monospace,Menlo,Consolas,monospace}
+.ins3-ptbl .po{width:96px}
+.ins3-ptbl .pp{width:56px;text-align:right;font-size:11px;font-weight:850;color:var(--i-grn);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.ins3-ptr.won td{background:#f2fbf5}.ins3-ptr.hot td{background:#fff5f6}
+.ins3-ptr.warm td{background:#fefce8}
+.ins3-ptbl .tg{display:inline-block;font-size:9px;font-weight:850;padding:2px 6px;border-radius:999px;
+  white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+/* dead after R42 — kept so the R37 card can be restored by swapping ins3PaintPile alone */
 .ins3-pr{border:1.5px solid var(--line,#e5e7eb);border-radius:9px;padding:6px 9px;cursor:pointer;min-width:0;animation:ins3PileIn .3s}
 @keyframes ins3PileIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
 .ins3-pr .l1{display:flex;gap:7px;align-items:center;min-width:0}
 .ins3-pr .nm{flex:1;min-width:0;font-size:12px;font-weight:800;color:#171717;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ins3-pr .tg{flex:none;font-size:9.5px;font-weight:850;padding:2px 7px;border-radius:999px;white-space:nowrap}
-.ins3-pr .tm{flex:none;font-size:10px;font-weight:750;color:#64748b}
+.ins3-pr .tm{flex:none;font-size:10px;font-weight:750;color:var(--i-dim)}
 .ins3-pr .l2{display:none;font-size:11px;font-weight:650;color:#334155;margin-top:5px;line-height:1.45;word-break:break-word}
 .ins3-pr.open .l2{display:block}
 .ins3-pr.won{background:#f0fdf4;border-color:#86efac}
@@ -15223,50 +15353,157 @@ function ins2MarutiUpload(inp){
     padding-top:11px;margin-top:-13px;padding-bottom:7px}
   /* so the bottom of the list can still be scrolled out from under the drawer */
   .ins3-listwrap.sheeted{padding-bottom:70vh}
+
+  /* ---- R42: the pile becomes the frame's FOOTER on a phone.
+     In the old scrolling page the pile sat below the list and she scrolled to
+     it. Inside a fixed frame there is no "below" — an unbounded rail row would
+     simply eat the list. So it docks: a 40px bar that always shows the count
+     (the thing she wants — her work piling up, visibly, on every save) and
+     opens to the full pile on a tap.
+     It hides itself while the customer drawer is open, because the drawer
+     occupies the same edge; they are siblings, so one selector does it. ---- */
+  .ins3-rail{min-width:0}
+  #ins3-pile{position:fixed;left:0;right:0;bottom:0;z-index:55}
+  #ins3-pile .ins3-pilecard{border-radius:14px 14px 0 0;padding:7px 12px 9px;
+    box-shadow:0 -6px 22px rgba(15,23,42,.22);border-top:1.5px solid var(--i-line)}
+  #ins3-pile .ins3-pilehead{margin-bottom:0}
+  #ins3-pile .ins3-pilerows,#ins3-pile .ins3-pilenone{display:none}
+  #ins3-pile.open .ins3-pilehead{margin-bottom:7px}
+  #ins3-pile.open .ins3-pilerows{display:flex}
+  #ins3-pile.open .ins3-pilenone{display:block}
+  #ins3-detailwrap.on ~ #ins3-pile{display:none}
+  /* clear the docked bar so the last customer row is never under it */
+  .ins3-pane{padding-bottom:46px}
+}
+
+/* ---- R42: compact phones. Same intent as Focus Mode's ≤640px block — the
+   frame must FIT, so the chrome gives up pixels before the list does. ---- */
+@media(max-width:640px){
+  .ins3-top{padding:7px 10px;gap:7px}
+  .ins3-mascot{width:26px;height:26px}
+  .ins3-top-hi{font-size:13.5px}
+  .ins3-top-sub{font-size:10.5px}
+  .ins3-tool{min-width:31px;height:31px;font-size:14px;padding:0 7px}
+  .ins3-go{min-height:46px;font-size:15px;margin:7px 10px 0;width:calc(100% - 20px);border-radius:13px}
+  .ins3-go span{font-size:10.5px}
+  .ins3-my{padding:7px 10px 0}
+  .ins3-myt{padding:5px 9px;min-width:64px;border-radius:10px}
+  .ins3-myn{font-size:15px}
+  .ins3-searchwrap{padding:7px 10px 0}
+  .ins3-search{padding:8px 11px;border-radius:12px}
+  .ins3-strip{padding:7px 10px 2px}
+  .ins3-pane{padding:8px 10px 46px;gap:8px}
 }
 .ins3-listwrap{min-width:0}
-.ins3-count{font-size:11.5px;font-weight:750;color:var(--steel,#64748b);margin:0 2px 7px;
+.ins3-count{font-size:11.5px;font-weight:750;color:var(--i-dim);margin:0 2px 7px;
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
-.ins3-sort{border:1.5px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:8px;padding:4px 9px;
-  font-size:11px;font-weight:750;font-family:inherit;color:inherit;cursor:pointer}
+.ins3-sort{border:1.5px solid var(--i-line);background:var(--i-card);border-radius:8px;padding:4px 9px;
+  font-size:11px;font-weight:750;font-family:inherit;color:var(--i-ink);cursor:pointer}
+/* R42 mini graph: the tier split of the list as one stacked bar. Each segment
+   is also a slicer — clicking it filters to that tier. */
+.ins3-mini{display:flex;height:9px;width:78px;border-radius:99px;overflow:hidden;background:#e8ebef;flex:0 0 auto}
+.ins3-mini i{display:block;height:100%;cursor:pointer;transition:opacity .12s}
+.ins3-mini i:hover{opacity:.75}
+.ins3-mini .sA{background:#166534}.ins3-mini .sB{background:#1d4ed8}
+.ins3-mini .sC{background:#b45309}.ins3-mini .sD{background:#94a3b8}
+.ins3-mini i.on{box-shadow:inset 0 0 0 1.5px #111827}
+.ins3-legend{display:flex;gap:7px;flex:0 0 auto}
+.ins3-legend b{font-weight:850;font-variant-numeric:tabular-nums}
+@media(max-width:420px){.ins3-legend{display:none}}
 
-/* ---- a row. Light: one line of identity, one of proof, one of facts. ---- */
-.ins3-r{display:flex;gap:10px;align-items:stretch;background:var(--card,#fff);border-radius:13px;padding:10px 11px;
-  margin-bottom:7px;cursor:pointer;border:1.5px solid transparent;box-shadow:0 1px 4px rgba(15,23,42,.06);
-  min-width:0;-webkit-tap-highlight-color:transparent;transition:border-color .12s,box-shadow .12s}
-.ins3-r:hover{border-color:#cbd5e1}
-.ins3-r.sel{border-color:#b91c1c;box-shadow:0 3px 14px rgba(185,28,28,.16)}
+/* ===========================================================================
+   R42 — THE QUEUE IS A TABLE (Ravi, 07-Aug-2026: "I like table views more
+   than deck views", "no big big card type views").
+
+   The card it replaces was 96px tall: a tier block, four stacked lines and up
+   to seven wrapping pills. Measured on a 375px phone that is four customers a
+   screen, and because the pills wrapped differently on every row, the name,
+   the reg and the days never sat in the same place twice — ten fixations per
+   record for a reader with -5 correction.
+
+   MEASURED at 375x812, not estimated. Card: 96px, 3 fully visible in the list
+   column. Table row: 31px, 8 fully visible. The first cut of this table was
+   48px because the flags wrapped under the name and the model and the day
+   label sat under their values — one line has to mean ONE line, so the flags
+   moved beside the name and the model moved into the panel.
+   Every field that left the row is in the detail panel, which is the step
+   that opens on click — detail belongs in the step, not in a taller row.
+   =========================================================================== */
+.ins3-tbl{width:100%;border-collapse:collapse;table-layout:fixed;background:var(--i-card);
+  border-radius:11px;overflow:hidden;box-shadow:0 1px 4px rgba(15,23,42,.06)}
+.ins3-tbl th{position:sticky;top:0;z-index:2;background:#eef1f5;text-align:left;
+  font-size:9.5px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;color:var(--i-mid);
+  padding:6px 7px;white-space:nowrap;border-bottom:1.5px solid var(--i-line)}
+.ins3-tbl td{padding:5px 7px;border-bottom:1px solid #eef1f5;vertical-align:middle;min-width:0}
+.ins3-tbl tr:last-child td{border-bottom:0}
+/* the five columns, fixed so nothing shifts as names change length */
+.ins3-tbl .c-band{width:36px}
+.ins3-tbl .c-reg{width:104px}
+.ins3-tbl .c-day{width:62px;text-align:right}
+.ins3-tbl .c-tier{width:28px;text-align:center}
+@media(max-width:420px){.ins3-tbl .c-reg{width:92px}.ins3-tbl .c-day{width:54px}}
+
+.ins3-tr{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ins3-tr:hover td{background:#f6f8fb}
+/* the selection must be unmistakable at a glance, and the left bar is what
+   carries it — a border on a table cell is easy to miss at 34px. */
+.ins3-tr.sel td{background:#fff3f3}
+.ins3-tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--i-red)}
 /* R37: was opacity:.55 — Ravi read the faded card as broken. Another SMRE's
-   customer stays fully readable; the owner pill says whose it is, the tint
+   customer stays fully readable; the flag column says whose it is, the tint
    says "not yours" without hiding the words. */
-.ins3-r.other{opacity:.85;background:#fafafa}
-.ins3-tier{flex:0 0 auto;width:34px;border-radius:9px;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;font-weight:850;color:#fff;line-height:1}
-.ins3-tier .t{font-size:13px}
-.ins3-tier .s{font-size:9px;opacity:.85;margin-top:1px}
-.ins3-tA{background:#166534}.ins3-tB{background:#2563eb}.ins3-tC{background:#d97706}.ins3-tD{background:#94a3b8}
+.ins3-tr.other td{background:#fafbfc}
+.ins3-tr.other:hover td{background:#f4f6f9}
+
+/* one line: the name takes what is left, the flags sit beside it and never wrap */
+.ins3-tbl .c-name{min-width:0;display:flex;align-items:center;gap:5px}
+.ins3-tbl .c-name .nm{flex:1;min-width:0;font-size:12.5px;font-weight:800;color:var(--i-ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-tbl .mks{flex:0 0 auto;display:inline-flex;gap:3px}
+.ins3-tbl .mk{font-style:normal;font-size:9px;font-weight:900;line-height:14px;height:14px;min-width:14px;
+  padding:0 3px;border-radius:4px;text-align:center;display:inline-block}
+.mk.won{background:#dcfce7;color:var(--i-grn)}
+.mk.me{background:#dcfce7;color:var(--i-grn)}
+.mk.oth{background:#e8ebef;color:var(--i-mid)}
+.mk.lk{background:#fef3c7;color:#92400e}
+.mk.wrn{background:#fef3c7;color:#92400e}
+.mk.car{background:#ede9fe;color:#6d28d9}
+.mk.est{background:#e8ebef;color:var(--i-mid)}
+
+.ins3-tbl .c-reg{font-size:11px;font-weight:750;color:var(--i-mid);
+  font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-tbl .c-day{font-size:12.5px;font-weight:850;font-variant-numeric:tabular-nums;
+  letter-spacing:-.2px;white-space:nowrap}
+.ins3-tbl .c-day small{font-size:9.5px;font-weight:800;margin-left:1px}
+.ins3-emptyrow td{padding:0;background:var(--i-card)}
+.ins3-emptyrow:hover td{background:var(--i-card)}
+
+/* the tier chip: one letter, the score behind a hover/long-press title */
+.ins3-tier{display:inline-block;width:20px;height:20px;border-radius:6px;font-size:11px;font-weight:850;
+  color:#fff;line-height:20px;text-align:center}
+.ins3-tA{background:#166534}.ins3-tB{background:#2563eb}.ins3-tC{background:#b45309}.ins3-tD{background:#64748b}
 .ins3-rmain{flex:1;min-width:0}
 .ins3-rname{font-size:13.5px;font-weight:800;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ins3-rreg{font-size:11px;font-weight:700;color:var(--steel,#64748b);font-family:ui-monospace,Menlo,Consolas,monospace;
+.ins3-rreg{font-size:11px;font-weight:700;color:var(--i-dim);font-family:ui-monospace,Menlo,Consolas,monospace;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .ins3-rwhy{font-size:10.5px;color:#166534;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ins3-rwhy.warn{color:#b45309}
 .ins3-rexp{flex:0 0 auto;text-align:right;min-width:0}
 .ins3-rdays{font-size:15px;font-weight:850;line-height:1;letter-spacing:-.4px}
-.ins3-rdl{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;margin-top:2px;white-space:nowrap}
+.ins3-rdl{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--i-mid);margin-top:2px;white-space:nowrap}
 .ins3-pills{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
 .ins3-p{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;white-space:nowrap}
 /* R41 priority bands. P1 = her loaded list, P2 = a policy we actually hold,
    P3 = the rest. Deliberately the loudest pill on the row. */
 .ins3-band1{background:#b91c1c;color:#fff}
 .ins3-band2{background:#16653418;color:#166534}
-.ins3-band3{background:#94a3b818;color:#64748b}
+.ins3-band3{background:#64748b1a;color:var(--i-mid)}
 
 /* ---- detail panel ---- */
 .ins3-detail{background:var(--card,#fff);border-radius:15px;padding:13px 14px;box-shadow:0 2px 12px rgba(15,23,42,.09);min-width:0}
 .ins3-dh{display:flex;gap:9px;align-items:flex-start;min-width:0}
 .ins3-dname{font-size:16px;font-weight:850;letter-spacing:-.3px;line-height:1.25;word-break:break-word}
-.ins3-dreg{font-size:12px;font-weight:750;color:var(--steel,#64748b);font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:2px}
+.ins3-dreg{font-size:12px;font-weight:750;color:var(--i-dim);font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:2px}
 .ins3-dclose{border:0;background:#f1f5f9;width:28px;height:28px;border-radius:8px;font-size:15px;cursor:pointer;
   flex:0 0 auto;font-family:inherit;color:inherit;line-height:1}
 .ins3-acts{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
@@ -15276,11 +15513,20 @@ function ins2MarutiUpload(inp){
 .ins3-a.call{background:#dbeafe;color:#1d4ed8}
 .ins3-a.wa{background:#dcfce7;color:#15803d}
 .ins3-a.copy{background:#f1f5f9;color:#334155}
-.ins3-sec{font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:13px 0 6px}
-.ins3-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;min-width:0}
-.ins3-f{background:#f8fafc;border-radius:9px;padding:6px 9px;min-width:0}
-.ins3-fl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8}
-.ins3-fv{font-size:12.5px;font-weight:750;margin-top:1px;word-break:break-word}
+.ins3-sec{font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;color:var(--i-mid);margin:13px 0 6px}
+/* R42: the facts were a grid of little tinted boxes — a deck inside the panel.
+   Same complaint, same fix: label left, value right, one line each, a hairline
+   between. No JS changed; the markup ins3PaintDetail() emits is unchanged and
+   only the layout it lands in is different. */
+.ins3-facts{display:block;min-width:0;border:1px solid var(--i-line);border-radius:9px;overflow:hidden}
+.ins3-f{display:flex;align-items:baseline;gap:10px;padding:5px 9px;min-width:0;
+  border-bottom:1px solid #eef1f5;background:var(--i-card)}
+.ins3-facts .ins3-f:last-child{border-bottom:0}
+.ins3-f:nth-child(even){background:#fafbfc}
+.ins3-fl{flex:0 0 92px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;
+  color:var(--i-mid);line-height:1.5}
+.ins3-fv{flex:1;min-width:0;font-size:12.5px;font-weight:750;text-align:right;word-break:break-word;
+  color:var(--i-ink)}
 .ins3-fv.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
 .ins3-fv.miss{color:#b45309;font-weight:700}
 .ins3-scorebox{background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1.5px solid #bbf7d0;border-radius:11px;padding:9px 11px;margin-top:4px}
@@ -15301,7 +15547,7 @@ function ins2MarutiUpload(inp){
 .ins3-empty{text-align:center;padding:26px 14px}
 .ins3-empty img{width:96px;height:96px;object-fit:contain;opacity:.9}
 .ins3-empty-t{font-size:14px;font-weight:800;margin-top:8px}
-.ins3-empty-s{font-size:12px;color:var(--steel,#64748b);margin-top:4px;line-height:1.5}
+.ins3-empty-s{font-size:12px;color:var(--i-mid);margin-top:4px;line-height:1.5}
 .ins3-more{width:100%;border:1.5px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:11px;
   padding:11px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;color:inherit;margin-top:4px}
 .ins3-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0f172a;color:#fff;
@@ -15381,8 +15627,8 @@ const INS3_BUCKETS = [
      server and search reaches it automatically. */
   {code:'all',       label:'Sab (is device par)', from:-99999, to:99999}
 ];
-const INS3_TIERC = {A:'#166534', B:'#2563eb', C:'#d97706', D:'#94a3b8'};
-const INS3_LOYC  = {REGULAR:'#166534', LAPSED:'#b45309', LOST:'#b91c1c', NEW:'#2563eb', PROSPECT:'#7c3aed'};
+const INS3_TIERC = {A:'#166534', B:'#2563eb', C:'#b45309', D:'#475569'};
+const INS3_LOYC  = {REGULAR:'#166534', LAPSED:'#b45309', LOST:'#b91c1c', NEW:'#1d4ed8', PROSPECT:'#6d28d9'};
 
 function ins3Esc(s){
   return (typeof raviEsc==='function') ? raviEsc(s==null?'':s)
@@ -15457,6 +15703,15 @@ function ins3Say(kind, txt, pct){
     +(pct==null?'':'<div class="ins3-bar"><i style="width:'+Math.round(pct)+'%"></i></div>')
     +'</div>'
     +(kind==='busy'?'':'<button class="ins3-sync-btn" onclick="ins3Sync(true)">↻ Sync now</button>');
+  /* R42: a green "all good" bar is a permanent band of screen that costs her a
+     row of customers every time she opens this screen, and it says nothing she
+     did not already know. It reports, then gets out of the way. 'busy' and
+     'bad' never hush — those are the two states worth the space. */
+  clearTimeout(INS3._hush);
+  if(kind==='ok') INS3._hush=setTimeout(function(){
+    const e=document.getElementById('ins3-sync');
+    if(e && e.classList.contains('ok')) e.classList.add('hush');
+  }, 4000);
 }
 
 /* Loads the book. Uses the local copy when the server says it is still current,
@@ -15826,20 +16081,29 @@ function ins3Boot(force){
      document height and the browser clamps scrollY to 0. Every row survived the
      navigation and she still came back to the top of the list.
      The offset is recorded by the listener bound in ins3Shell. */
+  ins3FitFrame();
   if(INS3._scroll>0){
     const y=INS3._scroll;
+    /* R42: the list column is the scroller. Same three-attempt shape as below,
+       and for the same reason — the rows are written synchronously but the
+       header, the mascot and the KPI strip can still change the frame's height
+       a moment later, and a scroll to an offset the column is not yet tall
+       enough for is silently clamped. */
     /* Straight away, then twice more. The list DOM is written synchronously, so
        the height needed to scroll to y already exists on this line — but the
        header, the mascot image and the KPI strip can still change it a moment
-       later, and a scroll to an offset the document is not yet tall enough for
+       later, and a scroll to an offset the column is not yet tall enough for
        is silently clamped.
        Deliberately setTimeout and not requestAnimationFrame: rAF does not fire
        at all when the page is not compositing frames, which is exactly the
        condition an automated check runs under. A restore that cannot be
        observed is a restore nobody can prove. */
-    window.scrollTo(0,y);
-    setTimeout(function(){ if(Math.abs(window.scrollY-y)>2) window.scrollTo(0,y); }, 0);
-    setTimeout(function(){ if(Math.abs(window.scrollY-y)>2) window.scrollTo(0,y); }, 140);
+    const lw=document.getElementById('ins3-listwrap');
+    const put = lw ? function(){ lw.scrollTop=y; } : function(){ window.scrollTo(0,y); };
+    const at  = lw ? function(){ return lw.scrollTop; } : function(){ return window.scrollY; };
+    put();
+    setTimeout(function(){ if(Math.abs(at()-y)>2) put(); }, 0);
+    setTimeout(function(){ if(Math.abs(at()-y)>2) put(); }, 140);
   }
   if(INS3.ready && !force){ ins3LoadStates(); }
   else ins3Load(force);
@@ -15849,50 +16113,89 @@ function ins3Shell(){
   const root=document.getElementById('ins3-root'); if(!root) return;
   const h=new Date().getHours();
   const hi=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+(ins3MyName()?', '+ins3MyName().split(' ')[0]:'');
+  /* ------------------------------------------------------------------------
+     R42 — the Hub becomes an app frame (CLAUDE.md rule 8).
+
+     header / controls / stage in a 100dvh grid. The PAGE no longer scrolls at
+     all; the customer list scrolls inside its own column, which is the one
+     thing an SMRE working a call list actually wants to move.
+
+     The two Excel buttons and the re-sync chip became header tools — they are
+     tools, not choices — and the seven filter chips went behind one Filter
+     button that carries a count. Nothing was removed: every control that was
+     on the R41 screen is still one press away.
+     ------------------------------------------------------------------------ */
   root.innerHTML=
-    '<div class="ins3-top">'
-      +'<button class="ins3-back" onclick="showView(\'home\')">‹</button>'
-      +'<img class="ins3-mascot" src="assets/23_white_red_superhero_jump.png" alt="" onerror="this.style.display=\'none\'">'
-      +'<div class="ins3-top-txt">'
-        +'<div class="ins3-top-hi">'+ins3Esc(hi)+'</div>'
-        +'<div class="ins3-top-sub" id="ins3-sub">Renewal call list</div>'
+    '<div class="ins3-frame">'
+    +'<div>'
+      +'<div class="ins3-top">'
+        +'<button class="ins3-back" onclick="showView(\'home\')">‹</button>'
+        +'<img class="ins3-mascot" src="assets/23_white_red_superhero_jump.png" alt="" onerror="this.style.display=\'none\'">'
+        +'<div class="ins3-top-txt">'
+          +'<div class="ins3-top-hi">'+ins3Esc(hi)+'</div>'
+          +'<div class="ins3-top-sub" id="ins3-sub">Renewal call list</div>'
+        +'</div>'
+        /* R37 P1: HER list decides the order. Row 1 of her sheet = call no 1. */
+        +'<button class="ins3-tool" title="Meri list — Excel daalo" '
+          +'onclick="document.getElementById(\'ins3-sheetfile\').click()">📥</button>'
+        +'<button class="ins3-tool" title="Meri list — Excel nikalo" onclick="insfExcel()">⬇</button>'
+        +'<button class="ins3-tool" title="Phir se sync karo" onclick="ins3Sync(true)">↻</button>'
+      +'</div>'
+      +'<div class="ins3-sync ok hush" id="ins3-sync"></div>'
+      +'<input type="file" id="ins3-sheetfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="ins3SheetPick(this)">'
+      +'<div id="ins3-sheetbar"></div>'
+    +'</div>'
+    +'<div class="ins3-ctrl">'
+      /* R34: the SMRE's own screen. One customer at a time, big buttons, mascot.
+         The list below stays for search and for managers. */
+      +'<button class="ins3-go" onclick="insfStart()">📞 Chalo, shuru karte hai!'
+        +'<span>Ek customer, ek click — start calling</span></button>'
+      +'<div class="ins3-my" id="ins3-my"></div>'
+      +'<div class="ins3-searchwrap">'
+        +'<div class="ins3-search">'
+          +'<span>🔎</span>'
+          +'<input id="ins3-q" placeholder="Name, reg, mobile, chassis, engine, policy no…" '
+            +'oninput="ins3OnQ(this.value)" autocomplete="off" spellcheck="false">'
+          +'<button class="x" onclick="ins3ClearQ()" title="Clear">✕</button>'
+        +'</div>'
+        +'<div class="ins3-searchhint" id="ins3-hint"></div>'
+      +'</div>'
+      +'<div class="ins3-striprow">'
+        +'<div class="ins3-strip" id="ins3-buckets"></div>'
+        +'<button class="ins3-filtbtn" id="ins3-filtbtn" onclick="ins3FilterSheet(1)">⚙ Filter</button>'
       +'</div>'
     +'</div>'
-    +'<div class="ins3-sync ok" id="ins3-sync"></div>'
-    /* R34: the SMRE's own screen. One customer at a time, big buttons, mascot.
-       The list below stays for search and for managers. */
-    +'<div style="display:flex;gap:8px;margin:8px 0;align-items:stretch">'
-      +'<button onclick="insfStart()" style="flex:1;min-height:60px;border:0;border-radius:16px;cursor:pointer;'
-        +'background:linear-gradient(135deg,#dc2626,#f43f5e);color:#fff;font-size:17px;font-weight:900;'
-        +'box-shadow:0 6px 18px rgba(220,38,38,.3)">📞 Chalo, shuru karte hai! <span style="display:block;font-size:12px;font-weight:700;opacity:.9">Ek customer, ek click — start calling</span></button>'
-      /* R37 P1: HER list decides the order. Row 1 of her sheet = call no 1. */
-      +'<button onclick="document.getElementById(\'ins3-sheetfile\').click()" style="min-width:110px;border:0;border-radius:16px;cursor:pointer;'
-        +'background:#4338ca;color:#fff;font-size:14px;font-weight:900">📥 Meri list<span style="display:block;font-size:10.5px;font-weight:700;opacity:.85">Excel daalo</span></button>'
-      +'<button onclick="insfExcel()" style="min-width:96px;border:0;border-radius:16px;cursor:pointer;'
-        +'background:#0f172a;color:#fff;font-size:14px;font-weight:900">⬇ Excel<span style="display:block;font-size:10.5px;font-weight:700;opacity:.85">meri list</span></button>'
-    +'</div>'
-    +'<input type="file" id="ins3-sheetfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="ins3SheetPick(this)">'
-    +'<div id="ins3-sheetbar"></div>'
-    +'<div class="ins3-my" id="ins3-my"></div>'
-    +'<div class="ins3-searchwrap">'
-      +'<div class="ins3-search">'
-        +'<span>🔎</span>'
-        +'<input id="ins3-q" placeholder="Name, reg, mobile, chassis, engine, policy no…" '
-          +'oninput="ins3OnQ(this.value)" autocomplete="off" spellcheck="false">'
-        +'<button class="x" onclick="ins3ClearQ()" title="Clear">✕</button>'
-      +'</div>'
-      +'<div class="ins3-searchhint" id="ins3-hint">Getting the book onto this phone…</div>'
-    +'</div>'
-    +'<div class="ins3-strip" id="ins3-buckets"></div>'
-    +'<div class="ins3-strip" id="ins3-filters"></div>'
     +'<div class="ins3-pane">'
-      +'<div class="ins3-listwrap">'
+      +'<div class="ins3-listwrap" id="ins3-listwrap">'
         +'<div class="ins3-count" id="ins3-count"></div>'
-        +'<div id="ins3-list"></div>'
+        /* R42: a real table. #ins3-list is the tbody, so ins3Row() returns a
+           <tr> and every one of the A3 paint paths — repaint-in-place, append
+           the new tail, rebuild — keeps working unchanged on it. The header
+           sticks to the top of the scrolling column so the columns stay named
+           however far down the book she is. */
+        +'<table class="ins3-tbl">'
+          +'<thead><tr>'
+            +'<th class="c-band">Kyun</th><th class="c-name">Customer</th>'
+            +'<th class="c-reg">Reg no</th><th class="c-day">Expiry</th><th class="c-tier">T</th>'
+          +'</tr></thead>'
+          +'<tbody id="ins3-list"></tbody>'
+        +'</table>'
         +'<div id="ins3-more"></div>'
       +'</div>'
       +'<div class="ins3-rail"><div id="ins3-detailwrap"></div><div id="ins3-pile"></div></div>'
+    +'</div>'
+    /* the dependent step — built empty, filled by ins3PaintChips() */
+    +'<div class="ins3-fsw" id="ins3-fsw" onclick="if(event.target===this)ins3FilterSheet(0)">'
+      +'<div class="ins3-fs">'
+        +'<div class="ins3-fsh"><b>Filter</b>'
+          +'<button class="ins3-fsx" onclick="ins3FilterSheet(0)">✕</button></div>'
+        +'<div id="ins3-filters"></div>'
+        +'<button class="ins3-fsdone" onclick="ins3FilterSheet(0)">Dekho</button>'
+        +'<button class="ins3-fsclear" onclick="ins3FilterClear()">Sab filter hatao</button>'
+      +'</div>'
+    +'</div>'
     +'</div>';
+  ins3FitFrame();
   ins3Say('busy','Starting…');
 
   /* Remember where she was in the list. Bound once, because the shell is now
@@ -15908,7 +16211,51 @@ function ins3Shell(){
          scrollY genuinely read 300. A fix whose mechanism cannot be observed
          is not a fix.
      Reading window.scrollY inside showView, before it touches any display, is
-     the one moment the number is still true. */
+     the one moment the number is still true.
+     R42: the window is no longer the scroller — #ins3-listwrap is — so the
+     offset is read straight off that element and the clamping problem this
+     comment describes no longer arises. The showView() hook stays because it
+     is still the last moment before the column is hidden. */
+}
+
+/* ---------------------------------------------------------------------------
+   R42 — frame height. The app's global .top bar is sticky and sits ABOVE this
+   screen, so a hard-coded 100dvh makes the document taller than the viewport
+   and the page scrolls anyway. The Board hit exactly this in R41 (measured:
+   830px of document in a 720px viewport). Measure the bar, subtract it.
+   Re-measured on resize and on rotate because that bar wraps to two and even
+   three rows on a narrow phone.
+   --------------------------------------------------------------------------- */
+function ins3FitFrame(){
+  const root=document.getElementById('ins3-root'); if(!root) return;
+  const top=document.querySelector('.top');
+  const h=top ? Math.round(top.getBoundingClientRect().height) : 0;
+  root.style.setProperty('--ins3-top', h+'px');
+}
+window.addEventListener('resize', function(){
+  const root=document.getElementById('ins3-root');
+  if(root && root.offsetHeight>0) ins3FitFrame();
+});
+
+/* The dependent step. Ravi's rule: detail goes behind one press, never into
+   more buttons — so the seven filter chips live here and the Hub keeps its
+   eight visible choices. Opening it repaints first, so the chips always show
+   the live state and the tap has something to land on immediately. */
+function ins3FilterSheet(on){
+  const w=document.getElementById('ins3-fsw'); if(!w) return;
+  if(on) ins3PaintChips();
+  w.classList.toggle('on', !!on);
+}
+function ins3FilterClear(){
+  INS3.tier=''; INS3.quotableOnly=false; INS3.mine=false; INS3.whole=false;
+  INS3.shown=120; ins3Render();
+  ins3Toast('Filter hat gaye — poori list wapas','good');
+}
+/* How many filters are actually narrowing the list right now. "Aaj ho gaye"
+   is deliberately NOT counted: hiding finished customers is the default and
+   showing a permanent "1" would train her to ignore the badge. */
+function ins3FilterCount(){
+  return (INS3.tier?1:0)+(INS3.quotableOnly?1:0)+(INS3.mine?1:0)+(INS3.whole?1:0);
 }
 
 /* Drop the current selection AND hand the soft lock back.
@@ -15999,15 +16346,17 @@ function ins3Render(){
 
   /* The hint must never claim "0 policies" while the book is still arriving —
      that reads as a failure. It says what is actually true at that moment. */
+  /* R42: this was three lines of prose about the working window, in slate-400,
+     between her and the list on every visit. "One line of label, no prose."
+     The device count moved to the header subtitle, where it is a fact she can
+     glance at; this line now only speaks while something is still arriving or
+     genuinely missing, and is empty (and collapsed) the rest of the time. */
   const hint=document.getElementById('ins3-hint');
   if(hint){
-    hint.innerHTML = INS3.ready
-      ? '<b>'+(INS3.total||0).toLocaleString('en-IN')+'</b> policies on this device — '
-        + 'aaj ka working window (±30 din) + aapke customers. '
-        + 'Search poori book dhundhta hai: window pehle, baaki server se apne-aap.'
+    hint.innerHTML = INS3.ready ? ''
       : (INS3.syncing
-          ? 'Aaj ka working set is phone par aa raha hai — a small refresh, once a day. Searching switches on the moment it finishes.'
-          : 'The working set is not on this device yet — tap <b>↻ Sync now</b>.');
+          ? 'Book is phone par aa rahi hai…'
+          : 'Book is device par nahi hai — ↻ dabao.');
   }
 
   ins3PaintChips();
@@ -16019,15 +16368,33 @@ function ins3Render(){
     const searching=INS3.q.trim().length>0;
     let tierN={A:0,B:0,C:0,D:0};
     for(let i=0;i<view.length;i++) tierN[INS3.rows[view[i]][C3.tier]]++;
+    /* R42 — the mini graph. Ravi, 07-Aug-2026: "normal table views with slicers
+       and mini graphs". The slicers are the chip rail and the filter sheet; this
+       is the graph — a stacked bar of the tier split of THIS list, so the shape
+       of the queue is one glance rather than four numbers to read and compare.
+       Plain CSS, no chart library and no CDN, same as the Board's trend bars.
+       Each segment is clickable, so the graph is also a slicer. */
+    const tot=Math.max(1, view.length);
+    const seg=function(k,c,lbl){
+      const n=tierN[k]; if(!n) return '';
+      return '<i class="s'+k+(INS3.tier===k?' on':'')+'" style="width:'+(n*100/tot).toFixed(1)+'%"'
+        +' title="'+lbl+' — '+n+'" onclick="event.stopPropagation();ins3SetTier(\''+k+'\')"></i>';
+    };
     cEl.innerHTML=
       '<b>'+view.length.toLocaleString('en-IN')+'</b>&nbsp;'
       +(searching?'match'+(view.length===1?'':'es')+' across the whole book'
-                 :(INS3.sheet&&INS3.sheet.on?'— <b style="color:#4338ca">aapki sheet ke order me</b>'
+                 :(INS3.sheet&&INS3.sheet.on?'— <b style="color:#3730a3">aapki sheet ke order me</b>'
                  :'to call in this range'))
-      +'<span style="color:#166534;font-weight:800">A '+tierN.A+'</span>'
-      +'<span style="color:#2563eb;font-weight:800">B '+tierN.B+'</span>'
-      +'<span style="color:#d97706;font-weight:800">C '+tierN.C+'</span>'
-      +'<span style="color:#94a3b8;font-weight:800">D '+tierN.D+'</span>'
+      +'<span class="ins3-mini" title="Tier split of this list">'
+        +seg('A','#166534','Tier A')+seg('B','#1d4ed8','Tier B')
+        +seg('C','#b45309','Tier C')+seg('D','#475569','Tier D')
+      +'</span>'
+      +'<span class="ins3-legend">'
+        +'<b style="color:#166534">A '+tierN.A+'</b>'
+        +'<b style="color:#1d4ed8">B '+tierN.B+'</b>'
+        +'<b style="color:#b45309">C '+tierN.C+'</b>'
+        +'<b style="color:#475569">D '+tierN.D+'</b>'
+      +'</span>'
       +'<span style="flex:1"></span>'
       +'<select class="ins3-sort" onchange="ins3SetSort(this.value)">'
         +'<option value="score"'+(INS3.sort==='score'?' selected':'')+'>Priority first</option>'
@@ -16038,24 +16405,27 @@ function ins3Render(){
   /* the list */
   const list=document.getElementById('ins3-list');
   if(list){
+    /* R42: #ins3-list is a <tbody> now, so an empty state has to be a real row —
+       a bare <div> handed to a tbody is silently dropped by the parser and the
+       screen would go blank instead of explaining itself. */
     if(!INS3.ready){
-      list.innerHTML='<div class="ins3-empty">'
+      list.innerHTML='<tr class="ins3-emptyrow"><td colspan="5"><div class="ins3-empty">'
         +'<img src="assets/17_red_robot_superhero.png" alt="" onerror="this.style.display=\'none\'">'
         +'<div class="ins3-empty-t">Getting your book</div>'
-        +'<div class="ins3-empty-s">The renewal book is downloading to this device. It only happens once — after this, searching is instant and works without signal.</div></div>';
+        +'<div class="ins3-empty-s">Ek hi baar hota hai. Uske baad search instant, bina signal ke.</div></div></td></tr>';
       /* Both empty states replace the rows, so the paint signature must be
          dropped with them — otherwise the next paint sees a matching signature,
          tries to repaint rows that are no longer in the DOM, finds nothing, and
          the list stays stuck on this message. */
       INS3._painted=null;
     } else if(!view.length){
-      list.innerHTML='<div class="ins3-empty">'
+      list.innerHTML='<tr class="ins3-emptyrow"><td colspan="5"><div class="ins3-empty">'
         +'<img src="assets/21_gift_star_mascot.png" alt="" onerror="this.style.display=\'none\'">'
         +'<div class="ins3-empty-t">'+(INS3.q?'Nobody matches that':'Nothing here')+'</div>'
         +'<div class="ins3-empty-s">'+(INS3.q
-            ? 'Searched all '+(INS3.total||0).toLocaleString('en-IN')+' policies on name, reg no, both mobiles, chassis, engine, policy number, model and city.'
-            : 'No policies in this range that are yours to call. Tap “Whole book” to see everyone.')
-        +'</div></div>';
+            ? 'Searched all '+(INS3.total||0).toLocaleString('en-IN')+' policies.'
+            : 'Is range me aapke customer nahi hain. ⚙ Filter → 📚 Whole book.')
+        +'</div></div></td></tr>';
       INS3._painted=null;
     } else {
       /* ------------------------------------------------------------------
@@ -16132,26 +16502,46 @@ function ins3PaintChips(){
     }).join('');
   }
   const fw=document.getElementById('ins3-filters');
+  /* R42: these seven now live inside the dependent sheet, two to a row, as
+     full-width rows rather than a sideways-scrolling rail — a row is one eye
+     sweep, and a chip that has scrolled out of sight is a filter she cannot
+     tell is on. The re-sync chip became a header tool. */
   if(fw){
     fw.innerHTML=
-       '<button class="ins3-chip tierA'+(INS3.tier==='A'?' on':'')+'" onclick="ins3SetTier(\'A\')">🟢 Tier A — call first</button>'
-      +'<button class="ins3-chip tierB'+(INS3.tier==='B'?' on':'')+'" onclick="ins3SetTier(\'B\')">🔵 Tier B</button>'
-      +'<button class="ins3-chip'+(INS3.quotableOnly?' on':'')+'" onclick="ins3Toggle(\'quotable\')">🔧 Can be quoted</button>'
-      +'<button class="ins3-chip'+(INS3.mine?' on':'')+'" onclick="ins3Toggle(\'mine\')">👤 Mine only</button>'
-      +'<button class="ins3-chip'+(INS3.whole?' on':'')+'" onclick="ins3Toggle(\'whole\')">📚 Whole book</button>'
-      /* R41: the counterweight to the shrinking list — the work she has already
-         done today, one tap away, never lost. */
-      +'<button class="ins3-chip'+(INS3.hideDone?'':' on')+'" onclick="ins3Toggle(\'done\')">✓ Aaj ho gaye <b>'+ins3DoneCount()+'</b></button>'
-      +'<button class="ins3-chip" onclick="ins3Sync(true)">↻ Re-sync</button>';
+       '<div class="ins3-fsl">Kaun se customer</div>'
+      +'<div class="ins3-fsg">'
+        +'<button class="ins3-chip tierA'+(INS3.tier==='A'?' on':'')+'" onclick="ins3SetTier(\'A\')">🟢 Tier A — call first</button>'
+        +'<button class="ins3-chip tierB'+(INS3.tier==='B'?' on':'')+'" onclick="ins3SetTier(\'B\')">🔵 Tier B</button>'
+        +'<button class="ins3-chip'+(INS3.quotableOnly?' on':'')+'" onclick="ins3Toggle(\'quotable\')">🔧 Can be quoted</button>'
+        +'<button class="ins3-chip'+(INS3.mine?' on':'')+'" onclick="ins3Toggle(\'mine\')">👤 Mine only</button>'
+        +'<button class="ins3-chip'+(INS3.whole?' on':'')+'" onclick="ins3Toggle(\'whole\')">📚 Whole book</button>'
+      +'</div>'
+      +'<div class="ins3-fsl">Aaj ka kaam</div>'
+      +'<div class="ins3-fsg">'
+        /* R41: the counterweight to the shrinking list — the work she has already
+           done today, one tap away, never lost. */
+        +'<button class="ins3-chip'+(INS3.hideDone?'':' on')+'" onclick="ins3Toggle(\'done\')">✓ Aaj ho gaye <b>'+ins3DoneCount()+'</b></button>'
+      +'</div>';
+  }
+  /* the badge — how many filters are narrowing the list, without opening it */
+  const fb=document.getElementById('ins3-filtbtn');
+  if(fb){
+    const n=ins3FilterCount();
+    fb.className='ins3-filtbtn'+(n?' on':'');
+    fb.innerHTML='⚙ Filter'+(n?'<b>'+n+'</b>':'');
   }
 }
 
 function ins3Days(d){
-  if(d==null) return {n:'—', l:'', c:'#64748b'};
+  if(d==null) return {n:'—', l:'', u:'', c:'#475569'};
   const k=d-INS3.todayDay;
+  /* .l is the long form, still used by the detail panel. R42 adds .u — the
+     one-or-two-character unit the table column uses, so an expiry is a single
+     line ("3d", "2d ago", "TODAY") instead of a number stacked on a caption. */
   return { n: k===0?'TODAY':Math.abs(k),
            l: k<0?(k===-1?'day overdue':'days overdue'):k===0?'last day':k===1?'day left':'days left',
-           c: k<0?'#b45309':k<=1?'#dc2626':k<=7?'#d97706':k<=30?'#2563eb':'#64748b' };
+           u: k===0?'':(k<0?'d ago':'d'),
+           c: k<0?'#b45309':k<=1?'#c81e2c':k<=7?'#b45309':k<=30?'#1d4ed8':'#475569' };
 }
 
 function ins3Row(i){
@@ -16163,44 +16553,60 @@ function ins3Row(i){
   const d=ins3Days(r[C3.expDay]);
   const tier=r[C3.tier]||'D';
 
-  const pills=[];
   /* R41: the band, said out loud. P1 is the list she loaded; P2 is a policy we
      actually hold; P3 is everyone else. She should never have to guess why a
-     customer is near the top. */
+     customer is near the top.
+     R42: the seven-pill strip this used to build went with the card — see the
+     note below. The band is the one pill that survives, because it is the
+     thing the sort is actually keyed on. */
   const band=ins3Band(i);
-  pills.push('<span class="ins3-p ins3-band'+band+'">P'+band+(band===1?' · aapki list':(band===2?' · hamara':''))+'</span>');
-  if(s && s.reason) pills.push('<span class="ins3-p" style="background:#0f172a10;color:#334155">'+ins3Esc(s.reason)+'</span>');
-  if(r[C3.loyalty]) pills.push('<span class="ins3-p" style="background:'+(INS3_LOYC[r[C3.loyalty]]||'#64748b')+'18;color:'+(INS3_LOYC[r[C3.loyalty]]||'#64748b')+'">'+ins3Esc(r[C3.loyalty])+'</span>');
-  if(r[C3.car]==='Y') pills.push('<span class="ins3-p" style="background:#7c3aed18;color:#7c3aed">🚗 CAR</span>');
-  if(r[C3.expSrc]==='DERIVED') pills.push('<span class="ins3-p" style="background:#94a3b818;color:#64748b" title="Sale anniversary, not a real policy date">~EST</span>');
-  if(owner===me) pills.push('<span class="ins3-p" style="background:#16653418;color:#166534">MINE</span>');
-  else if(other) pills.push('<span class="ins3-p" style="background:#64748b18;color:#64748b">'+ins3Esc(s.ownerName||owner)+'</span>');
-  if(s && s.won) pills.push('<span class="ins3-p" style="background:#16653418;color:#166534">✓ RENEWED</span>');
 
   const missing=[];
   if(!r[C3.chassis]) missing.push('no chassis');
   if(!r[C3.engine])  missing.push('no engine no');
   if(!r[C3.mob])     missing.push('no mobile');
 
-  const why = missing.length
-    ? '<div class="ins3-rwhy warn">⚠ '+ins3Esc(missing.join(' · '))+'</div>'
-    : (r[C3.why] ? '<div class="ins3-rwhy">'+ins3Esc(r[C3.why])+'</div>' : '');
+  /* ------------------------------------------------------------------------
+     R42 — ONE ROW PER CUSTOMER, NOT A CARD.
+
+     Ravi, 07-Aug-2026, unprompted, while this screen was being rebuilt:
+     "I hate endless scrolling pages… No big big card type views. I like table
+     views more than deck views."
+
+     The card was 96px tall and held four stacked lines plus up to seven pills.
+     With -5 correction that is ten separate eye-fixations per customer, and
+     the fields landed in a different place on every row because the pills
+     wrapped differently each time. A table row is one sweep and the columns
+     never move. Measured: 96px -> 34px, so a phone screen goes from about
+     four customers to eleven.
+
+     Nothing is lost, it MOVES. Loyalty, CAR, ~EST, the score reason and the
+     full expiry date were all already in the detail panel, which is the step
+     that opens on click — that is where detail belongs. What stays on the row
+     is only what she sorts and decides by: band, name, reg, days left, tier.
+     The rest becomes a single flag column of one-character marks.
+     ------------------------------------------------------------------------ */
+  const marks=[];
+  if(s && s.won)            marks.push('<i class="mk won" title="Renewed with us">✓</i>');
+  if(owner===me)            marks.push('<i class="mk me" title="Yours">●</i>');
+  else if(other)            marks.push('<i class="mk oth" title="'+ins3Esc(s.ownerName||owner)+'">'
+                                       +ins3Esc(String(s.ownerName||owner).charAt(0).toUpperCase())+'</i>');
+  if(s && s.lockedBy && s.lockedBy!==me) marks.push('<i class="mk lk" title="On this call now">🔒</i>');
+  if(missing.length)        marks.push('<i class="mk wrn" title="'+ins3Esc(missing.join(' · '))+'">⚠</i>');
+  if(r[C3.car]==='Y')       marks.push('<i class="mk car" title="Also owns a car">🚗</i>');
+  if(r[C3.expSrc]==='DERIVED') marks.push('<i class="mk est" title="Sale anniversary, not a real policy date">~</i>');
 
   /* The id is load-bearing, not decoration: it is what lets one row be
      repainted without rebuilding the list around it. See ins3RepaintRow. */
-  return '<div class="ins3-r'+(INS3.sel===i?' sel':'')+(other?' other':'')+'" id="ins3r-'+i+'" onclick="ins3Sel('+i+')">'
-    +'<div class="ins3-tier ins3-t'+tier+'"><div class="t">'+tier+'</div><div class="s">'+r[C3.score]+'</div></div>'
-    +'<div class="ins3-rmain">'
-      +'<div class="ins3-rname">'+ins3Esc(r[C3.cust]||'(no name)')+'</div>'
-      +'<div class="ins3-rreg">'+ins3Esc(r[C3.reg]||'—')+(r[C3.model]?' · '+ins3Esc(r[C3.model]):'')+'</div>'
-      +why
-      +'<div class="ins3-pills">'+pills.join('')+'</div>'
-    +'</div>'
-    +'<div class="ins3-rexp">'
-      +'<div class="ins3-rdays" style="color:'+d.c+'">'+d.n+'</div>'
-      +'<div class="ins3-rdl">'+d.l+'</div>'
-    +'</div>'
-  +'</div>';
+  return '<tr class="ins3-tr'+(INS3.sel===i?' sel':'')+(other?' other':'')+'" id="ins3r-'+i+'" onclick="ins3Sel('+i+')">'
+    +'<td class="c-band"><span class="ins3-p ins3-band'+band+'">P'+band+'</span></td>'
+    +'<td class="c-name" title="'+ins3Esc(r[C3.cust]||'')+(r[C3.model]?' · '+ins3Esc(r[C3.model]):'')+'">'
+      +'<span class="nm">'+ins3Esc(r[C3.cust]||'(no name)')+'</span>'
+      +(marks.length?'<span class="mks">'+marks.join('')+'</span>':'')+'</td>'
+    +'<td class="c-reg">'+ins3Esc(r[C3.reg]||'—')+'</td>'
+    +'<td class="c-day" style="color:'+d.c+'">'+d.n+(d.u?'<small>'+d.u+'</small>':'')+'</td>'
+    +'<td class="c-tier"><span class="ins3-tier ins3-t'+tier+'" title="Score '+r[C3.score]+'">'+tier+'</span></td>'
+  +'</tr>';
 }
 
 /* Repaint exactly one row, leaving every other node in the list alone.
@@ -16279,7 +16685,7 @@ function ins3PaintDetail(){
     dispHtml+='<div class="ins3-sec" style="margin:9px 0 5px">'+ins3Esc(g)+'</div><div class="ins3-disps">'
       +groups[g].map(function(x){
         const on = s.status===x.code;
-        const c = g==='Won'?'#166534':g==='Lost'?'#b91c1c':g==='In progress'?'#d97706':'#64748b';
+        const c = g==='Won'?'#166534':g==='Lost'?'#b91c1c':g==='In progress'?'#b45309':'#475569';
         return '<button class="ins3-d'+(on?' on':'')+'" '+(on?'style="background:'+c+'"':'')
           +' onclick="ins3Pick(\''+x.code+'\')">'+ins3Esc(x.label)+'</button>';
       }).join('')+'</div>';
@@ -16289,7 +16695,10 @@ function ins3PaintDetail(){
     +'<div class="ins3-dh">'
       +'<div style="flex:1;min-width:0">'
         +'<div class="ins3-dname">'+ins3Esc(r[C3.cust]||'(no name)')+'</div>'
-        +'<div class="ins3-dreg">'+ins3Esc(r[C3.reg]||'—')+'</div>'
+        /* R42: the model came off the queue row when it became one line, so it
+           lands here — the panel is the step that carries what the row cannot. */
+        +'<div class="ins3-dreg">'+ins3Esc(r[C3.reg]||'—')
+          +(r[C3.model]?' · '+ins3Esc(r[C3.model]):'')+'</div>'
       +'</div>'
       +'<button class="ins3-dclose" onclick="ins3Close()">✕</button>'
     +'</div>'
@@ -16875,34 +17284,41 @@ function ins3PileOpen(reg){
 function ins3PaintPile(fresh){
   const el=document.getElementById('ins3-pile'); if(!el) return;
   ins3PileEnsure();
+  /* R42: the pile is a table too, for the same reason as the queue. It also
+     drops the expand-then-press-a-button step: R41 gave each card a "↩ Customer
+     kholo" button hidden behind a tap-to-expand, so reopening a customer cost
+     two presses and a card that grew. The whole ROW is now that button — one
+     press, the customer opens, which is all she ever wanted from her own pile.
+     What the expansion used to reveal is on the line (reg, ₹) or in the title
+     (the note). */
   const f=INSF.feed;
   let rows='';
   for(let n=0;n<f.length;n++){
     const it=f[n];
-    rows+='<div class="ins3-pr '+(it.cls||'')+'" onclick="this.classList.toggle(\'open\')">'
-      +'<div class="l1">'
-        +'<span class="nm">'+(n+1<10?'&nbsp;':'')+(f.length-n)+'. '+ins3Esc(it.nm)+'</span>'
-        +'<span class="tg '+(it.cls||'cold')+'">'+ins3Esc(it.lb||it.code||'')+'</span>'
-        +'<span class="tm">'+ins3Esc(it.tm||'')+'</span>'
-      +'</div>'
-      +'<div class="l2">'+ins3Esc(it.reg||'')
-        +(it.prem?' · ₹'+ins3Esc(it.prem):'')
-        +(it.note?' · '+ins3Esc(it.note):'')
-        /* R41, Ravi: "the calling list generated should be clickable also so
-           she could view again." The row still expands on tap; this opens the
-           customer back up in the panel, which is the thing she actually wants
-           when she looks at her own pile. */
-        +(it.reg?'<div style="margin-top:6px"><button class="ins3-agg" style="padding:6px 10px"'
-          +' onclick="event.stopPropagation();ins3PileOpen(\''+ins3Esc(it.reg)+'\')">↩ Customer kholo</button></div>':'')
-      +'</div>'
-    +'</div>';
+    rows+='<tr class="ins3-ptr '+(it.cls||'cold')+'"'
+      +(it.note?' title="'+ins3Esc(it.note)+'"':'')
+      +(it.reg?' onclick="ins3PileOpen(\''+ins3Esc(it.reg)+'\')"':'')+'>'
+      +'<td class="pn">'+(f.length-n)+'</td>'
+      +'<td class="pt">'+ins3Esc(it.tm||'')+'</td>'
+      +'<td class="pnm"><span>'+ins3Esc(it.nm)+'</span><small>'+ins3Esc(it.reg||'')+'</small></td>'
+      +'<td class="po"><span class="tg '+(it.cls||'cold')+'">'+ins3Esc(it.lb||it.code||'')+'</span></td>'
+      +'<td class="pp">'+(it.prem?'₹'+ins3Esc(it.prem):'')+'</td>'
+    +'</tr>';
   }
+  /* R42: on a phone this card is the frame's docked footer, so its head is
+     also the handle that opens it. On a desk it is a rail card and the toggle
+     is harmless — the rows are shown there by CSS either way. */
   el.innerHTML='<div class="ins3-pilecard">'
-    +'<div class="ins3-pilehead"><b>📋 Aaj ka kaam</b><span>'+f.length+' calls</span></div>'
+    +'<div class="ins3-pilehead" onclick="ins3PileToggle()" style="cursor:pointer">'
+      +'<b>📋 Aaj ka kaam</b><span>'+f.length+' calls</span>'
+      +'<span style="flex:1"></span><span class="ins3-pilecaret">⌃</span></div>'
     +(f.length
-      ? '<div class="ins3-pilerows">'+rows+'</div>'
-      : '<div style="font-size:12px;font-weight:700;color:#64748b">Outcome save karo — har call yahan pile hogi, Excel jaisi.</div>')
+      ? '<div class="ins3-pilerows"><table class="ins3-ptbl"><tbody>'+rows+'</tbody></table></div>'
+      : '<div class="ins3-pilenone" style="font-size:12px;font-weight:700;color:var(--i-mid)">Outcome save karo — har call yahan pile hogi, Excel jaisi.</div>')
   +'</div>';
+}
+function ins3PileToggle(){
+  const el=document.getElementById('ins3-pile'); if(el) el.classList.toggle('open');
 }
 
 /* R37 — market comparison: what the aggregators would quote for this reg, so
