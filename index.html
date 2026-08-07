@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 29;
-window.HERO_BUILD = 'R33-2026.08.07.1';
+window.HERO_RELEASE = 30;
+window.HERO_BUILD = 'R34-2026.08.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15582,6 +15582,15 @@ function ins3Shell(){
       +'</div>'
     +'</div>'
     +'<div class="ins3-sync ok" id="ins3-sync"></div>'
+    /* R34: the SMRE's own screen. One customer at a time, big buttons, mascot.
+       The list below stays for search and for managers. */
+    +'<div style="display:flex;gap:8px;margin:8px 0;align-items:stretch">'
+      +'<button onclick="insfStart()" style="flex:1;min-height:60px;border:0;border-radius:16px;cursor:pointer;'
+        +'background:linear-gradient(135deg,#dc2626,#f43f5e);color:#fff;font-size:17px;font-weight:900;'
+        +'box-shadow:0 6px 18px rgba(220,38,38,.3)">📞 Chalo, shuru karte hai! <span style="display:block;font-size:12px;font-weight:700;opacity:.9">Ek customer, ek click — start calling</span></button>'
+      +'<button onclick="insfExcel()" style="min-width:96px;border:0;border-radius:16px;cursor:pointer;'
+        +'background:#0f172a;color:#fff;font-size:14px;font-weight:900">⬇ Excel<span style="display:block;font-size:10.5px;font-weight:700;opacity:.85">meri list</span></button>'
+    +'</div>'
     +'<div class="ins3-my" id="ins3-my"></div>'
     +'<div class="ins3-searchwrap">'
       +'<div class="ins3-search">'
@@ -16197,5 +16206,354 @@ function ins3Save(){
 /* Manual re-sync. force=true always re-downloads; used by the ↻ chip and by the
    sync bar's own button. */
 function ins3Sync(force){ ins3Load(!!force); }
+
+/* ===========================================================================
+   R34 — FOCUS CALL MODE ("Chalo, shuru karte hai!")
+   Ravi, 07-Aug-2026: the R28 screen is a CEO screen. An SMRE calling 100
+   customers a day needs ONE customer on screen at a time, 8 single-click
+   outcome buttons, a mascot that reacts, and nothing to read or scroll.
+   Duolingo, not a dashboard.
+
+   Additive on top of R28: the list screen is untouched and stays as the
+   search / manager view. This block only ADDS a full-screen overlay driven
+   by the same INS3 book, the same inscrm2_save and inscrm2_lock routes, so
+   the backend needs nothing new. Delete this block and R28 is exactly back.
+   =========================================================================== */
+var INSF = { on:false, q:[], pos:0, session:0,
+             lang: localStorage.getItem('insf_lang') || 'hi',
+             idleT:null, cssDone:false };
+
+/* The 8 big buttons. Codes are the EXISTING dispositions from ModulesR23.gs —
+   nothing new for the backend to validate. "More…" opens the full list. */
+var INSF_OUT = [
+  {code:'WON_OD_TP',    icon:'🏆', t:'Renew ho gaya!',      s:'Renewed with us',   cls:'won'},
+  {code:'IP_QUOTE_WA',  icon:'📤', t:'Quote bheja',          s:'Sent on WhatsApp',  cls:'hot'},
+  {code:'IP_CALLBACK',  icon:'📅', t:'Call back',            s:'Baad me baat hogi', cls:'hot'},
+  {code:'NR_BUSY',      icon:'⏰', t:'Busy tha',             s:'Asked to call later',cls:'warm'},
+  {code:'NR_RINGING',   icon:'📞', t:'Uthaya nahi',          s:'Ringing, no answer',cls:'warm'},
+  {code:'NR_SWITCHOFF', icon:'🔇', t:'Switch off',           s:'Not reachable',     cls:'warm'},
+  {code:'LO_NOTINT',    icon:'❌', t:'Interested nahi',      s:'Refused',           cls:'cold'},
+  {code:'LO_AGENT',     icon:'🏢', t:'Kahin aur karaya',     s:'Renewed elsewhere', cls:'cold'}
+];
+
+function insfCss(){
+  if(INSF.cssDone) return; INSF.cssDone=true;
+  var s=document.createElement('style');
+  s.textContent=
+  '#insf{position:fixed;inset:0;z-index:99990;background:#f4f6fb;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}'
+  +'#insf *{box-sizing:border-box;min-width:0}'
+  +'.insf-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:5}'
+  +'.insf-x{width:44px;height:44px;border:0;border-radius:12px;background:#f1f5f9;font-size:22px;font-weight:900;color:#0f172a;cursor:pointer;flex:none}'
+  +'.insf-prog{flex:1;min-width:0}'
+  +'.insf-progt{font-size:13.5px;font-weight:800;color:#0f172a;display:flex;justify-content:space-between;gap:8px}'
+  +'.insf-bar{height:12px;border-radius:999px;background:#e2e8f0;margin-top:5px;overflow:hidden}'
+  +'.insf-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#16a34a,#4ade80);transition:width .5s}'
+  +'.insf-xls{border:0;border-radius:12px;background:#0f172a;color:#fff;font-weight:800;font-size:13px;padding:0 14px;height:44px;cursor:pointer;flex:none}'
+  +'.insf-stage{flex:1;width:100%;max-width:760px;margin:0 auto;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px}'
+  +'.insf-masco{display:flex;align-items:flex-end;gap:10px;min-height:86px}'
+  +'.insf-masco img{width:78px;height:78px;object-fit:contain;flex:none}'
+  +'.insf-bub{background:#fff;border:2px solid #e2e8f0;border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:15.5px;font-weight:800;color:#0f172a;line-height:1.35}'
+  +'.insf-bub.angry{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;animation:insfShake .5s}'
+  +'@keyframes insfShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}'
+  +'.insf-card{background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:16px;box-shadow:0 6px 24px rgba(15,23,42,.06)}'
+  +'.insf-nm{font-size:24px;font-weight:900;color:#0f172a;line-height:1.15;word-break:break-word}'
+  +'.insf-rg{font-size:15px;font-weight:700;color:#334155;font-family:ui-monospace,monospace;margin-top:3px}'
+  +'.insf-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}'
+  +'.insf-pill{border-radius:999px;padding:6px 12px;font-size:13.5px;font-weight:900}'
+  +'.insf-why{margin-top:10px;font-size:14px;font-weight:700;color:#0f172a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:8px 12px}'
+  +'.insf-acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}'
+  +'.insf-a{display:flex;align-items:center;justify-content:center;gap:8px;min-height:62px;border-radius:16px;border:0;font-size:18px;font-weight:900;cursor:pointer;text-decoration:none;color:#fff}'
+  +'.insf-a.call{background:#16a34a}'
+  +'.insf-a.wa{background:#059669}'
+  +'.insf-a.off{background:#cbd5e1;color:#475569;pointer-events:none}'
+  +'.insf-langrow{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}'
+  +'.insf-lang{border:2px solid #e2e8f0;background:#fff;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:900;color:#334155;cursor:pointer}'
+  +'.insf-lang.on{background:#0f172a;color:#fff;border-color:#0f172a}'
+  +'.insf-copy{border:2px solid #e2e8f0;background:#fff;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:900;color:#0f172a;cursor:pointer}'
+  +'.insf-sec{font-size:13px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:.4px;margin:4px 2px 0}'
+  +'.insf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}'
+  +'@media(min-width:640px){.insf-grid{grid-template-columns:repeat(4,1fr)}}'
+  +'.insf-o{min-height:76px;border-radius:16px;border:2px solid #e2e8f0;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 6px;transition:transform .08s}'
+  +'.insf-o:active{transform:scale(.96)}'
+  +'.insf-o .i{font-size:24px;line-height:1}'
+  +'.insf-o .t{font-size:14.5px;font-weight:900;color:#0f172a;text-align:center;line-height:1.15}'
+  +'.insf-o .s{font-size:11px;font-weight:700;color:#64748b;text-align:center}'
+  +'.insf-o.won{border-color:#86efac;background:#f0fdf4}'
+  +'.insf-o.hot{border-color:#bfdbfe;background:#eff6ff}'
+  +'.insf-o.warm{border-color:#fde68a;background:#fffbeb}'
+  +'.insf-o.cold{border-color:#fecaca;background:#fef2f2}'
+  +'.insf-ins{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px}'
+  +'.insf-in{border:2px solid #e2e8f0;border-radius:12px;padding:12px;font-size:15px;font-weight:700;color:#0f172a;width:100%}'
+  +'.insf-more{border:0;background:none;color:#2563eb;font-size:14px;font-weight:900;cursor:pointer;padding:8px;text-align:center}'
+  +'.insf-morewrap{display:none}'
+  +'.insf-morewrap.on{display:block}'
+  +'.insf-md{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}'
+  +'.insf-md button{border:1.5px solid #e2e8f0;background:#fff;border-radius:999px;padding:8px 12px;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer}'
+  +'.insf-foot{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e2e8f0;display:flex;gap:10px;padding:10px 14px;z-index:6}'
+  +'.insf-foot button{flex:1;min-height:56px;border:0;border-radius:14px;font-size:16.5px;font-weight:900;cursor:pointer}'
+  +'.insf-prev{background:#e2e8f0;color:#0f172a}'
+  +'.insf-skip{background:#f43f5e;color:#fff}'
+  +'.insf-flash{position:fixed;inset:0;z-index:99995;background:rgba(244,246,251,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px}'
+  +'.insf-flash img{width:150px;height:150px;object-fit:contain;animation:insfPop .45s}'
+  +'@keyframes insfPop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1)}}'
+  +'.insf-flash .b{font-size:26px;font-weight:900;color:#0f172a}'
+  +'.insf-flash .s{font-size:15px;font-weight:700;color:#475569}'
+  +'.insf-fin{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:40px 20px}'
+  +'.insf-fin img{width:170px;height:170px;object-fit:contain}';
+  document.head.appendChild(s);
+}
+
+/* --------------------------- queue and lifecycle --------------------------- */
+function insfStart(){
+  if(!INS3.ready){ ins3Toast('Book abhi is device par aa rahi hai — thoda rukiye','bad'); return; }
+  ins3Deselect();
+  var view=ins3Filter(), today=ins3Today(), q=[];
+  for(var vi=0; vi<view.length; vi++){
+    var i=view[vi], r=INS3.rows[i], s=INS3.state[ins3Key(r[C3.reg])]||{};
+    if(s.won) continue;                                  /* already renewed */
+    if(s.status && s.status.indexOf('LO_')===0) continue;/* closed lost */
+    if(s.lastCall===today) continue;                     /* done today */
+    q.push(i);
+  }
+  if(!q.length){ ins3Toast('Is list me aaj ke liye sab ho gaya! 🎉','good'); return; }
+  INSF.q=q; INSF.pos=0; INSF.session=0; INSF.on=true;
+  insfCss();
+  var el=document.createElement('div'); el.id='insf'; document.body.appendChild(el);
+  document.body.style.overflow='hidden';
+  insfShow();
+}
+function insfClose(){
+  var r=insfCur();
+  if(r) jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),act:'release'},function(){},15000);
+  clearTimeout(INSF.idleT);
+  var el=document.getElementById('insf'); if(el) el.remove();
+  var fl=document.getElementById('insf-flash'); if(fl) fl.remove();
+  document.body.style.overflow='';
+  INSF.on=false;
+  ins3LoadStates(); ins3Render();
+}
+function insfCur(){ return (INSF.pos<INSF.q.length) ? INS3.rows[INSF.q[INSF.pos]] : null; }
+
+/* ------------------------------ the language ------------------------------ */
+function insfLang(l){ INSF.lang=l; try{localStorage.setItem('insf_lang',l);}catch(e){} insfShow(true); }
+function insfWhen(r){
+  var k=(r[C3.expDay]==null)?null:(r[C3.expDay]-INS3.todayDay), L=INSF.lang;
+  if(k==null) return {en:'soon',hi:'jald hi',mr:'लवकरच'}[L]||'soon';
+  if(L==='hi') return k<0?Math.abs(k)+' दिन पहले खत्म हो चुका है':k===0?'आज खत्म हो रहा है':k===1?'कल खत्म हो रहा है':k+' दिन में खत्म हो रहा है';
+  if(L==='mr') return k<0?Math.abs(k)+' दिवसांपूर्वी संपला आहे':k===0?'आज संपत आहे':k===1?'उद्या संपत आहे':k+' दिवसांत संपत आहे';
+  return k<0?'expired '+Math.abs(k)+' days ago':k===0?'expiring TODAY':k===1?'expiring tomorrow':'expiring in '+k+' days';
+}
+function insfScript(r){
+  var nm=(r[C3.cust]||'').split(' ')[0]||'', md=r[C3.model]||'two-wheeler', rg=r[C3.reg]||'', me=ins3MyName().split(' ')[0], w=insfWhen(r);
+  if(INSF.lang==='hi') return 'नमस्ते '+nm+' जी! 🙏 Sehgal Autoriders (Hero), चिंचवड से '+me+' — आपकी '+md+' ('+rg+') का इंश्योरेंस '+w+'। हम बेस्ट प्राइस में उसी दिन रिन्यू कर देते हैं और क्लेम में पूरी मदद करते हैं। क्या मैं आपको quote WhatsApp कर दूँ?';
+  if(INSF.lang==='mr') return 'नमस्कार '+nm+' जी! 🙏 Sehgal Autoriders (Hero), चिंचवड कडून '+me+' — तुमच्या '+md+' ('+rg+') चा इन्शुरन्स '+w+'. आम्ही बेस्ट किंमतीत त्याच दिवशी रिन्यू करून देतो आणि क्लेमला पूर्ण मदत करतो. मी तुम्हाला quote WhatsApp करू का?';
+  return 'Namaste '+nm+' ji! 🙏 This is '+me+' from Sehgal Autoriders (Hero), Chinchwad. The insurance of your '+md+' ('+rg+') is '+w+'. We renew it the same day at the best price, with full claim support. Shall I WhatsApp you the quote?';
+}
+function insfWa(){
+  var r=insfCur(); if(!r||!r[C3.mob]) return;
+  window.open('https://wa.me/91'+r[C3.mob]+'?text='+encodeURIComponent(insfScript(r)),'_blank','noopener');
+}
+function insfCopyScript(){
+  var r=insfCur(); if(!r) return;
+  if(navigator.clipboard) navigator.clipboard.writeText(insfScript(r)).then(function(){ ins3Toast('Script copy ho gaya — WhatsApp me paste karo','good'); });
+  else ins3Toast('Copy not available on this browser','bad');
+}
+
+/* -------------------------------- painting -------------------------------- */
+function insfMood(r){
+  var t=r[C3.tier]||'D';
+  if(t==='A') return {img:'assets/17_red_robot_superhero.png', txt:'🔥 High chance customer hai! Abhi call karo!'};
+  if(t==='B') return {img:'assets/24_white_red_superhero_thumbs_up.png', txt:'👍 Achha chance hai — try karo!'};
+  return {img:'assets/18_red_robot_nav_head.png', txt:'🤔 Thoda mushkil hai… par ek try banti hai!'};
+}
+function insfCallsToday(){
+  if(INS3.myday && INS3.myday.ok) return Number(INS3.myday.calls)||0;
+  return ins3MyDayLocal().worked;
+}
+function insfShow(keepIdle){
+  var el=document.getElementById('insf'); if(!el) return;
+  var r=insfCur();
+  if(!r){ insfFinish(); return; }
+  var s=INS3.state[ins3Key(r[C3.reg])]||{};
+  var d=ins3Days(r[C3.expDay]), tier=r[C3.tier]||'D', mood=insfMood(r);
+  var done=insfCallsToday(), target=100;
+  var noMob=!r[C3.mob];
+  var facts=[];
+  facts.push('<span class="insf-pill" style="background:'+d.c+'1a;color:'+d.c+'">⏳ '+(d.n==='TODAY'?'Aaj last day':d.n+' '+d.l)+'</span>');
+  facts.push('<span class="insf-pill" style="background:'+(INS3_TIERC[tier]||'#64748b')+'1a;color:'+(INS3_TIERC[tier]||'#64748b')+'">Tier '+tier+' · '+r[C3.score]+'/100</span>');
+  if(r[C3.co]) facts.push('<span class="insf-pill" style="background:#f1f5f9;color:#334155">'+ins3Esc(r[C3.co])+'</span>');
+  if(r[C3.chassis]&&r[C3.engine]) facts.push('<span class="insf-pill" style="background:#f0fdf4;color:#166534">✓ Quote ban sakta hai</span>');
+  if(s.reason) facts.push('<span class="insf-pill" style="background:#fffbeb;color:#b45309">Pichhli baar: '+ins3Esc(s.reason)+'</span>');
+
+  el.innerHTML=
+   '<div class="insf-head">'
+    +'<button class="insf-x" onclick="insfClose()" title="Band karo">✕</button>'
+    +'<div class="insf-prog">'
+      +'<div class="insf-progt"><span>Customer '+(INSF.pos+1)+' / '+INSF.q.length+'</span><span>📞 Aaj: '+done+' / '+target+'</span></div>'
+      +'<div class="insf-bar"><i style="width:'+Math.min(100,Math.round(done*100/target))+'%"></i></div>'
+    +'</div>'
+    +'<button class="insf-xls" onclick="insfExcel()">⬇ Excel</button>'
+   +'</div>'
+   +'<div class="insf-stage">'
+    +'<div class="insf-masco"><img src="'+mood.img+'" alt="" onerror="this.style.display=\'none\'">'
+      +'<div class="insf-bub" id="insf-bub">'+ins3Esc(mood.txt)+'</div></div>'
+    +'<div class="insf-card">'
+      +'<div class="insf-nm">'+ins3Esc(r[C3.cust]||'(no name)')+'</div>'
+      +'<div class="insf-rg">'+ins3Esc(r[C3.reg]||'—')+(r[C3.model]?' · '+ins3Esc(r[C3.model]):'')+'</div>'
+      +'<div class="insf-row">'+facts.join('')+'</div>'
+      +(r[C3.why]?'<div class="insf-why">💡 '+ins3Esc(r[C3.why])+'</div>':'')
+      +'<div class="insf-acts">'
+        +(noMob?'<span class="insf-a off">📵 No mobile</span>':'<a class="insf-a call" href="tel:+91'+ins3Esc(r[C3.mob])+'">📞 Call karo</a>')
+        +(noMob?'<span class="insf-a off">WhatsApp</span>':'<button class="insf-a wa" onclick="insfWa()">🟢 WhatsApp</button>')
+      +'</div>'
+      +'<div class="insf-langrow">'
+        +'<span style="font-size:13px;font-weight:900;color:#475569">Script:</span>'
+        +['en','hi','mr'].map(function(l){ return '<button class="insf-lang'+(INSF.lang===l?' on':'')+'" onclick="insfLang(\''+l+'\')">'+(l==='en'?'English':l==='hi'?'हिंदी':'मराठी')+'</button>'; }).join('')
+        +'<button class="insf-copy" onclick="insfCopyScript()">📋 Copy script</button>'
+      +'</div>'
+    +'</div>'
+    +'<div class="insf-sec">Call ka result — ek click, bas</div>'
+    +'<div class="insf-grid">'
+      +INSF_OUT.map(function(o){ return '<button class="insf-o '+o.cls+'" onclick="insfPick(\''+o.code+'\')">'
+        +'<span class="i">'+o.icon+'</span><span class="t">'+ins3Esc(o.t)+'</span><span class="s">'+ins3Esc(o.s)+'</span></button>'; }).join('')
+    +'</div>'
+    +'<button class="insf-more" onclick="document.getElementById(\'insf-morewrap\').classList.toggle(\'on\')">Aur options… ▾</button>'
+    +'<div class="insf-morewrap" id="insf-morewrap">'+insfMoreHtml(s)+'</div>'
+    +'<div class="insf-ins">'
+      +'<input class="insf-in" id="insf-prem" placeholder="₹ Premium (optional)" inputmode="numeric" value="'+ins3Esc(s.premium||'')+'">'
+      +'<input class="insf-in" id="insf-note" placeholder="Chhota note (optional)">'
+    +'</div>'
+   +'</div>'
+   +'<div class="insf-foot">'
+    +'<button class="insf-prev" onclick="insfPrev()"'+(INSF.pos===0?' disabled style="opacity:.4"':'')+'>‹ Pichhla</button>'
+    +'<button class="insf-skip" onclick="insfSkip()">Skip — agla customer ›</button>'
+   +'</div>';
+  el.scrollTop=0;
+
+  /* soft lock so another SMRE sees "on this call" */
+  jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),byName:ins3MyName(),act:'take',
+    customer:r[C3.cust],mobile:r[C3.mob]},function(res){
+    if(res&&res.ok===false&&res.error==='locked'){
+      var b=document.getElementById('insf-bub');
+      if(b){ b.classList.add('angry'); b.textContent='🔒 '+(res.lockedByName||res.lockedBy)+' isi customer par hai — Skip karo!'; }
+    }
+  },15000);
+
+  /* the mascot gets impatient — Duolingo-style nudge, 3 minutes */
+  if(!keepIdle){ clearTimeout(INSF.idleT);
+    INSF.idleT=setTimeout(function(){
+      var b=document.getElementById('insf-bub');
+      if(b && INSF.on){ b.classList.add('angry'); b.textContent='😠 Arre! Call karo na! Customer wait kar raha hai!'; }
+    },180000);
+  }
+}
+function insfMoreHtml(s){
+  var disp=(INS3.meta&&INS3.meta.dispositions)||[];
+  if(!disp.length) return '<div style="font-size:13px;color:#64748b;font-weight:700;padding:6px">List load ho rahi hai…</div>';
+  var groups={};
+  disp.forEach(function(x){ (groups[x.group]=groups[x.group]||[]).push(x); });
+  return Object.keys(groups).map(function(g){
+    return '<div class="insf-sec">'+ins3Esc(g)+'</div><div class="insf-md">'
+      +groups[g].map(function(x){ return '<button onclick="insfPick(\''+x.code+'\')">'+ins3Esc(x.label)+'</button>'; }).join('')+'</div>';
+  }).join('');
+}
+
+/* ------------------------- outcome: one tap = saved ------------------------ */
+function insfPick(code){
+  var i=INSF.q[INSF.pos], r=INS3.rows[i]; if(!r) return;
+  var k=ins3Key(r[C3.reg]), s=INS3.state[k]||{};
+  var note=(document.getElementById('insf-note')||{}).value||'';
+  var prem=(document.getElementById('insf-prem')||{}).value||'';
+  var disp=((INS3.meta&&INS3.meta.dispositions)||[]).find(function(x){ return x.code===code; })||{};
+  /* optimistic, same shape as ins3Save */
+  INS3.state[k]=Object.assign({},s,{status:code, reason:disp.label||code, remarks:note||s.remarks,
+    premium:prem||s.premium, calls:(Number(s.calls)||0)+1, lastCall:ins3Today(),
+    won:!!disp.won||s.won, owner:s.owner||ins3Me(), ownerName:s.ownerName||ins3MyName()});
+  jgetRaw('inscrm2_save',{reg:r[C3.reg],customer:r[C3.cust],mobile:r[C3.mob],expiry:'',
+    by:ins3Me(),byName:ins3MyName(),status:code,remarks:note,premium:prem,called:'1'},
+    function(res){
+      if(res&&res.ok===false){
+        ins3Toast('⚠ '+(r[C3.cust]||r[C3.reg])+' ka save nahi hua'+(res.error?' — '+res.error:''),'bad');
+      } else {
+        if(res&&res.owner){ INS3.state[k].owner=res.owner; INS3.state[k].ownerName=res.ownerName;
+          INS3.state[k].nextFollowUp=res.nextFollowUp; INS3.state[k].won=!!res.converted||INS3.state[k].won; }
+        ins3LoadMyDay();
+      }
+    },30000);
+  jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),act:'release'},function(){},15000);
+  clearTimeout(INSF.idleT);
+  INSF.session++;
+  insfCelebrate(code, disp);
+}
+function insfCelebrate(code, disp){
+  var won=!!disp.won, group=disp.group||'';
+  var img, big, sub;
+  if(won){ img='assets/04_trophy_confetti.png'; big='🎉 RENEW HO GAYA!'; sub='Zabardast! Party banti hai!'; }
+  else if(INSF.session%10===0){ img='assets/21_gift_star_mascot.png'; big='⭐ '+INSF.session+' calls done!'; sub='Kya speed hai! Aage badho!'; }
+  else if(group==='In progress'){ img='assets/23_white_red_superhero_jump.png'; big='Badhiya! 💪'; sub='Follow-up pakka. Agla customer…'; }
+  else if(group==='Lost'){ img='assets/29_white_bear_mechanic.png'; big='Koi baat nahi 🙂'; sub='Agla customer better hoga…'; }
+  else { img='assets/09_red_cube_mascot_waving.png'; big='Saved ✓'; sub='Agla customer aa raha hai…'; }
+  var f=document.createElement('div'); f.className='insf-flash'; f.id='insf-flash';
+  f.innerHTML='<img src="'+img+'" alt="" onerror="this.style.display=\'none\'"><div class="b">'+ins3Esc(big)+'</div><div class="s">'+ins3Esc(sub)+'</div>';
+  document.body.appendChild(f);
+  setTimeout(function(){ f.remove(); insfNext(); }, won||INSF.session%10===0 ? 1500 : 750);
+}
+function insfNext(){ INSF.pos++; if(!INSF.on) return; insfShow(); }
+function insfPrev(){ if(INSF.pos>0){ var r=insfCur(); if(r) jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),act:'release'},function(){},15000); INSF.pos--; insfShow(); } }
+function insfSkip(){
+  var r=insfCur(); if(r) jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),act:'release'},function(){},15000);
+  /* Duolingo skip: to the back of the queue, not gone */
+  if(INSF.pos<INSF.q.length){ INSF.q.push(INSF.q.splice(INSF.pos,1)[0]); }
+  insfShow();
+}
+function insfFinish(){
+  var el=document.getElementById('insf'); if(!el) return;
+  clearTimeout(INSF.idleT);
+  el.innerHTML='<div class="insf-head">'
+    +'<button class="insf-x" onclick="insfClose()">✕</button>'
+    +'<div class="insf-prog"><div class="insf-progt"><span>Sab ho gaya!</span><span>📞 Aaj: '+insfCallsToday()+'</span></div>'
+    +'<div class="insf-bar"><i style="width:100%"></i></div></div>'
+    +'<button class="insf-xls" onclick="insfExcel()">⬇ Excel</button></div>'
+    +'<div class="insf-fin"><img src="assets/04_trophy_confetti.png" alt="" onerror="this.style.display=\'none\'">'
+    +'<div style="font-size:28px;font-weight:900;color:#0f172a">🎉 List khatam!</div>'
+    +'<div style="font-size:16px;font-weight:700;color:#475569">Is session me '+INSF.session+' calls ho gayi. Kal phir milte hai!</div>'
+    +'<button class="insf-a call" style="min-width:220px" onclick="insfClose()">Wapas list par</button></div>';
+}
+
+/* ----------------------- Excel — HER list, not the DB ---------------------- */
+function insfExcel(){
+  if(!INS3.ready){ ins3Toast('Book abhi load ho rahi hai','bad'); return; }
+  if(INS3.whole && !INS3.q.trim()){ ins3Toast('Poora book download nahi hota — apni list chuno (Whole book band karo)','bad'); return; }
+  var view=ins3Filter();
+  if(!view.length){ ins3Toast('Is list me koi customer nahi hai','bad'); return; }
+  var capped=false;
+  if(view.length>5000){ view=view.slice(0,5000); capped=true; }
+  /* expDay is floor(local-midnight/86400000) — for IST that floors into the
+     PREVIOUS UTC day, so adding the offset back naively prints yesterday.
+     This reconstruction is exact for any fixed offset, verified 07-Aug-2026. */
+  var tzMs = -new Date().getTimezoneOffset()*60000;
+  var backMs = ((86400000 - tzMs) % 86400000 + 86400000) % 86400000;
+  function dstr(d){ if(d==null) return ''; var t=new Date(d*86400000+backMs);
+    return String(t.getDate()).padStart(2,'0')+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+t.getFullYear(); }
+  function cell(v){ v=(v==null?'':String(v)); return '"'+v.replace(/"/g,'""')+'"'; }
+  var head=['Customer','Mobile','Alt Mobile','Reg No','Model','Expiry Date','Days Left','Tier','Score',
+            'Insurer','Policy No','Chassis','Engine','Loyalty','City','Last Service','Status','Follow Up','Premium Quoted','Remarks'];
+  var lines=[head.join(',')];
+  for(var vi=0; vi<view.length; vi++){
+    var r=INS3.rows[view[vi]], s=INS3.state[ins3Key(r[C3.reg])]||{};
+    var k=(r[C3.expDay]==null)?'':(r[C3.expDay]-INS3.todayDay);
+    lines.push([r[C3.cust],r[C3.mob],r[C3.alt],r[C3.reg],r[C3.model],dstr(r[C3.expDay]),k,r[C3.tier],r[C3.score],
+      r[C3.co],r[C3.policy],r[C3.chassis],r[C3.engine],r[C3.loyalty],r[C3.city],r[C3.lastSvc],
+      s.reason||'',s.nextFollowUp||'',s.premium||'',(s.remarks||'').split('\n')[0]].map(cell).join(','));
+  }
+  /* BOM so Excel reads Devanagari and ₹ correctly */
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='Insurance-Call-List-'+ins3Today()+'.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500);
+  ins3Toast((view.length)+' customers Excel me download ho gaye'+(capped?' (pehle 5,000)':''),'good');
+}
 </script>
 </body></html>
