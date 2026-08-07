@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 31;
-window.HERO_BUILD = 'R35-2026.08.07.1';
+window.HERO_RELEASE = 32;
+window.HERO_BUILD = 'R36-2026.08.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15321,7 +15321,7 @@ async function ins3Load(force){
   const local = metaRows.find(function(m){ return m.k==='book'; });
 
   if(!force && local && local.ver===ver.ver && local.done){
-    ins3Say('ok','Book is up to date · '+(local.total||0).toLocaleString('en-IN')+' policies on this device');
+    ins3Say('ok','Working set is up to date · '+(local.total||0).toLocaleString('en-IN')+' policies on this device · poori book server par');
     await ins3LoadLocal(db);
     INS3.syncing=false;
     ins3LoadStates();
@@ -15334,7 +15334,7 @@ async function ins3Load(force){
   if(!resume) await ins3Clear(db, INS3_STORE);
 
   let page=resume, pages=null, got=0;
-  ins3Say('busy', resume ? 'Resuming download…' : 'Downloading the renewal book to this device…', 0);
+  ins3Say('busy', resume ? 'Resuming download…' : 'Downloading aaj ka working set to this device…', 0);
 
   while(true){
     const res = await new Promise(function(r){
@@ -15382,6 +15382,7 @@ async function ins3LoadLocal(db){
   }
   INS3.rows=rows;
   INS3.total=rows.length;
+  INS3._regSet=null;   /* w1: server-found session rows are gone after a sync */
 
   /* Build the searchable text here rather than downloading it. It is only the
      other columns of the same row joined up, and shipping it cost ~13 MB of the
@@ -15646,6 +15647,51 @@ function ins3OnQ(v){
   INS3.q=v; INS3.shown=120; ins3Deselect();
   clearTimeout(INS3._t);
   INS3._t=setTimeout(ins3Render, 90);      /* local, so this can be short */
+  /* w1: the device holds only the working window now, so a search the window
+     cannot answer falls through to the server — after she stops typing, never
+     per keystroke. That was R23's slowness and it is not coming back. */
+  clearTimeout(INS3._ts);
+  INS3._ts=setTimeout(ins3ServerFind, 700);
+}
+
+/* Ask the server for customers the device window does not hold. Results are
+   appended to the in-memory arrays ONLY — nothing here writes IndexedDB, so a
+   lookup never quietly rebuilds the full book Ravi banned on 06-Aug-2026.
+   ins3LoadLocal rebuilds those arrays on every sync, which is what clears
+   these session guests out again. */
+function ins3ServerFind(){
+  const q=INS3.q.trim();
+  if(q.length<3 || !INS3.ready) return;
+  ins3Filter();
+  if(INS3.view.length>=8) return;          /* the window already answered */
+  const seq=(INS3._fseq=(INS3._fseq||0)+1);
+  const hint=document.getElementById('ins3-hint');
+  if(hint) hint.innerHTML='Is device par kam mila — <b>server par dhundh rahe hain…</b>';
+  jgetRaw('inscrm3_find', {q:q, owner:ins3Me()}, function(res){
+    if(seq!==INS3._fseq || INS3.q.trim()!==q) return;   /* she typed on */
+    if(!res || res.ok===false || !Array.isArray(res.rows)){ ins3Render(); return; }
+    if(!INS3._regSet){
+      INS3._regSet={};
+      for(let i=0;i<INS3.rows.length;i++) INS3._regSet[ins3Key(INS3.rows[i][C3.reg])]=1;
+    }
+    let added=0;
+    for(let i=0;i<res.rows.length;i++){
+      const r=res.rows[i], k=ins3Key(r[C3.reg]);
+      if(!k || INS3._regSet[k]) continue;
+      /* MUST stay field-for-field identical to ins3Hay_ in ModulesR28.gs and
+         to the builder in ins3LoadLocal. */
+      const hay=[r[C3.reg], r[C3.cust], r[C3.mob], r[C3.alt], r[C3.model],
+                 r[C3.chassis], r[C3.engine], r[C3.policy],
+                 r[C3.co], r[C3.city], r[C3.dos], r[C3.loyalty], r[C3.rel]]
+                .join(' ').toUpperCase();
+      r[C3.hay]=hay;
+      INS3.rows.push(r); INS3.keys.push(ins3Norm(hay));
+      INS3._regSet[k]=1; added++;
+    }
+    INS3.total=INS3.rows.length;
+    ins3Render();
+    if(added) ins3Toast('Server se '+added+' aur customer mile');
+  }, 45000);
 }
 function ins3ClearQ(){
   INS3.q=''; const e=document.getElementById('ins3-q'); if(e) e.value='';
@@ -15670,12 +15716,12 @@ function ins3Render(){
   const hint=document.getElementById('ins3-hint');
   if(hint){
     hint.innerHTML = INS3.ready
-      ? 'Searches all <b>'+(INS3.total||0).toLocaleString('en-IN')+'</b> policies — '
-        + 'name, reg no, both mobiles, chassis, engine, policy number, model and city — '
-        + 'whichever tab is selected.'
+      ? '<b>'+(INS3.total||0).toLocaleString('en-IN')+'</b> policies on this device — '
+        + 'aaj ka working window (±30 din) + aapke customers. '
+        + 'Search poori book dhundhta hai: window pehle, baaki server se apne-aap.'
       : (INS3.syncing
-          ? 'Getting the book onto this phone. It happens once. Searching switches on the moment it finishes.'
-          : 'The book is not on this device yet — tap <b>↻ Sync now</b>.');
+          ? 'Aaj ka working set is phone par aa raha hai — a small refresh, once a day. Searching switches on the moment it finishes.'
+          : 'The working set is not on this device yet — tap <b>↻ Sync now</b>.');
   }
 
   ins3PaintChips();
