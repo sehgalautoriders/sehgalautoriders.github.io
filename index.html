@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 28;
-window.HERO_BUILD = 'R31-2026.08.06.4';
+window.HERO_RELEASE = 29;
+window.HERO_BUILD = 'R33-2026.08.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2247,14 +2247,32 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
       <button class="btn" style="background:#0891b2;min-width:140px" onclick="pfSearch()">🔎 Find Stock</button>
     </div>
 
-    <!-- Live Power BI: server-side auto-login (v11.3). Falls back to manual paste if the tenant blocks password login. -->
-    <div id="pf-live-wrap" style="margin-bottom:12px;border:1px solid #a5f3fc;background:#ecfeff;border-radius:8px;padding:10px">
-      <div style="font-size:13px;font-weight:700;color:#0e7490;margin-bottom:4px">⚡ Live all-India stock — auto-login to Hero Power BI</div>
-      <div class="hint" style="margin:0 0 8px">One tap fetches the very latest all-India availability for the part above, using the dealership's Hero BI login stored securely on the server. No token pasting, no expiry.</div>
-      <button class="btn" style="background:#0e7490" onclick="pfLiveAuto()">⚡ Fetch live (all India) for this part</button>
+    <!-- OTHER DEALERS' STOCK — Power BI.  R33, 07-Aug-2026.
+
+         Ravi: "why it is asking for authorization again and again."
+
+         This panel was the reason. It used to open the screen shouting
+         "⚡ Live all-India stock — auto-login", so it read as the main way to
+         find stock, and underneath it sat a box asking for a pasted Power BI
+         token. Measured 07-Aug: the login itself is FINE (pbiLoginTest returns
+         SUCCESS with a 2,070-character token) but the fetch runs past Apps
+         Script's six-minute ceiling and is killed. The reply is then Google's
+         own HTML error page, which the app reads as JSONP and cannot run, so
+         no callback ever fires — and the screen falls back to begging for a
+         token. Every time. It was never an authorization problem.
+
+         So: our own stock is the headline and answers instantly from the
+         27,257 rows already on the server. This is demoted to what it actually
+         is — other dealers, slow, and known to fail — and the token box is
+         shut inside a details element that no longer calls itself a fallback
+         for something being "not enabled yet". -->
+    <div id="pf-live-wrap" style="margin-bottom:12px;border:1px solid var(--line);background:var(--card,#fff);border-radius:8px;padding:10px">
+      <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:3px">Stock at other Hero dealers <span style="font-weight:600;color:var(--steel);font-size:11px">— optional, and slow</span></div>
+      <div class="hint" style="margin:0 0 8px">Everything above is our own four workshops, answered instantly. This asks Hero's Power BI for the rest of India — about <b>5,000 dealers</b>. Measured 07-Aug-2026: it takes <b>around six minutes</b>, which is the most the server is allowed, so some attempts finish and some are cut off. <b>If it is cut off there is nothing wrong with the login and nothing to re-authorise</b> — just tap it again.</div>
+      <button class="btn ghost" style="border-color:#0e7490;color:#0e7490" onclick="pfLiveAuto()">Try other dealers (about six minutes)</button>
       <details style="margin-top:8px">
-        <summary style="cursor:pointer;font-size:11px;color:var(--steel)">Manual fallback (only if auto-login isn't enabled yet)</summary>
-        <div class="hint" style="margin-top:6px">Paste a Power BI "Copy as fetch" of the export/xlsx request. Token inside expires in ~2h.</div>
+        <summary style="cursor:pointer;font-size:11px;color:var(--steel)">Advanced: fetch with a Power BI token you paste yourself</summary>
+        <div class="hint" style="margin-top:6px">Only useful if you already have a Power BI session open in this browser. Paste the "Copy as fetch" of the export/xlsx request; the token inside it expires in about two hours.</div>
         <textarea id="pf-fetch" rows="3" placeholder='fetch("https://wabi-...analysis.windows.net/export/xlsx", { ... })' style="width:100%;font-size:11px;font-family:monospace;padding:8px;border:1.5px solid var(--line);border-radius:8px;margin-top:6px"></textarea>
         <button class="btn ghost sm" style="margin-top:6px" onclick="pfLiveFetch()">Fetch using pasted token</button>
       </details>
@@ -10464,8 +10482,13 @@ function pfLiveAuto(){
   const pn=pfVal('pf-partno').trim().toUpperCase();
   if(!pn){ pfInfo('Enter a part number first.','warn'); return; }
   PF_PART=pn;
-  document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">⚡ Logging in to Hero BI and fetching all-India stock for '+pn+'…<div style="font-size:12px;margin-top:6px">First fetch after idle can take 10–20 seconds.</div></div>';
-  pfInfo('⚡ Auto-login + live fetch for '+pn+'…','warn');
+  /* MEASURED 07-Aug-2026 against the live endpoint: this call returns 6,415
+     rows across 5,072 dealers — 2.25 MB of JSONP — and takes 344 SECONDS. The
+     old "10–20 seconds" line was written when the parts master was a fraction
+     of that. Saying 10–20 seconds and then failing at 45 is what makes a slow
+     answer look like a broken one. */
+  document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">⚡ Logging in to Hero BI and fetching all-India stock for '+pn+'…<div style="font-size:12px;margin-top:6px">This is the whole country — about <b>5,000 dealers</b>. It takes <b>up to six minutes</b>. Leave this screen open.<br>For our own four outlets, <b>Find Stock</b> above answers instantly.</div></div>';
+  pfInfo('⚡ Auto-login + live fetch for '+pn+' — up to six minutes.','warn');
   jgetRaw('find_part_live',{pn:pn},function(res){
     if(!res){ pfInfo('No response — check connection and retry.','error'); return; }
     if(res.ok===false){
@@ -10475,6 +10498,21 @@ function pfLiveAuto(){
          login had in fact worked and the workbook parse had failed. Heading and
          icon now follow the actual stage that failed. */
       let head='Live auto-login not available yet', ic='🔐';
+      /* R31.5, 07-Aug-2026. Ravi: "why it is asking for authorization again and
+         again". It was not an authorization problem at all — pbi_login_test
+         answers SUCCESS. The request was simply timing out, and a timeout fell
+         through to the padlock heading above, so a slow fetch was reported as a
+         login that needed authorising. A timeout now says so. */
+      if(res.error==='network' || res.error==='timeout' || /timeout/i.test(String(res.error||''))){
+        head='Still fetching — it did not finish in time'; ic='⏳';
+        msg='The all-India fetch is about 5,000 dealers and takes up to six minutes; this attempt ran out of time. '
+           +'The Hero BI login itself is fine — nothing needs authorising. '
+           +'Tap it again and leave the screen open, or use Find Stock above for our own four outlets, which is instant.';
+        pfInfo(msg,'warn');
+        document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:36px;color:var(--steel)"><div style="font-size:30px">'+ic+'</div><div style="font-weight:700;margin-top:6px">'+head+'</div><div style="font-size:12px;margin-top:4px;max-width:460px;margin-left:auto;margin-right:auto">'+raviEsc(msg)+'</div></div>';
+        pfIdentify(pn);
+        return;
+      }
       if(res.error==='LOGIN_FAILED') msg='Auto-login not enabled/allowed yet. Run pbiLoginTest() in Apps Script once to see why, or use the manual fallback below.';
       else if(res.error==='TOKEN_REJECTED') msg='Power BI rejected the login token. Re-run pbiLoginTest() in Apps Script.';
       else if(String(res.error).indexOf('SETUP')>-1) msg=res.error;
@@ -10493,7 +10531,13 @@ function pfLiveAuto(){
     if(!res.rows.length) pfInfo('Live: no stock anywhere in India for '+pn+' right now.','warn');
     else pfInfo('✓ LIVE all-India stock for '+pn+(res.summary.desc?' — '+res.summary.desc:'')+' · '+res.summary.dealers+' dealers · fetched just now.','ok');
     pfBuildFilters(); pfRender();
-  },45000);
+  /* 45,000 was the old value and it was never enough: MEASURED 07-Aug-2026, this
+     route takes 344 SECONDS to return 6,415 rows over 5,072 dealers. Every
+     single live fetch therefore timed out, and the timeout was reported as an
+     authorisation problem. 400 s clears the measured time and still sits inside
+     the Apps Script six-minute ceiling, so a genuine server failure is still
+     reported rather than waited on forever. */
+  },400000);
 }
 /* ---- Live Power BI via manual paste (fallback) ---- */
 function pfParseFetch(text){
