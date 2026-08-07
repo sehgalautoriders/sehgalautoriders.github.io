@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 32;
-window.HERO_BUILD = 'R36-2026.08.07.1';
+window.HERO_RELEASE = 33;
+window.HERO_BUILD = 'R37-2026.08.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15023,8 +15023,48 @@ function ins2MarutiUpload(inp){
 .ins3-pane{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:10px 12px 20px;min-width:0}
 @media(min-width:900px){
   .ins3-pane{grid-template-columns:minmax(0,1fr) minmax(0,430px);align-items:start}
-  .ins3-detail{position:sticky;top:10px;max-height:calc(100vh - 22px);overflow:auto}
+  /* R37: sticky moved from .ins3-detail to the RAIL. align-items:start shrinks
+     the grid item to its content, so a sticky INSIDE it had zero room to
+     travel — that is why clicking a row far down the list appeared to do
+     nothing: the panel repainted 2,000px above the viewport. The rail is the
+     grid item, its grid AREA is the full column height, so sticky on the rail
+     follows her down the whole list. */
+  .ins3-rail{position:sticky;top:10px;max-height:calc(100vh - 22px);display:flex;flex-direction:column;gap:10px;min-width:0}
+  .ins3-detail{flex:0 1 auto;overflow:auto;min-height:0}
+  #ins3-pile{flex:0 0 auto}
 }
+/* R37: the tap must land where she can SEE it — panel pulses on selection */
+@keyframes ins3Pulse{0%{box-shadow:0 0 0 3px rgba(185,28,28,.55)}100%{box-shadow:0 2px 12px rgba(15,23,42,.09)}}
+.ins3-detail.pulse{animation:ins3Pulse .6s}
+/* ---- R37: the pile. "SMREs like Excel because they can see their own work
+   pile up." Every saved call lands here, newest on top, coloured by outcome:
+   green = converted, light red = hot, yellow = warm, plain = cold/lost. ---- */
+.ins3-pilecard{background:var(--card,#fff);border-radius:15px;padding:11px 12px;box-shadow:0 2px 12px rgba(15,23,42,.09);min-width:0}
+.ins3-pilehead{display:flex;align-items:baseline;gap:8px;margin-bottom:7px}
+.ins3-pilehead b{font-size:13px;font-weight:850;color:#171717}
+.ins3-pilehead span{font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.ins3-pilerows{max-height:34vh;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.ins3-pr{border:1.5px solid var(--line,#e5e7eb);border-radius:9px;padding:6px 9px;cursor:pointer;min-width:0;animation:ins3PileIn .3s}
+@keyframes ins3PileIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+.ins3-pr .l1{display:flex;gap:7px;align-items:center;min-width:0}
+.ins3-pr .nm{flex:1;min-width:0;font-size:12px;font-weight:800;color:#171717;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ins3-pr .tg{flex:none;font-size:9.5px;font-weight:850;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.ins3-pr .tm{flex:none;font-size:10px;font-weight:750;color:#64748b}
+.ins3-pr .l2{display:none;font-size:11px;font-weight:650;color:#334155;margin-top:5px;line-height:1.45;word-break:break-word}
+.ins3-pr.open .l2{display:block}
+.ins3-pr.won{background:#f0fdf4;border-color:#86efac}
+.ins3-pr.hot{background:#fff1f2;border-color:#fda4af}
+.ins3-pr.warm{background:#fefce8;border-color:#fde047}
+.ins3-pr .tg.won{background:#dcfce7;color:#166534}.ins3-pr .tg.hot{background:#ffe4e6;color:#be123c}
+.ins3-pr .tg.warm{background:#fef9c3;color:#a16207}.ins3-pr .tg.cold{background:#f1f5f9;color:#475569}
+/* R37: aggregator quote buttons + sheet-mode banner */
+.ins3-aggrow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.ins3-agg{border:1.5px solid var(--line,#e5e7eb);background:#fff;border-radius:9px;padding:8px 6px;font-size:11.5px;
+  font-weight:800;color:#171717;cursor:pointer;font-family:inherit;text-align:center}
+.ins3-agg:hover{border-color:#94a3b8}
+.ins3-sheetbar{display:flex;align-items:center;gap:8px;margin:0 12px 8px;padding:9px 12px;border-radius:12px;
+  background:#eef2ff;border:1.5px solid #a5b4fc;font-size:12.5px;font-weight:800;color:#312e81;flex-wrap:wrap}
+.ins3-sheetbar button{border:0;border-radius:8px;padding:6px 10px;font-size:11.5px;font-weight:850;cursor:pointer;font-family:inherit}
 /* ---- A2: her own day. Ravi, 05-Aug-2026: "why the SMREs should not be able
    to see their own work done during the day. It is the worst. Why would they
    work on it then." Header strip of 5.png. ---- */
@@ -15068,7 +15108,10 @@ function ins2MarutiUpload(inp){
   min-width:0;-webkit-tap-highlight-color:transparent;transition:border-color .12s,box-shadow .12s}
 .ins3-r:hover{border-color:#cbd5e1}
 .ins3-r.sel{border-color:#b91c1c;box-shadow:0 3px 14px rgba(185,28,28,.16)}
-.ins3-r.other{opacity:.55}
+/* R37: was opacity:.55 — Ravi read the faded card as broken. Another SMRE's
+   customer stays fully readable; the owner pill says whose it is, the tint
+   says "not yours" without hiding the words. */
+.ins3-r.other{opacity:.85;background:#fafafa}
 .ins3-tier{flex:0 0 auto;width:34px;border-radius:9px;display:flex;flex-direction:column;align-items:center;
   justify-content:center;font-weight:850;color:#fff;line-height:1}
 .ins3-tier .t{font-size:13px}
@@ -15194,7 +15237,10 @@ const INS3_BUCKETS = [
   {code:'fortnight', label:'Next 15 days',   from:0,   to:15},
   {code:'month',     label:'Next 30 days',   from:0,   to:30},
   {code:'quarter',   label:'Next 90 days',   from:0,   to:90},
-  {code:'all',       label:'Whole book',     from:-99999, to:99999}
+  /* R37: was "Whole book" — wrong and it confused Ravi. These are the rows ON
+     THIS DEVICE (±30-day window + own customers); the whole book stays on the
+     server and search reaches it automatically. */
+  {code:'all',       label:'Sab (is device par)', from:-99999, to:99999}
 ];
 const INS3_TIERC = {A:'#166534', B:'#2563eb', C:'#d97706', D:'#94a3b8'};
 const INS3_LOYC  = {REGULAR:'#166534', LAPSED:'#b45309', LOST:'#b91c1c', NEW:'#2563eb', PROSPECT:'#7c3aed'};
@@ -15406,6 +15452,7 @@ async function ins3LoadLocal(db){
 
   INS3.todayDay = Math.floor(new Date().setHours(0,0,0,0)/86400000);
   INS3.ready = rows.length>0;
+  ins3SheetRestore();   /* R37: her sheet queue survives reloads and re-syncs */
   ins3Render();
 }
 
@@ -15451,7 +15498,25 @@ function ins3Filter(){
   const q = INS3.q.trim();
   const qRaw = q.toUpperCase();
   const qKey = ins3Norm(q);
+  const qDigits = q.replace(/\D/g,'');
   const searching = q.length>0;
+
+  /* R37 — NO 1 PRIORITY (Ravi, 07-Aug-2026): "If in the Excel sheet no 1 is
+     MH14YH1435 then this customer has to come in no 1 position to call."
+     When her sheet is loaded, the view IS the sheet — same rows, same order,
+     never re-sorted, no day window, no ownership hiding. Search still looks
+     at the whole book; tier/quotable chips still narrow if she asks. */
+  if(INS3.sheet && INS3.sheet.on && !searching){
+    const outS=[], idx=INS3.sheet.idx||[];
+    for(let n=0;n<idx.length;n++){
+      const i=idx[n], r=INS3.rows[i]; if(!r) continue;
+      if(INS3.tier && r[C3.tier]!==INS3.tier) continue;
+      if(INS3.quotableOnly && !(r[C3.chassis] && r[C3.engine])) continue;
+      outS.push(i);
+    }
+    INS3.view=outS;
+    return outS;
+  }
 
   const b = INS3_BUCKETS.find(function(x){ return x.code===INS3.bucket; }) || INS3_BUCKETS[0];
   const lo = INS3.todayDay + b.from, hi = INS3.todayDay + b.to;
@@ -15459,6 +15524,10 @@ function ins3Filter(){
   const me = ins3Me();
   const rows=INS3.rows, keys=INS3.keys, st=INS3.state;
   const out=[];
+  /* R37: while searching, WHAT matched decides the order — a reg-number hit
+     outranks a mobile-number hit outranks everything else. Searching 7491
+     must put MH14MN7491 first, not a customer whose mobile contains 7491. */
+  const rank = searching ? Object.create(null) : null;
 
   for(let i=0;i<rows.length;i++){
     const r=rows[i];
@@ -15490,11 +15559,22 @@ function ins3Filter(){
       if(asgn && asgn!==me) continue;
     }
 
+    if(searching){
+      if(qKey && ins3Key(r[C3.reg]).indexOf(qKey)>=0) rank[i]=0;
+      else if(qDigits.length>=3 && (String(r[C3.mob]||'').indexOf(qDigits)>=0
+                                 || String(r[C3.alt]||'').indexOf(qDigits)>=0)) rank[i]=1;
+      else rank[i]=2;
+    }
+
     out.push(i);
   }
 
   const dir = INS3.sort;
   out.sort(function(a,b2){
+    if(rank){
+      const rk=rank[a]-rank[b2];
+      if(rk) return rk;
+    }
     const ra=rows[a], rb=rows[b2];
     if(dir==='date'){
       const da=ra[C3.expDay], db2=rb[C3.expDay];
@@ -15589,9 +15669,14 @@ function ins3Shell(){
       +'<button onclick="insfStart()" style="flex:1;min-height:60px;border:0;border-radius:16px;cursor:pointer;'
         +'background:linear-gradient(135deg,#dc2626,#f43f5e);color:#fff;font-size:17px;font-weight:900;'
         +'box-shadow:0 6px 18px rgba(220,38,38,.3)">📞 Chalo, shuru karte hai! <span style="display:block;font-size:12px;font-weight:700;opacity:.9">Ek customer, ek click — start calling</span></button>'
+      /* R37 P1: HER list decides the order. Row 1 of her sheet = call no 1. */
+      +'<button onclick="document.getElementById(\'ins3-sheetfile\').click()" style="min-width:110px;border:0;border-radius:16px;cursor:pointer;'
+        +'background:#4338ca;color:#fff;font-size:14px;font-weight:900">📥 Meri list<span style="display:block;font-size:10.5px;font-weight:700;opacity:.85">Excel daalo</span></button>'
       +'<button onclick="insfExcel()" style="min-width:96px;border:0;border-radius:16px;cursor:pointer;'
         +'background:#0f172a;color:#fff;font-size:14px;font-weight:900">⬇ Excel<span style="display:block;font-size:10.5px;font-weight:700;opacity:.85">meri list</span></button>'
     +'</div>'
+    +'<input type="file" id="ins3-sheetfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="ins3SheetPick(this)">'
+    +'<div id="ins3-sheetbar"></div>'
     +'<div class="ins3-my" id="ins3-my"></div>'
     +'<div class="ins3-searchwrap">'
       +'<div class="ins3-search">'
@@ -15610,7 +15695,7 @@ function ins3Shell(){
         +'<div id="ins3-list"></div>'
         +'<div id="ins3-more"></div>'
       +'</div>'
-      +'<div id="ins3-detailwrap"></div>'
+      +'<div class="ins3-rail"><div id="ins3-detailwrap"></div><div id="ins3-pile"></div></div>'
     +'</div>';
   ins3Say('busy','Starting…');
 
@@ -15736,7 +15821,8 @@ function ins3Render(){
     cEl.innerHTML=
       '<b>'+view.length.toLocaleString('en-IN')+'</b>&nbsp;'
       +(searching?'match'+(view.length===1?'':'es')+' across the whole book'
-                 :'to call in this range')
+                 :(INS3.sheet&&INS3.sheet.on?'— <b style="color:#4338ca">aapki sheet ke order me</b>'
+                 :'to call in this range'))
       +'<span style="color:#166534;font-weight:800">A '+tierN.A+'</span>'
       +'<span style="color:#2563eb;font-weight:800">B '+tierN.B+'</span>'
       +'<span style="color:#d97706;font-weight:800">C '+tierN.C+'</span>'
@@ -15819,6 +15905,8 @@ function ins3Render(){
 
   ins3PaintDetail();
   ins3PaintMyDay();
+  ins3SheetBarPaint();
+  ins3PaintPile();
 
   const sub=document.getElementById('ins3-sub');
   if(sub) sub.textContent = INS3.total
@@ -15925,6 +16013,9 @@ function ins3Sel(i){
   if(prev>=0 && prev!==i) ins3RepaintRow(prev);
   ins3RepaintRow(i);
   ins3PaintDetail();
+  /* R37: the tap must land visibly — the panel pulses red where she can see it */
+  const dp=document.querySelector('#ins3-detailwrap .ins3-detail');
+  if(dp){ dp.classList.remove('pulse'); void dp.offsetWidth; dp.classList.add('pulse'); }
   const r=INS3.rows[i];
   /* take the soft lock so another SMRE sees "on this call" */
   jgetRaw('inscrm2_lock', {reg:r[C3.reg], by:ins3Me(), byName:ins3MyName(), act:'take',
@@ -15964,6 +16055,7 @@ function ins3PaintDetail(){
   const ownedByOther  = s.owner && s.owner!==me;
   const d=ins3Days(r[C3.expDay]);
   const tier=r[C3.tier]||'D';
+  const mkt=ins3MktAll()[ins3Key(r[C3.reg])]||'';
 
   function f(l,v,cls){
     return '<div class="ins3-f"><div class="ins3-fl">'+ins3Esc(l)+'</div>'
@@ -16001,11 +16093,33 @@ function ins3PaintDetail(){
     +(lockedByOther?'<div class="ins3-lockpill">🔒 '+ins3Esc(s.lockedByName||s.lockedBy)+' is on this call — saving is blocked</div>':'')
     +(ownedByOther&&!lockedByOther?'<div class="ins3-lockpill">👤 This customer belongs to '+ins3Esc(s.ownerName||s.owner)+'</div>':'')
 
+    /* R37: one button per channel, no guessing. WA App = phone's WhatsApp;
+       WA Web = the ONE reused web.whatsapp.com tab (login once, stays in). */
     +'<div class="ins3-acts">'
       +(r[C3.mob]?'<a class="ins3-a call" href="tel:+91'+ins3Esc(r[C3.mob])+'">📞 Call</a>':'')
-      +(r[C3.mob]?'<button class="ins3-a wa" onclick="ins3Wa('+i+')">🟢 WhatsApp</button>':'')
-      +'<button class="ins3-a copy" onclick="ins3Copy('+i+')">📋 Copy details</button>'
+      +(r[C3.mob]?'<button class="ins3-a wa" onclick="ins3Wa('+i+',\'app\')">🟢 WhatsApp App</button>':'')
+      +(r[C3.mob]?'<button class="ins3-a wa" style="background:#0e7490" onclick="ins3Wa('+i+',\'web\')">💻 WhatsApp Web</button>':'')
+      +'<button class="ins3-a" style="background:#7c3aed;color:#fff" onclick="ins3Email('+i+')">✉ Email</button>'
+      +'<button class="ins3-a copy" onclick="ins3Copy('+i+')">📋 Copy sab</button>'
     +'</div>'
+
+    /* R37: what the market would charge for this same reg — she checks once,
+       types the best price back, and quotes better than it on this screen. */
+    +'<div class="ins3-sec">Market quotes — same reg, aggregators pe</div>'
+    +'<div class="ins3-aggrow">'
+      +'<button class="ins3-agg" onclick="ins3Agg('+i+',\'pb\')">Policybazaar ↗</button>'
+      +'<button class="ins3-agg" onclick="ins3Agg('+i+',\'gd\')">Go Digit ↗</button>'
+      +'<button class="ins3-agg" onclick="ins3Agg('+i+',\'id\')">InsuranceDekho ↗</button>'
+      +'<button class="ins3-agg" onclick="ins3Agg('+i+',\'cf\')">Coverfox ↗</button>'
+    +'</div>'
+    +'<input class="ins3-in" id="ins3-mkt" placeholder="Market best ₹ (jo wahan dikha)" inputmode="numeric" '
+      +'value="'+ins3Esc(mkt)+'" onchange="ins3MktSave('+i+',this.value)">'
+    +(mkt && s.premium
+      ? '<div style="font-size:12.5px;font-weight:850;padding:7px 10px;border-radius:9px;margin-top:2px;'
+        +(Number(s.premium)<=Number(mkt)?'background:#f0fdf4;color:#166534">✓ Hum saste: ₹'+ins3Esc(s.premium)+' vs market ₹'+ins3Esc(mkt)
+                                        :'background:#fef2f2;color:#b91c1c">Market sasta hai: ₹'+ins3Esc(mkt)+' vs hum ₹'+ins3Esc(s.premium))
+        +'</div>'
+      : '')
 
     +'<div class="ins3-sec">Policy — what you need to quote him</div>'
     +'<div class="ins3-facts">'
@@ -16183,21 +16297,49 @@ function ins3Pick(code){
   INS3.state[k].status=code;
   ins3PaintDetail();
 }
-function ins3Wa(i){
-  const r=INS3.rows[i]; if(!r||!r[C3.mob]) return;
+function ins3Msg(r){
   const d=ins3Days(r[C3.expDay]);
-  const msg='Namaste '+(r[C3.cust]||'')+', Sehgal Autoriders here. Your '+(r[C3.model]||'two-wheeler')
+  return 'Namaste '+(r[C3.cust]||'')+', Sehgal Autoriders here. Your '+(r[C3.model]||'two-wheeler')
     +' ('+r[C3.reg]+') insurance is due — '+(d.n==='TODAY'?'today':d.n+' '+d.l)
     +'. Shall I send you the renewal quote?';
-  window.open('https://wa.me/91'+r[C3.mob]+'?text='+encodeURIComponent(msg),'_blank','noopener');
 }
+/* R37: 'app' = the phone's / desktop-installed WhatsApp via wa.me;
+        'web' = ONE named web.whatsapp.com tab, login survives, every send
+        reuses it. web.whatsapp.com refuses to be embedded (X-Frame-Options),
+        the reused named tab is the honest equivalent. */
+function ins3Wa(i, mode){
+  const r=INS3.rows[i]; if(!r||!r[C3.mob]) return;
+  const msg=encodeURIComponent(ins3Msg(r));
+  if(mode==='web') window.open('https://web.whatsapp.com/send?phone=91'+r[C3.mob]+'&text='+msg,'hero_wa');
+  else window.open('https://wa.me/91'+r[C3.mob]+'?text='+msg,'_blank','noopener');
+}
+/* The book has no email column (told Ravi 07-Aug-2026), so the address line
+   starts empty — the draft carries everything else ready to send. */
+function ins3Email(i){
+  const r=INS3.rows[i]; if(!r) return;
+  const subj='Insurance renewal — '+(r[C3.model]||'')+' '+(r[C3.reg]||'');
+  location.href='mailto:?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(ins3Msg(r));
+}
+/* "Copy whatever is written on the screen" — everything the panel shows. */
 function ins3Copy(i){
   const r=INS3.rows[i]; if(!r) return;
+  const s=INS3.state[ins3Key(r[C3.reg])]||{};
+  const d=ins3Days(r[C3.expDay]);
+  const mkt=ins3MktAll()[ins3Key(r[C3.reg])]||'';
   const txt=[r[C3.cust], r[C3.reg], r[C3.model],
+    'Expiry: '+(r[C3.expDay]!=null?d.n+' '+d.l:'—')+(r[C3.expSrc]==='DERIVED'?' (estimated)':''),
+    'Tier '+(r[C3.tier]||'—')+' · '+(r[C3.score]||0)+'/100',
     'Chassis: '+(r[C3.chassis]||'—'), 'Engine: '+(r[C3.engine]||'—'),
     'Policy: '+(r[C3.policy]||'—'), 'Insurer: '+(r[C3.co]||'—'),
-    'Mobile: '+(r[C3.mob]||'—')].join('\n');
-  if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){ ins3Toast('Copied','good'); });
+    'Mobile: '+(r[C3.mob]||'—'), 'Alt: '+(r[C3.alt]||'—'),
+    'Loyalty: '+(r[C3.loyalty]||'—'), 'Last service: '+(r[C3.lastSvc]||'—'),
+    'City: '+(r[C3.city]||'—'),
+    s.reason?('Last outcome: '+s.reason):'',
+    s.premium?('Premium quoted: ₹'+s.premium):'',
+    mkt?('Market best: ₹'+mkt):'',
+    s.nextFollowUp?('Follow up: '+s.nextFollowUp):''
+  ].filter(Boolean).join('\n');
+  if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){ ins3Toast('Sab copy ho gaya ✓','good'); });
   else ins3Toast('Copy not available on this browser','bad');
 }
 
@@ -16221,8 +16363,16 @@ function ins3Save(){
   const before=JSON.parse(JSON.stringify(s));
 
   INS3.state[k]=Object.assign({}, s, {remarks:rem, premium:prem,
-    calls:(Number(s.calls)||0)+1, owner:s.owner||ins3Me(), ownerName:s.ownerName||ins3MyName()});
+    calls:(Number(s.calls)||0)+1, lastCall:ins3Today(),
+    owner:s.owner||ins3Me(), ownerName:s.ownerName||ins3MyName()});
   repaint();
+
+  /* R37: the pile — the call lands on her screen the moment she hits Save */
+  const st2=INS3.state[k].status||'';
+  if(st2){
+    const disp2=((INS3.meta&&INS3.meta.dispositions)||[]).find(function(x){ return x.code===st2; })||{};
+    ins3PileAdd(r, st2, disp2.label||st2, ins3PileCls(disp2.group||'', !!disp2.won), prem, rem);
+  }
 
   jgetRaw('inscrm2_save', {reg:r[C3.reg], customer:r[C3.cust], mobile:r[C3.mob],
     expiry:'', by:ins3Me(), byName:ins3MyName(), status:s.status||'',
@@ -16252,6 +16402,243 @@ function ins3Save(){
 /* Manual re-sync. force=true always re-downloads; used by the ↻ chip and by the
    sync bar's own button. */
 function ins3Sync(force){ ins3Load(!!force); }
+
+/* ===========================================================================
+   R37 — HER SHEET IS THE QUEUE (Ravi, 07-Aug-2026, "NO 1 PRIORITY")
+   She drops her own Excel/CSV on the screen; the call list becomes that sheet
+   in that exact row order. Regs the device window does not hold are fetched
+   from the server one by one (inscrm3_find, existing route — no backend
+   change). The sheet survives a reload for the day.
+   =========================================================================== */
+function ins3SheetPick(inp){
+  const f=inp.files && inp.files[0]; inp.value='';
+  if(!f) return;
+  const name=f.name||'list';
+  const done=function(cells){
+    const regs=ins3SheetRegs(cells);
+    if(!regs.length){ ins3Toast('Is file me koi reg number nahi mila (MH14... jaisa)','bad'); return; }
+    ins3SheetApply(regs, name);
+  };
+  if(/\.csv$/i.test(name)){
+    const rd=new FileReader();
+    rd.onload=function(){ done(String(rd.result||'').split(/\r?\n/).map(function(l){ return l.split(/[,;\t]/); })); };
+    rd.readAsText(f);
+  } else if(window.XLSX){
+    const rd=new FileReader();
+    rd.onload=function(){
+      try{
+        const wb=XLSX.read(new Uint8Array(rd.result), {type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        done(XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''}));
+      }catch(e){ ins3Toast('Excel file padh nahi paya — '+e.message,'bad'); }
+    };
+    rd.readAsArrayBuffer(f);
+  } else {
+    ins3Toast('Excel reader abhi load nahi hua — file ko CSV bana kar daalo','bad');
+  }
+}
+/* Row by row, in her order: the first cell that LOOKS like a reg number is
+   that row's reg. MH14MN7491, MH 14 MN 7491, mh14-mn-7491 all read the same. */
+function ins3SheetRegs(cells){
+  const regs=[], seen={};
+  const re=/^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{3,4}$/;
+  for(let ri=0; ri<cells.length; ri++){
+    const row=cells[ri]||[];
+    for(let ci=0; ci<row.length; ci++){
+      const k=ins3Norm(row[ci]);
+      if(k.length>=8 && k.length<=11 && re.test(k)){
+        if(!seen[k]){ seen[k]=1; regs.push(k); }
+        break;                                  /* one reg per row, first wins */
+      }
+    }
+  }
+  return regs;
+}
+function ins3SheetMap(){
+  const m={};
+  for(let i=0;i<INS3.rows.length;i++) m[ins3Key(INS3.rows[i][C3.reg])]=i;
+  return m;
+}
+function ins3SheetApply(regs, name){
+  const map=ins3SheetMap();
+  const idx=[], missing=[];
+  for(let n=0;n<regs.length;n++){
+    const i=map[regs[n]];
+    if(i==null) missing.push(regs[n]); else idx.push(i);
+  }
+  INS3.sheet={on:true, name:name, regs:regs, idx:idx, missing:missing, fetching:false};
+  try{ localStorage.setItem('ins3_sheet', JSON.stringify({day:ins3Today(), name:name, regs:regs})); }catch(e){}
+  INS3.shown=120; ins3Deselect(); ins3Render();
+  ins3Toast(idx.length+' of '+regs.length+' aapki sheet ke order me lag gaye','good');
+  if(missing.length && missing.length<=60) ins3SheetFetch();      /* pull the rest from the server */
+}
+/* The regs her sheet has but the device window does not — ask the server for
+   each, in order, and slot them into place. Existing inscrm3_find route. */
+function ins3SheetFetch(){
+  const sh=INS3.sheet;
+  if(!sh || sh.fetching || !sh.missing.length) return;
+  sh.fetching=true;
+  const todo=sh.missing.slice(0), total=todo.length;
+  (function step(){
+    if(!INS3.sheet || INS3.sheet!==sh){ return; }                  /* sheet replaced */
+    if(!todo.length){
+      sh.fetching=false;
+      /* rebuild idx in sheet order against the grown row set */
+      const map=ins3SheetMap(); sh.idx=[]; sh.missing=[];
+      for(let n=0;n<sh.regs.length;n++){
+        const i=map[sh.regs[n]];
+        if(i==null) sh.missing.push(sh.regs[n]); else sh.idx.push(i);
+      }
+      ins3Render();
+      ins3Toast(sh.missing.length
+        ? (sh.missing.length+' reg server par bhi nahi mile — baaki order me hai')
+        : 'Poori sheet order me taiyaar hai ✓','good');
+      return;
+    }
+    const reg=todo.shift();
+    const bar=document.getElementById('ins3-sheetbar');
+    if(bar && bar.firstChild) ins3SheetBarPaint('Server se la rahe hain… '+(total-todo.length)+' / '+total);
+    jgetRaw('inscrm3_find', {q:reg, owner:ins3Me()}, function(res){
+      if(res && res.ok!==false && Array.isArray(res.rows)){
+        if(!INS3._regSet){
+          INS3._regSet={};
+          for(let i=0;i<INS3.rows.length;i++) INS3._regSet[ins3Key(INS3.rows[i][C3.reg])]=1;
+        }
+        for(let i=0;i<res.rows.length;i++){
+          const r=res.rows[i], k=ins3Key(r[C3.reg]);
+          if(!k || INS3._regSet[k]) continue;
+          const hay=[r[C3.reg], r[C3.cust], r[C3.mob], r[C3.alt], r[C3.model],
+                     r[C3.chassis], r[C3.engine], r[C3.policy],
+                     r[C3.co], r[C3.city], r[C3.dos], r[C3.loyalty], r[C3.rel]]
+                    .join(' ').toUpperCase();
+          r[C3.hay]=hay;
+          INS3.rows.push(r); INS3.keys.push(ins3Norm(hay));
+          INS3._regSet[k]=1;
+        }
+        INS3.total=INS3.rows.length;
+      }
+      setTimeout(step, 120);
+    }, 30000);
+  })();
+}
+function ins3SheetClear(){
+  INS3.sheet=null;
+  try{ localStorage.removeItem('ins3_sheet'); }catch(e){}
+  INS3.shown=120; ins3Deselect(); ins3Render();
+}
+function ins3SheetToggle(){
+  if(INS3.sheet){ INS3.sheet.on=!INS3.sheet.on; INS3.shown=120; ins3Render(); }
+}
+/* Same-day sheet comes back after a reload or a re-sync (rows get new
+   indexes, so the idx list is rebuilt from the stored regs). */
+function ins3SheetRestore(){
+  let st=null;
+  try{ st=JSON.parse(localStorage.getItem('ins3_sheet')||'null'); }catch(e){}
+  if(!st || st.day!==ins3Today() || !Array.isArray(st.regs) || !st.regs.length){ return; }
+  const map=ins3SheetMap();
+  const idx=[], missing=[];
+  for(let n=0;n<st.regs.length;n++){
+    const i=map[st.regs[n]];
+    if(i==null) missing.push(st.regs[n]); else idx.push(i);
+  }
+  INS3.sheet={on:true, name:st.name||'list', regs:st.regs, idx:idx, missing:missing, fetching:false};
+}
+function ins3SheetBarPaint(status){
+  const el=document.getElementById('ins3-sheetbar'); if(!el) return;
+  const sh=INS3.sheet;
+  if(!sh){ el.innerHTML=''; return; }
+  el.innerHTML='<div class="ins3-sheetbar">'
+    +'<span>📥 '+ins3Esc(sh.name)+' — <b>'+sh.idx.length+'</b> customer, '
+    +'<b>aapki sheet ke order me</b>'
+    +(sh.missing.length?' · '+sh.missing.length+' nahi mile':'')
+    +(status?' · '+ins3Esc(status):'')+'</span>'
+    +'<span style="flex:1"></span>'
+    +'<button style="background:'+(sh.on?'#312e81':'#e0e7ff')+';color:'+(sh.on?'#fff':'#312e81')+'" onclick="ins3SheetToggle()">'
+      +(sh.on?'Sheet order ✓ ON':'Sheet order OFF')+'</button>'
+    +'<button style="background:#fee2e2;color:#b91c1c" onclick="ins3SheetClear()">✕ Hatao</button>'
+  +'</div>';
+}
+
+/* ===========================================================================
+   R37 — THE PILE. "SMREs like Excel because they can see their own work pile
+   up one by one on the screen." Every saved outcome lands in this rail card
+   instantly — green converted, light red hot, yellow warm, plain cold. One
+   store shared with Focus Mode (insf_feed, survives reload for the day).
+   =========================================================================== */
+function ins3PileCls(group, won){
+  if(won) return 'won';
+  if(group==='In progress') return 'hot';
+  if(group==='No response') return 'warm';
+  return 'cold';
+}
+function ins3PileEnsure(){
+  if(!INSF._fed){ insfFeedLoad(); INSF._fed=true; }
+}
+function ins3PileAdd(r, code, label, cls, prem, note){
+  ins3PileEnsure();
+  const d=new Date();
+  INSF.feed.unshift({tm:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'),
+    nm:(r[C3.cust]||r[C3.reg]||''), reg:r[C3.reg]||'', cls:cls, code:code, lb:label,
+    prem:prem||'', note:note||''});
+  insfFeedSave();
+  ins3PaintPile(true);
+  if(typeof insfPaintScore==='function' && document.getElementById('insf')) insfPaintScore(cls);
+}
+function ins3PaintPile(fresh){
+  const el=document.getElementById('ins3-pile'); if(!el) return;
+  ins3PileEnsure();
+  const f=INSF.feed;
+  let rows='';
+  for(let n=0;n<f.length;n++){
+    const it=f[n];
+    rows+='<div class="ins3-pr '+(it.cls||'')+'" onclick="this.classList.toggle(\'open\')">'
+      +'<div class="l1">'
+        +'<span class="nm">'+(n+1<10?'&nbsp;':'')+(f.length-n)+'. '+ins3Esc(it.nm)+'</span>'
+        +'<span class="tg '+(it.cls||'cold')+'">'+ins3Esc(it.lb||it.code||'')+'</span>'
+        +'<span class="tm">'+ins3Esc(it.tm||'')+'</span>'
+      +'</div>'
+      +'<div class="l2">'+ins3Esc(it.reg||'')
+        +(it.prem?' · ₹'+ins3Esc(it.prem):'')
+        +(it.note?' · '+ins3Esc(it.note):'')
+      +'</div>'
+    +'</div>';
+  }
+  el.innerHTML='<div class="ins3-pilecard">'
+    +'<div class="ins3-pilehead"><b>📋 Aaj ka kaam</b><span>'+f.length+' calls</span></div>'
+    +(f.length
+      ? '<div class="ins3-pilerows">'+rows+'</div>'
+      : '<div style="font-size:12px;font-weight:700;color:#64748b">Outcome save karo — har call yahan pile hogi, Excel jaisi.</div>')
+  +'</div>';
+}
+
+/* R37 — market comparison: what the aggregators would quote for this reg, so
+   she can beat it on the same screen. The sites cannot be read by code from a
+   browser (login + CORS); the button copies the reg and opens ONE reused tab,
+   she reads the price and types the best one back — it stays with the
+   customer on this device. */
+const INS3_AGG={
+  pb:['Policybazaar','https://www.policybazaar.com/motor-insurance/two-wheeler-insurance/'],
+  gd:['Go Digit','https://www.godigit.com/bike-insurance'],
+  id:['InsuranceDekho','https://www.insurancedekho.com/bike-insurance'],
+  cf:['Coverfox','https://www.coverfox.com/two-wheeler-insurance/']
+};
+function ins3Agg(i,k){
+  const r=INS3.rows[i], a=INS3_AGG[k]; if(!r||!a) return;
+  if(r[C3.reg] && navigator.clipboard) navigator.clipboard.writeText(String(r[C3.reg]));
+  window.open(a[1],'hero_agg');
+  ins3Toast('Reg no copy ho gaya — '+a[0]+' par paste karo, phir isi tab par wapas','good');
+}
+function ins3MktAll(){
+  try{ return JSON.parse(localStorage.getItem('ins3_mkt')||'{}'); }catch(e){ return {}; }
+}
+function ins3MktSave(i,v){
+  const r=INS3.rows[i]; if(!r) return;
+  const m=ins3MktAll();
+  const k=ins3Key(r[C3.reg]);
+  if(String(v||'').trim()) m[k]=String(v).trim(); else delete m[k];
+  try{ localStorage.setItem('ins3_mkt', JSON.stringify(m)); }catch(e){}
+  ins3PaintDetail();
+}
 
 /* ===========================================================================
    R35 — FOCUS CALL MODE v2 (full UI rebuild, 07-Aug-2026)
@@ -16500,12 +16887,10 @@ function insfFeedLoad(){
   }catch(e){}
 }
 function insfFeedSave(){ try{ localStorage.setItem('insf_feed',JSON.stringify({day:ins3Today(),items:INSF.feed.slice(0,60)})); }catch(e){} }
-function insfFeedAdd(r,o){
-  var d=new Date();
-  INSF.feed.unshift({tm:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'),
-    nm:(r[C3.cust]||r[C3.reg]||''), cls:o.cls, code:o.code, lb:o.t[INSF.lang]||o.t.en});
-  insfFeedSave();
-  insfPaintScore(o.cls);
+/* R37: one pile everywhere. Focus-mode outcomes land in the same store the
+   Hub rail paints, with reg/premium/note so the pile row can expand. */
+function insfFeedAdd(r,o,prem,note){
+  ins3PileAdd(r, o.code, o.t[INSF.lang]||o.t.en, o.cls, prem||'', note||'');
 }
 function insfStats(){
   var s={calls:INSF.feed.length,won:0,quote:0,cb:0,nr:0,lo:0};
@@ -16836,7 +17221,7 @@ function insfCommit(code,prem,note){
   clearTimeout(INSF.idleT);
   INSF.session++;
   /* the tap lands on screen FIRST — scoreboard bumps, feed slides in */
-  if(o) insfFeedAdd(r,o); else insfPaintScore('');
+  if(o) insfFeedAdd(r,o,prem,note); else insfPaintScore('');
   insfCelebrate(code, disp);
 }
 function insfCelebrate(code, disp){
