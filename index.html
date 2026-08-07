@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 30;
-window.HERO_BUILD = 'R34-2026.08.07.1';
+window.HERO_RELEASE = 31;
+window.HERO_BUILD = 'R35-2026.08.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -16208,99 +16208,269 @@ function ins3Save(){
 function ins3Sync(force){ ins3Load(!!force); }
 
 /* ===========================================================================
-   R34 — FOCUS CALL MODE ("Chalo, shuru karte hai!")
-   Ravi, 07-Aug-2026: the R28 screen is a CEO screen. An SMRE calling 100
-   customers a day needs ONE customer on screen at a time, 8 single-click
-   outcome buttons, a mascot that reacts, and nothing to read or scroll.
-   Duolingo, not a dashboard.
-
-   Additive on top of R28: the list screen is untouched and stays as the
-   search / manager view. This block only ADDS a full-screen overlay driven
-   by the same INS3 book, the same inscrm2_save and inscrm2_lock routes, so
-   the backend needs nothing new. Delete this block and R28 is exactly back.
+   R35 — FOCUS CALL MODE v2 (full UI rebuild, 07-Aug-2026)
+   Ravi's rulings behind this rebuild:
+   * NOTHING endless-scrolls. The screen is an app frame: header / stage /
+     footer, all visible at once. Every tap changes something ON SCREEN
+     IMMEDIATELY (scoreboard bumps, feed entry slides in, sheet opens).
+   * "Aur options…" is gone. 8 buttons only. Where detail is needed the
+     button opens a small dependent sheet (premium / callback time) —
+     one more tap, zero confusion.
+   * ONE language switch (EN / हिंदी / मराठी) drives the whole screen AND the
+     call script. Dictionary-based so Tamil/Kannada etc. can be added later
+     by adding one object.
+   * A PDF (policy quote etc.) can be attached per customer and sent WITH
+     the WhatsApp message via the phone's native share sheet. On desktop the
+     app keeps ONE named WhatsApp-Web tab (login once, reused for every
+     send). web.whatsapp.com cannot be embedded in an iframe (their
+     X-Frame-Options forbids it) — the named tab is the honest equivalent.
+   * Hero portal opens in its own named tab with the chassis number already
+     on the clipboard — go out, generate, come back, Amazon-style.
+   Backend untouched: same inscrm2_save / inscrm2_lock, same disposition
+   codes from ModulesR23.gs. Delete this block and R28 is exactly back.
    =========================================================================== */
 var INSF = { on:false, q:[], pos:0, session:0,
              lang: localStorage.getItem('insf_lang') || 'hi',
-             idleT:null, cssDone:false };
+             idleT:null, cssDone:false, doc:null, cbWhen:'', feed:[] };
 
-/* The 8 big buttons. Codes are the EXISTING dispositions from ModulesR23.gs —
-   nothing new for the backend to validate. "More…" opens the full list. */
+/* ------------------------------ languages ---------------------------------
+   Add a language = add one object here + one entry in INSF_LANGS. */
+var INSF_LANGS = [ ['en','English'], ['hi','हिंदी'], ['mr','मराठी'] ];
+var INSF_T = {
+en:{ cust:'Customer', aaj:'Today', excel:'Excel', call:'📞 CALL', wa:'🟢 WhatsApp',
+  waPdf:'🟢 WhatsApp + PDF', attach:'📎 Attach PDF', portal:'🔗 Hero Portal',
+  waweb:'💻 WhatsApp Web (login once)', copy:'📋 Copy script', copied:'Script copied ✓',
+  result:'Call result — one tap', premT:'Premium amount?', premP:'₹ amount',
+  cbT:'Call back when?', note:'Short note (optional)', save:'Save & next ✓',
+  saveNo:'Save without detail', prev:'‹ Previous', skip:'Skip — next ›',
+  done:'🎉 List finished!', doneSub:'calls this session. Great work!',
+  back:'Back to list', sCalls:'Calls', sWon:'Won', sQuote:'Quotes', sCb:'Call back',
+  sNr:'No answer', sLo:'Closed', feedT:'Aaj ke results', feedNone:'Tap an outcome — it appears here instantly.',
+  chips:['Today evening','Tomorrow morning','Tomorrow evening','After 2 days'],
+  idle:'😠 Arre! Call the customer — they are waiting!', lockedBy:'is already on this customer — Skip!',
+  noMob:'📵 No mobile', attDone:'PDF attached ✓ — it will go with WhatsApp', attGone:'Attachment removed',
+  pdfHelp:'PDF downloaded — drag it into the WhatsApp chat window', portalAsk:'Paste the Hero portal link once. It will open in its own tab; this app stays here.',
+  portalGo:'Chassis copied — paste in portal, then come back to this tab',
+  celWon:'🎉 RENEWED!', celWonS:'Superb! Party banti hai!', celMileS:'What speed! Keep going!',
+  moodA:'🔥 High chance! Call now!', moodB:'👍 Good chance — try it!', moodC:'🤔 Tough one… one try banta hai!',
+  savedOk:'Saved ✓', savedNext:'Next customer…' },
+hi:{ cust:'कस्टमर', aaj:'आज', excel:'Excel', call:'📞 कॉल करो', wa:'🟢 WhatsApp',
+  waPdf:'🟢 WhatsApp + PDF', attach:'📎 PDF लगाओ', portal:'🔗 हीरो पोर्टल',
+  waweb:'💻 WhatsApp Web (एक बार लॉगिन)', copy:'📋 स्क्रिप्ट कॉपी', copied:'स्क्रिप्ट कॉपी हो गई ✓',
+  result:'कॉल का रिज़ल्ट — एक क्लिक', premT:'प्रीमियम कितना?', premP:'₹ रकम',
+  cbT:'कब कॉल करें?', note:'छोटा नोट (ज़रूरी नहीं)', save:'सेव करो — अगला ✓',
+  saveNo:'बिना डिटेल सेव', prev:'‹ पिछला', skip:'स्किप — अगला ›',
+  done:'🎉 लिस्ट खत्म!', doneSub:'कॉल इस सेशन में। बहुत बढ़िया!',
+  back:'लिस्ट पर वापस', sCalls:'कॉल', sWon:'रिन्यू', sQuote:'क्वोट', sCb:'कॉल बैक',
+  sNr:'नहीं उठा', sLo:'बंद', feedT:'आज के रिज़ल्ट', feedNone:'रिज़ल्ट दबाओ — यहाँ तुरंत दिखेगा।',
+  chips:['आज शाम','कल सुबह','कल शाम','2 दिन बाद'],
+  idle:'😠 अरे! कॉल करो ना! कस्टमर इंतज़ार कर रहा है!', lockedBy:'इसी कस्टमर पर है — स्किप करो!',
+  noMob:'📵 मोबाइल नहीं है', attDone:'PDF लग गया ✓ — WhatsApp के साथ जाएगा', attGone:'PDF हटा दिया',
+  pdfHelp:'PDF डाउनलोड हो गया — WhatsApp चैट में खींच कर डालो', portalAsk:'हीरो पोर्टल का लिंक एक बार पेस्ट करो। वो अपने टैब में खुलेगा; ये app यहीं रहेगा।',
+  portalGo:'चेसिस कॉपी हो गया — पोर्टल में पेस्ट करो, फिर इसी टैब पर वापस आओ',
+  celWon:'🎉 रिन्यू हो गया!', celWonS:'ज़बरदस्त! पार्टी बनती है!', celMileS:'क्या स्पीड है! आगे बढ़ो!',
+  moodA:'🔥 पक्का chance है! अभी कॉल करो!', moodB:'👍 अच्छा chance है — try करो!', moodC:'🤔 थोड़ा मुश्किल है… एक try बनती है!',
+  savedOk:'सेव हो गया ✓', savedNext:'अगला कस्टमर…' },
+mr:{ cust:'कस्टमर', aaj:'आज', excel:'Excel', call:'📞 कॉल करा', wa:'🟢 WhatsApp',
+  waPdf:'🟢 WhatsApp + PDF', attach:'📎 PDF जोडा', portal:'🔗 हीरो पोर्टल',
+  waweb:'💻 WhatsApp Web (एकदाच लॉगिन)', copy:'📋 स्क्रिप्ट कॉपी', copied:'स्क्रिप्ट कॉपी झाली ✓',
+  result:'कॉलचा रिझल्ट — एक क्लिक', premT:'प्रीमियम किती?', premP:'₹ रक्कम',
+  cbT:'कधी कॉल करू?', note:'छोटी नोट (ऐच्छिक)', save:'सेव्ह करा — पुढचा ✓',
+  saveNo:'डिटेलशिवाय सेव्ह', prev:'‹ मागचा', skip:'स्किप — पुढचा ›',
+  done:'🎉 लिस्ट संपली!', doneSub:'कॉल या सेशनमध्ये. मस्त काम!',
+  back:'लिस्टवर परत', sCalls:'कॉल', sWon:'रिन्यू', sQuote:'क्वोट', sCb:'कॉल बॅक',
+  sNr:'उचलले नाही', sLo:'बंद', feedT:'आजचे रिझल्ट', feedNone:'रिझल्ट दाबा — इथे लगेच दिसेल.',
+  chips:['आज संध्याकाळी','उद्या सकाळी','उद्या संध्याकाळी','2 दिवसांनी'],
+  idle:'😠 अरे! कॉल करा ना! कस्टमर वाट बघतोय!', lockedBy:'याच कस्टमरवर आहे — स्किप करा!',
+  noMob:'📵 मोबाइल नाही', attDone:'PDF जोडला ✓ — WhatsApp सोबत जाईल', attGone:'PDF काढला',
+  pdfHelp:'PDF डाउनलोड झाला — WhatsApp चॅटमध्ये ओढून टाका', portalAsk:'हीरो पोर्टलची लिंक एकदाच पेस्ट करा. ती स्वतःच्या टॅबमध्ये उघडेल; हे app इथेच राहील.',
+  portalGo:'चेसिस कॉपी झाला — पोर्टलमध्ये पेस्ट करा, मग या टॅबवर परत या',
+  celWon:'🎉 रिन्यू झाला!', celWonS:'जबरदस्त! पार्टी पाहिजे!', celMileS:'काय स्पीड आहे! पुढे चला!',
+  moodA:'🔥 नक्की chance आहे! आत्ता कॉल करा!', moodB:'👍 चांगला chance आहे — try करा!', moodC:'🤔 थोडं अवघड आहे… एक try करूया!',
+  savedOk:'सेव्ह झाले ✓', savedNext:'पुढचा कस्टमर…' }
+};
+function insfT(k){ var d=INSF_T[INSF.lang]||INSF_T.hi, v=d[k]; return (v==null)?INSF_T.en[k]:v; }
+
+/* The 8 buttons. Codes are the EXISTING dispositions from ModulesR23.gs.
+   ask: '' = save straight away | 'prem' = premium sheet | 'cb' = callback sheet */
 var INSF_OUT = [
-  {code:'WON_OD_TP',    icon:'🏆', t:'Renew ho gaya!',      s:'Renewed with us',   cls:'won'},
-  {code:'IP_QUOTE_WA',  icon:'📤', t:'Quote bheja',          s:'Sent on WhatsApp',  cls:'hot'},
-  {code:'IP_CALLBACK',  icon:'📅', t:'Call back',            s:'Baad me baat hogi', cls:'hot'},
-  {code:'NR_BUSY',      icon:'⏰', t:'Busy tha',             s:'Asked to call later',cls:'warm'},
-  {code:'NR_RINGING',   icon:'📞', t:'Uthaya nahi',          s:'Ringing, no answer',cls:'warm'},
-  {code:'NR_SWITCHOFF', icon:'🔇', t:'Switch off',           s:'Not reachable',     cls:'warm'},
-  {code:'LO_NOTINT',    icon:'❌', t:'Interested nahi',      s:'Refused',           cls:'cold'},
-  {code:'LO_AGENT',     icon:'🏢', t:'Kahin aur karaya',     s:'Renewed elsewhere', cls:'cold'}
+ {code:'WON_OD_TP',   icon:'🏆', cls:'won',  ask:'prem', t:{en:'Renewed!',hi:'रिन्यू हो गया!',mr:'रिन्यू झाला!'},       s:{en:'with us',hi:'हमारे यहाँ',mr:'आमच्याकडे'}},
+ {code:'IP_QUOTE_WA', icon:'📤', cls:'hot',  ask:'prem', t:{en:'Quote sent',hi:'क्वोट भेजा',mr:'क्वोट पाठवला'},          s:{en:'on WhatsApp',hi:'WhatsApp पर',mr:'WhatsApp वर'}},
+ {code:'IP_CALLBACK', icon:'📅', cls:'hot',  ask:'cb',   t:{en:'Call back',hi:'बाद में बात',mr:'नंतर बोलू'},              s:{en:'fix a time',hi:'समय तय करो',mr:'वेळ ठरवा'}},
+ {code:'NR_BUSY',     icon:'⏰', cls:'warm', ask:'',     t:{en:'Busy',hi:'व्यस्त था',mr:'बिझी होते'},                     s:{en:'call later',hi:'बाद में कॉल',mr:'नंतर कॉल'}},
+ {code:'NR_RINGING',  icon:'📞', cls:'warm', ask:'',     t:{en:'No answer',hi:'उठाया नहीं',mr:'उचलले नाही'},              s:{en:'kept ringing',hi:'बजता रहा',mr:'वाजत राहिला'}},
+ {code:'NR_SWITCHOFF',icon:'🔇', cls:'warm', ask:'',     t:{en:'Switched off',hi:'स्विच ऑफ',mr:'स्विच ऑफ'},               s:{en:'not reachable',hi:'पहुँच के बाहर',mr:'लागत नाही'}},
+ {code:'LO_NOTINT',   icon:'❌', cls:'cold', ask:'',     t:{en:'Not interested',hi:'इंटरेस्ट नहीं',mr:'इंटरेस्ट नाही'},     s:{en:'refused',hi:'मना किया',mr:'नकार दिला'}},
+ {code:'LO_AGENT',    icon:'🏢', cls:'cold', ask:'',     t:{en:'Done elsewhere',hi:'कहीं और कराया',mr:'दुसरीकडे केला'},    s:{en:'other agent',hi:'दूसरा एजेंट',mr:'दुसरा एजंट'}}
 ];
 
 function insfCss(){
   if(INSF.cssDone) return; INSF.cssDone=true;
   var s=document.createElement('style');
   s.textContent=
-  '#insf{position:fixed;inset:0;z-index:99990;background:#f4f6fb;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}'
+  /* app frame: header / body / footer — the PAGE never scrolls */
+  '#insf{position:fixed;inset:0;z-index:99990;background:#eef2f8;display:grid;grid-template-rows:auto 1fr auto;height:100dvh;overflow:hidden}'
   +'#insf *{box-sizing:border-box;min-width:0}'
-  +'.insf-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:5}'
-  +'.insf-x{width:44px;height:44px;border:0;border-radius:12px;background:#f1f5f9;font-size:22px;font-weight:900;color:#0f172a;cursor:pointer;flex:none}'
+  +'.insf-head{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid #cbd5e1}'
+  +'.insf-x{width:42px;height:42px;border:0;border-radius:12px;background:#f1f5f9;font-size:20px;font-weight:900;color:#0f172a;cursor:pointer;flex:none}'
   +'.insf-prog{flex:1;min-width:0}'
-  +'.insf-progt{font-size:13.5px;font-weight:800;color:#0f172a;display:flex;justify-content:space-between;gap:8px}'
-  +'.insf-bar{height:12px;border-radius:999px;background:#e2e8f0;margin-top:5px;overflow:hidden}'
+  +'.insf-progt{font-size:13px;font-weight:800;color:#0f172a;display:flex;justify-content:space-between;gap:8px;white-space:nowrap}'
+  +'.insf-bar{height:10px;border-radius:999px;background:#e2e8f0;margin-top:4px;overflow:hidden}'
   +'.insf-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#16a34a,#4ade80);transition:width .5s}'
-  +'.insf-xls{border:0;border-radius:12px;background:#0f172a;color:#fff;font-weight:800;font-size:13px;padding:0 14px;height:44px;cursor:pointer;flex:none}'
-  +'.insf-stage{flex:1;width:100%;max-width:760px;margin:0 auto;padding:14px 14px 90px;display:flex;flex-direction:column;gap:12px}'
-  +'.insf-masco{display:flex;align-items:flex-end;gap:10px;min-height:86px}'
-  +'.insf-masco img{width:78px;height:78px;object-fit:contain;flex:none}'
-  +'.insf-bub{background:#fff;border:2px solid #e2e8f0;border-radius:16px 16px 16px 4px;padding:10px 14px;font-size:15.5px;font-weight:800;color:#0f172a;line-height:1.35}'
+  +'.insf-lang{border:2px solid #cbd5e1;background:#fff;border-radius:999px;padding:7px 12px;font-size:13px;font-weight:900;color:#0f172a;cursor:pointer;flex:none}'
+  +'.insf-lang.on{background:#0f172a;color:#fff;border-color:#0f172a}'
+  +'.insf-xls{border:0;border-radius:12px;background:#0f172a;color:#fff;font-weight:800;font-size:13px;padding:0 12px;height:42px;cursor:pointer;flex:none}'
+  /* body: stage + (desktop) scoreboard rail */
+  +'.insf-body{display:grid;grid-template-columns:1fr;min-height:0}'
+  +'@media(min-width:980px){.insf-body{grid-template-columns:1fr 340px}}'
+  +'.insf-stage{min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px;width:100%;max-width:780px;margin:0 auto;position:relative}'
+  /* mobile scoreboard strip — the tap lands HERE, visibly, at once */
+  +'.insf-strip{display:flex;gap:6px;padding:8px 12px 0;overflow-x:auto}'
+  +'@media(min-width:980px){.insf-strip{display:none}}'
+  +'.insf-chip{flex:none;border-radius:999px;background:#fff;border:1.5px solid #cbd5e1;padding:6px 11px;font-size:12.5px;font-weight:900;color:#0f172a;white-space:nowrap}'
+  +'.insf-chip b{font-size:14px}'
+  +'.insf-chip.bump{animation:insfBump .45s}'
+  +'@keyframes insfBump{0%{transform:scale(1)}40%{transform:scale(1.25);background:#dcfce7;border-color:#16a34a}100%{transform:scale(1)}}'
+  /* desktop rail */
+  +'.insf-rail{display:none}'
+  +'@media(min-width:980px){.insf-rail{display:flex;flex-direction:column;min-height:0;background:#fff;border-left:1px solid #cbd5e1;padding:12px}}'
+  +'.insf-rtitle{font-size:13px;font-weight:900;color:#0f172a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}'
+  +'.insf-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}'
+  +'.insf-st{border:1.5px solid #cbd5e1;border-radius:12px;padding:8px 6px;text-align:center}'
+  +'.insf-st .n{font-size:22px;font-weight:900;color:#0f172a;line-height:1.1}'
+  +'.insf-st .l{font-size:11px;font-weight:800;color:#334155}'
+  +'.insf-st.bump{animation:insfBump .45s}'
+  +'.insf-feed{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px}'
+  +'.insf-fi{display:flex;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:10px;padding:7px 9px;background:#f8fafc;animation:insfIn .25s}'
+  +'@keyframes insfIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}'
+  +'.insf-fi .nm{flex:1;min-width:0;font-size:13px;font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+  +'.insf-fi .tg{flex:none;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:900}'
+  +'.insf-fi .tm{flex:none;font-size:11px;font-weight:700;color:#334155}'
+  +'.insf-tg-won{background:#dcfce7;color:#166534}.insf-tg-hot{background:#dbeafe;color:#1d4ed8}'
+  +'.insf-tg-warm{background:#fef3c7;color:#92400e}.insf-tg-cold{background:#fee2e2;color:#b91c1c}'
+  +'.insf-wwb{margin-top:10px;border:2px solid #cbd5e1;background:#fff;border-radius:12px;padding:10px;font-size:13px;font-weight:900;color:#0f172a;cursor:pointer}'
+  /* mascot + customer card */
+  +'.insf-masco{display:flex;align-items:flex-end;gap:10px}'
+  +'.insf-masco img{width:64px;height:64px;object-fit:contain;flex:none}'
+  +'.insf-bub{background:#fff;border:2px solid #cbd5e1;border-radius:14px 14px 14px 4px;padding:8px 12px;font-size:14.5px;font-weight:800;color:#0f172a;line-height:1.3}'
   +'.insf-bub.angry{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;animation:insfShake .5s}'
   +'@keyframes insfShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}'
-  +'.insf-card{background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:16px;box-shadow:0 6px 24px rgba(15,23,42,.06)}'
-  +'.insf-nm{font-size:24px;font-weight:900;color:#0f172a;line-height:1.15;word-break:break-word}'
-  +'.insf-rg{font-size:15px;font-weight:700;color:#334155;font-family:ui-monospace,monospace;margin-top:3px}'
-  +'.insf-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}'
-  +'.insf-pill{border-radius:999px;padding:6px 12px;font-size:13.5px;font-weight:900}'
-  +'.insf-why{margin-top:10px;font-size:14px;font-weight:700;color:#0f172a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:8px 12px}'
-  +'.insf-acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}'
-  +'.insf-a{display:flex;align-items:center;justify-content:center;gap:8px;min-height:62px;border-radius:16px;border:0;font-size:18px;font-weight:900;cursor:pointer;text-decoration:none;color:#fff}'
-  +'.insf-a.call{background:#16a34a}'
-  +'.insf-a.wa{background:#059669}'
-  +'.insf-a.off{background:#cbd5e1;color:#475569;pointer-events:none}'
-  +'.insf-langrow{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}'
-  +'.insf-lang{border:2px solid #e2e8f0;background:#fff;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:900;color:#334155;cursor:pointer}'
-  +'.insf-lang.on{background:#0f172a;color:#fff;border-color:#0f172a}'
-  +'.insf-copy{border:2px solid #e2e8f0;background:#fff;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:900;color:#0f172a;cursor:pointer}'
-  +'.insf-sec{font-size:13px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:.4px;margin:4px 2px 0}'
-  +'.insf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}'
+  +'.insf-card{background:#fff;border:1px solid #cbd5e1;border-radius:18px;padding:14px;box-shadow:0 4px 16px rgba(15,23,42,.06)}'
+  +'.insf-nm{font-size:22px;font-weight:900;color:#0f172a;line-height:1.15;word-break:break-word}'
+  +'.insf-rg{font-size:14.5px;font-weight:800;color:#1e293b;font-family:ui-monospace,monospace;margin-top:2px}'
+  +'.insf-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}'
+  +'.insf-pill{border-radius:999px;padding:5px 11px;font-size:13px;font-weight:900}'
+  +'.insf-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}'
+  +'.insf-a{display:flex;align-items:center;justify-content:center;gap:6px;min-height:56px;border-radius:14px;border:0;font-size:17px;font-weight:900;cursor:pointer;text-decoration:none;color:#fff;text-align:center}'
+  +'.insf-a.call{background:#16a34a}.insf-a.wa{background:#059669}'
+  +'.insf-a.off{background:#cbd5e1;color:#334155;pointer-events:none}'
+  +'.insf-tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}'
+  +'.insf-tool{display:flex;align-items:center;justify-content:center;gap:6px;min-height:46px;border-radius:12px;border:2px solid #cbd5e1;background:#fff;font-size:14px;font-weight:900;color:#0f172a;cursor:pointer}'
+  +'.insf-tool.onchip{border-color:#16a34a;background:#f0fdf4;color:#166534}'
+  +'.insf-scr{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}'
+  /* outcomes */
+  +'.insf-sec{font-size:12.5px;font-weight:900;color:#1e293b;text-transform:uppercase;letter-spacing:.4px;margin:2px 2px 0}'
+  +'.insf-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}'
   +'@media(min-width:640px){.insf-grid{grid-template-columns:repeat(4,1fr)}}'
-  +'.insf-o{min-height:76px;border-radius:16px;border:2px solid #e2e8f0;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 6px;transition:transform .08s}'
-  +'.insf-o:active{transform:scale(.96)}'
-  +'.insf-o .i{font-size:24px;line-height:1}'
-  +'.insf-o .t{font-size:14.5px;font-weight:900;color:#0f172a;text-align:center;line-height:1.15}'
-  +'.insf-o .s{font-size:11px;font-weight:700;color:#64748b;text-align:center}'
-  +'.insf-o.won{border-color:#86efac;background:#f0fdf4}'
-  +'.insf-o.hot{border-color:#bfdbfe;background:#eff6ff}'
-  +'.insf-o.warm{border-color:#fde68a;background:#fffbeb}'
-  +'.insf-o.cold{border-color:#fecaca;background:#fef2f2}'
-  +'.insf-ins{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px}'
-  +'.insf-in{border:2px solid #e2e8f0;border-radius:12px;padding:12px;font-size:15px;font-weight:700;color:#0f172a;width:100%}'
-  +'.insf-more{border:0;background:none;color:#2563eb;font-size:14px;font-weight:900;cursor:pointer;padding:8px;text-align:center}'
-  +'.insf-morewrap{display:none}'
-  +'.insf-morewrap.on{display:block}'
-  +'.insf-md{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}'
-  +'.insf-md button{border:1.5px solid #e2e8f0;background:#fff;border-radius:999px;padding:8px 12px;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer}'
-  +'.insf-foot{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e2e8f0;display:flex;gap:10px;padding:10px 14px;z-index:6}'
-  +'.insf-foot button{flex:1;min-height:56px;border:0;border-radius:14px;font-size:16.5px;font-weight:900;cursor:pointer}'
-  +'.insf-prev{background:#e2e8f0;color:#0f172a}'
-  +'.insf-skip{background:#f43f5e;color:#fff}'
-  +'.insf-flash{position:fixed;inset:0;z-index:99995;background:rgba(244,246,251,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px}'
-  +'.insf-flash img{width:150px;height:150px;object-fit:contain;animation:insfPop .45s}'
+  +'.insf-o{min-height:64px;border-radius:14px;border:2px solid #cbd5e1;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 4px;transition:transform .08s}'
+  +'.insf-o:active{transform:scale(.94)}'
+  +'.insf-o .i{font-size:21px;line-height:1}'
+  +'.insf-o .t{font-size:13.5px;font-weight:900;color:#0f172a;text-align:center;line-height:1.15}'
+  +'.insf-o .s{font-size:10.5px;font-weight:800;color:#334155;text-align:center}'
+  +'.insf-o.won{border-color:#86efac;background:#f0fdf4}.insf-o.hot{border-color:#bfdbfe;background:#eff6ff}'
+  +'.insf-o.warm{border-color:#fde68a;background:#fffbeb}.insf-o.cold{border-color:#fecaca;background:#fef2f2}'
+  /* dependent sheet — slides up INSIDE the frame the moment a button needs detail */
+  +'.insf-sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:2px solid #0f172a;border-radius:18px 18px 0 0;box-shadow:0 -12px 40px rgba(15,23,42,.25);padding:14px;transform:translateY(105%);transition:transform .18s;z-index:8}'
+  +'.insf-sheet.on{transform:none}'
+  +'.insf-sht{font-size:17px;font-weight:900;color:#0f172a;margin-bottom:10px}'
+  +'.insf-in{border:2px solid #cbd5e1;border-radius:12px;padding:12px;font-size:16px;font-weight:800;color:#0f172a;width:100%;margin-bottom:8px}'
+  +'.insf-cbrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}'
+  +'.insf-cb{border:2px solid #cbd5e1;background:#fff;border-radius:12px;min-height:48px;font-size:14.5px;font-weight:900;color:#0f172a;cursor:pointer}'
+  +'.insf-cb.on{border-color:#1d4ed8;background:#dbeafe;color:#1d4ed8}'
+  +'.insf-shbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px}'
+  +'.insf-shsave{border:0;border-radius:12px;min-height:52px;background:#16a34a;color:#fff;font-size:16px;font-weight:900;cursor:pointer}'
+  +'.insf-shno{border:2px solid #cbd5e1;border-radius:12px;min-height:52px;background:#fff;color:#0f172a;font-size:14px;font-weight:900;cursor:pointer}'
+  /* footer */
+  +'.insf-foot{display:flex;gap:8px;padding:8px 12px;background:#fff;border-top:1px solid #cbd5e1}'
+  +'.insf-foot button{flex:1;min-height:52px;border:0;border-radius:13px;font-size:16px;font-weight:900;cursor:pointer}'
+  +'.insf-prev{background:#e2e8f0;color:#0f172a}.insf-skip{background:#f43f5e;color:#fff}'
+  /* celebrate flash */
+  +'.insf-flash{position:fixed;inset:0;z-index:99995;background:rgba(238,242,248,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px}'
+  +'.insf-flash img{width:130px;height:130px;object-fit:contain;animation:insfPop .4s}'
   +'@keyframes insfPop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1)}}'
-  +'.insf-flash .b{font-size:26px;font-weight:900;color:#0f172a}'
-  +'.insf-flash .s{font-size:15px;font-weight:700;color:#475569}'
-  +'.insf-fin{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:40px 20px}'
-  +'.insf-fin img{width:170px;height:170px;object-fit:contain}';
+  +'.insf-flash .b{font-size:24px;font-weight:900;color:#0f172a}'
+  +'.insf-flash .s{font-size:15px;font-weight:800;color:#1e293b}'
+  +'.insf-fin{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:30px 20px}'
+  +'.insf-fin img{width:150px;height:150px;object-fit:contain}'
+  /* script preview: 2 lines, tap = full text right there */
+  +'.insf-scrtxt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}'
+  +'.insf-scrtxt.open{-webkit-line-clamp:unset}'
+  /* compact phones: everything on one screen, no stage scroll */
+  +'@media(max-width:640px){'
+   +'.insf-stage{gap:7px;padding:8px 10px 10px}'
+   +'.insf-masco img{width:44px;height:44px}'
+   +'.insf-bub{font-size:12.5px;padding:5px 9px;border-radius:12px 12px 12px 4px}'
+   +'.insf-card{padding:10px;border-radius:14px}'
+   +'.insf-nm{font-size:18px}'
+   +'.insf-rg{font-size:13px}'
+   +'.insf-pill{padding:3px 9px;font-size:11.5px}'
+   +'.insf-row{gap:4px;margin-top:6px}'
+   +'.insf-acts{margin-top:8px;gap:6px}.insf-a{min-height:48px;font-size:15px;border-radius:12px}'
+   +'.insf-tools{margin-top:6px;gap:6px}.insf-tool{min-height:38px;font-size:12.5px}'
+   +'.insf-scr{margin-top:6px}.insf-scr .insf-scrtxt{font-size:12px}'
+   +'.insf-grid{gap:6px}.insf-o{min-height:54px;border-radius:12px}'
+   +'.insf-o .i{font-size:17px}.insf-o .t{font-size:12.5px}.insf-o .s{font-size:9.5px}'
+   +'.insf-foot{padding:6px 10px}.insf-foot button{min-height:46px;font-size:14.5px}'
+   +'.insf-strip{padding:6px 10px 0}.insf-chip{padding:4px 9px;font-size:11.5px}'
+   +'.insf-head{padding:6px 10px}.insf-x{width:38px;height:38px}.insf-xls{height:38px}.insf-lang{padding:5px 9px;font-size:12px}'
+  +'}';
   document.head.appendChild(s);
+}
+
+/* -------------------- per-customer document store (IndexedDB) -------------- */
+function insfDb(cb){
+  try{
+    var rq=indexedDB.open('insf_docs',1);
+    rq.onupgradeneeded=function(e){ e.target.result.createObjectStore('docs'); };
+    rq.onsuccess=function(e){ cb(e.target.result); };
+    rq.onerror=function(){ cb(null); };
+  }catch(e){ cb(null); }
+}
+function insfDocPut(reg,file,cb){ insfDb(function(db){ if(!db){cb(false);return;}
+  var tx=db.transaction('docs','readwrite'); tx.objectStore('docs').put(file,ins3Key(reg));
+  tx.oncomplete=function(){cb(true)}; tx.onerror=function(){cb(false)}; }); }
+function insfDocGet(reg,cb){ insfDb(function(db){ if(!db){cb(null);return;}
+  var rq=db.transaction('docs').objectStore('docs').get(ins3Key(reg));
+  rq.onsuccess=function(){cb(rq.result||null)}; rq.onerror=function(){cb(null)}; }); }
+function insfDocDel(reg,cb){ insfDb(function(db){ if(!db){cb&&cb();return;}
+  var tx=db.transaction('docs','readwrite'); tx.objectStore('docs')['delete'](ins3Key(reg));
+  tx.oncomplete=function(){cb&&cb()}; tx.onerror=function(){cb&&cb()}; }); }
+
+/* ------------------- today's feed (survives a reload) ---------------------- */
+function insfFeedLoad(){
+  INSF.feed=[];
+  try{ var j=JSON.parse(localStorage.getItem('insf_feed')||'null');
+    if(j && j.day===ins3Today() && j.items && j.items.length) INSF.feed=j.items;
+  }catch(e){}
+}
+function insfFeedSave(){ try{ localStorage.setItem('insf_feed',JSON.stringify({day:ins3Today(),items:INSF.feed.slice(0,60)})); }catch(e){} }
+function insfFeedAdd(r,o){
+  var d=new Date();
+  INSF.feed.unshift({tm:String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'),
+    nm:(r[C3.cust]||r[C3.reg]||''), cls:o.cls, code:o.code, lb:o.t[INSF.lang]||o.t.en});
+  insfFeedSave();
+  insfPaintScore(o.cls);
+}
+function insfStats(){
+  var s={calls:INSF.feed.length,won:0,quote:0,cb:0,nr:0,lo:0};
+  for(var i=0;i<INSF.feed.length;i++){ var c=INSF.feed[i].code||'';
+    if(INSF.feed[i].cls==='won') s.won++;
+    else if(c==='IP_QUOTE_WA') s.quote++;
+    else if(c==='IP_CALLBACK') s.cb++;
+    else if(c.indexOf('NR_')===0) s.nr++;
+    else if(c.indexOf('LO_')===0) s.lo++;
+  }
+  return s;
 }
 
 /* --------------------------- queue and lifecycle --------------------------- */
@@ -16310,15 +16480,34 @@ function insfStart(){
   var view=ins3Filter(), today=ins3Today(), q=[];
   for(var vi=0; vi<view.length; vi++){
     var i=view[vi], r=INS3.rows[i], s=INS3.state[ins3Key(r[C3.reg])]||{};
-    if(s.won) continue;                                  /* already renewed */
-    if(s.status && s.status.indexOf('LO_')===0) continue;/* closed lost */
-    if(s.lastCall===today) continue;                     /* done today */
+    if(s.won) continue;
+    if(s.status && s.status.indexOf('LO_')===0) continue;
+    if(s.lastCall===today) continue;
     q.push(i);
   }
   if(!q.length){ ins3Toast('Is list me aaj ke liye sab ho gaya! 🎉','good'); return; }
   INSF.q=q; INSF.pos=0; INSF.session=0; INSF.on=true;
-  insfCss();
-  var el=document.createElement('div'); el.id='insf'; document.body.appendChild(el);
+  insfCss(); insfFeedLoad();
+  var el=document.createElement('div'); el.id='insf';
+  el.innerHTML=
+    '<div>'
+     +'<div class="insf-head">'
+      +'<button class="insf-x" onclick="insfClose()" title="Close">✕</button>'
+      +'<div class="insf-prog"><div class="insf-progt" id="insf-progt"></div><div class="insf-bar"><i id="insf-bari"></i></div></div>'
+      +'<span id="insf-langs"></span>'
+      +'<button class="insf-xls" onclick="insfExcel()">⬇ Excel</button>'
+     +'</div>'
+     +'<div class="insf-strip" id="insf-strip"></div>'
+    +'</div>'
+    +'<div class="insf-body">'
+     +'<div class="insf-stage" id="insf-stage"></div>'
+     +'<div class="insf-rail" id="insf-rail"></div>'
+    +'</div>'
+    +'<div class="insf-foot">'
+     +'<button class="insf-prev" id="insf-prevb" onclick="insfPrev()"></button>'
+     +'<button class="insf-skip" id="insf-skipb" onclick="insfSkip()"></button>'
+    +'</div>';
+  document.body.appendChild(el);
   document.body.style.overflow='hidden';
   insfShow();
 }
@@ -16333,9 +16522,9 @@ function insfClose(){
   ins3LoadStates(); ins3Render();
 }
 function insfCur(){ return (INSF.pos<INSF.q.length) ? INS3.rows[INSF.q[INSF.pos]] : null; }
-
-/* ------------------------------ the language ------------------------------ */
 function insfLang(l){ INSF.lang=l; try{localStorage.setItem('insf_lang',l);}catch(e){} insfShow(true); }
+
+/* ------------------------------ call script -------------------------------- */
 function insfWhen(r){
   var k=(r[C3.expDay]==null)?null:(r[C3.expDay]-INS3.todayDay), L=INSF.lang;
   if(k==null) return {en:'soon',hi:'jald hi',mr:'लवकरच'}[L]||'soon';
@@ -16345,97 +16534,190 @@ function insfWhen(r){
 }
 function insfScript(r){
   var nm=(r[C3.cust]||'').split(' ')[0]||'', md=r[C3.model]||'two-wheeler', rg=r[C3.reg]||'', me=ins3MyName().split(' ')[0], w=insfWhen(r);
-  if(INSF.lang==='hi') return 'नमस्ते '+nm+' जी! 🙏 Sehgal Autoriders (Hero), चिंचवड से '+me+' — आपकी '+md+' ('+rg+') का इंश्योरेंस '+w+'। हम बेस्ट प्राइस में उसी दिन रिन्यू कर देते हैं और क्लेम में पूरी मदद करते हैं। क्या मैं आपको quote WhatsApp कर दूँ?';
-  if(INSF.lang==='mr') return 'नमस्कार '+nm+' जी! 🙏 Sehgal Autoriders (Hero), चिंचवड कडून '+me+' — तुमच्या '+md+' ('+rg+') चा इन्शुरन्स '+w+'. आम्ही बेस्ट किंमतीत त्याच दिवशी रिन्यू करून देतो आणि क्लेमला पूर्ण मदत करतो. मी तुम्हाला quote WhatsApp करू का?';
+  if(INSF.lang==='hi') return 'नमस्ते '+nm+' जी! 🙏 Sehgal Autoriders (हीरो), चिंचवड से '+me+' — आपकी '+md+' ('+rg+') का इंश्योरेंस '+w+'। हम बेस्ट प्राइस में उसी दिन रिन्यू कर देते हैं और क्लेम में पूरी मदद करते हैं। क्या मैं आपको quote WhatsApp कर दूँ?';
+  if(INSF.lang==='mr') return 'नमस्कार '+nm+' जी! 🙏 Sehgal Autoriders (हीरो), चिंचवड कडून '+me+' — तुमच्या '+md+' ('+rg+') चा इन्शुरन्स '+w+'. आम्ही बेस्ट किंमतीत त्याच दिवशी रिन्यू करून देतो आणि क्लेमला पूर्ण मदत करतो. मी तुम्हाला quote WhatsApp करू का?';
   return 'Namaste '+nm+' ji! 🙏 This is '+me+' from Sehgal Autoriders (Hero), Chinchwad. The insurance of your '+md+' ('+rg+') is '+w+'. We renew it the same day at the best price, with full claim support. Shall I WhatsApp you the quote?';
-}
-function insfWa(){
-  var r=insfCur(); if(!r||!r[C3.mob]) return;
-  window.open('https://wa.me/91'+r[C3.mob]+'?text='+encodeURIComponent(insfScript(r)),'_blank','noopener');
 }
 function insfCopyScript(){
   var r=insfCur(); if(!r) return;
-  if(navigator.clipboard) navigator.clipboard.writeText(insfScript(r)).then(function(){ ins3Toast('Script copy ho gaya — WhatsApp me paste karo','good'); });
+  if(navigator.clipboard) navigator.clipboard.writeText(insfScript(r)).then(function(){ ins3Toast(insfT('copied'),'good'); });
   else ins3Toast('Copy not available on this browser','bad');
 }
 
-/* -------------------------------- painting -------------------------------- */
+/* ------------------------------- WhatsApp ----------------------------------
+   Mobile: native share sheet carries PDF + message together into WhatsApp.
+   Desktop: ONE named WhatsApp-Web tab (login once, every send reuses it);
+   with a PDF we download it + copy the message so it is drag-and-paste. */
+function insfIsMobile(){ return /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent); }
+function insfWaWeb(){ window.open('https://web.whatsapp.com','hero_wa'); }
+function insfWaChat(r,txt){
+  if(insfIsMobile()) window.open('https://wa.me/91'+r[C3.mob]+'?text='+encodeURIComponent(txt),'_blank','noopener');
+  else window.open('https://web.whatsapp.com/send?phone=91'+r[C3.mob]+'&text='+encodeURIComponent(txt),'hero_wa');
+}
+function insfSend(){
+  var r=insfCur(); if(!r||!r[C3.mob]) return;
+  var txt=insfScript(r);
+  insfDocGet(r[C3.reg],function(f){
+    if(f && navigator.canShare && navigator.share){
+      var ok=false;
+      try{ ok=navigator.canShare({files:[f]}); }catch(e){ ok=false; }
+      if(ok){
+        navigator.share({files:[f],text:txt}).then(function(){},function(){ insfSendFallback(r,txt,f); });
+        return;
+      }
+    }
+    if(f) insfSendFallback(r,txt,f); else insfWaChat(r,txt);
+  });
+}
+function insfSendFallback(r,txt,f){
+  /* download the doc + open the chat with the message prefilled;
+     WhatsApp Web takes the file by drag or Ctrl+V */
+  try{
+    var a=document.createElement('a'); a.href=URL.createObjectURL(f);
+    a.download=f.name||'quote.pdf'; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500);
+  }catch(e){}
+  insfWaChat(r,txt);
+  ins3Toast(insfT('pdfHelp'),'good');
+}
+
+/* -------------------------------- documents -------------------------------- */
+function insfAttach(){ var i=document.getElementById('insf-file'); if(i) i.click(); }
+function insfFileGot(inp){
+  var r=insfCur(); if(!r||!inp.files||!inp.files[0]) return;
+  var f=inp.files[0]; inp.value='';
+  insfDocPut(r[C3.reg],f,function(ok){
+    if(ok){ INSF.doc=f; insfPaintDoc(); ins3Toast(insfT('attDone'),'good'); }
+    else ins3Toast('Attach nahi hua — browser storage issue','bad');
+  });
+}
+function insfDocRemove(){
+  var r=insfCur(); if(!r) return;
+  insfDocDel(r[C3.reg],function(){ INSF.doc=null; insfPaintDoc(); ins3Toast(insfT('attGone'),'good'); });
+}
+function insfPaintDoc(){
+  var b=document.getElementById('insf-att'), w=document.getElementById('insf-wab');
+  if(b){ if(INSF.doc){ b.className='insf-tool onchip';
+      b.innerHTML='📎 '+ins3Esc((INSF.doc.name||'PDF').slice(0,18))+' ✓ <span onclick="event.stopPropagation();insfDocRemove()" style="font-weight:900;padding:0 4px">✕</span>';
+    } else { b.className='insf-tool'; b.textContent=insfT('attach'); } }
+  if(w) w.textContent=INSF.doc?insfT('waPdf'):insfT('wa');
+}
+
+/* ------------------------------ Hero portal -------------------------------- */
+function insfPortal(){
+  var r=insfCur(); if(!r) return;
+  var u='';
+  try{ u=localStorage.getItem('insf_portal')||''; }catch(e){}
+  if(!u){ u=window.prompt(insfT('portalAsk'))||''; u=u.trim(); if(!u) return;
+    if(!/^https?:\/\//i.test(u)) u='https://'+u;
+    try{ localStorage.setItem('insf_portal',u); }catch(e){} }
+  var ch=r[C3.chassis]||r[C3.reg]||'';
+  if(ch&&navigator.clipboard) navigator.clipboard.writeText(String(ch));
+  window.open(u,'hero_portal');
+  ins3Toast(insfT('portalGo'),'good');
+}
+
+/* -------------------------------- painting --------------------------------- */
 function insfMood(r){
   var t=r[C3.tier]||'D';
-  if(t==='A') return {img:'assets/17_red_robot_superhero.png', txt:'🔥 High chance customer hai! Abhi call karo!'};
-  if(t==='B') return {img:'assets/24_white_red_superhero_thumbs_up.png', txt:'👍 Achha chance hai — try karo!'};
-  return {img:'assets/18_red_robot_nav_head.png', txt:'🤔 Thoda mushkil hai… par ek try banti hai!'};
+  if(t==='A') return {img:'assets/17_red_robot_superhero.png', txt:insfT('moodA')};
+  if(t==='B') return {img:'assets/24_white_red_superhero_thumbs_up.png', txt:insfT('moodB')};
+  return {img:'assets/18_red_robot_nav_head.png', txt:insfT('moodC')};
 }
 function insfCallsToday(){
   if(INS3.myday && INS3.myday.ok) return Number(INS3.myday.calls)||0;
   return ins3MyDayLocal().worked;
 }
+function insfPaintHead(){
+  var done=insfCallsToday(), target=100;
+  var t=document.getElementById('insf-progt');
+  if(t) t.innerHTML='<span>'+insfT('cust')+' '+(INSF.pos+1)+' / '+INSF.q.length+'</span><span>📞 '+insfT('aaj')+': '+done+' / '+target+'</span>';
+  var b=document.getElementById('insf-bari'); if(b) b.style.width=Math.min(100,Math.round(done*100/target))+'%';
+  var L=document.getElementById('insf-langs');
+  if(L) L.innerHTML=INSF_LANGS.map(function(x){ return '<button class="insf-lang'+(INSF.lang===x[0]?' on':'')+'" onclick="insfLang(\''+x[0]+'\')">'+x[1]+'</button>'; }).join('');
+  var p=document.getElementById('insf-prevb'); if(p){ p.textContent=insfT('prev'); p.disabled=(INSF.pos===0); p.style.opacity=INSF.pos===0?'.4':''; }
+  var k=document.getElementById('insf-skipb'); if(k) k.textContent=insfT('skip');
+}
+function insfPaintScore(bumpCls){
+  var s=insfStats();
+  var rail=document.getElementById('insf-rail');
+  if(rail){
+    rail.innerHTML='<div class="insf-rtitle">📊 '+insfT('feedT')+'</div>'
+      +'<div class="insf-stats">'
+      +[['calls',insfT('sCalls'),''],['won',insfT('sWon'),'won'],['quote',insfT('sQuote'),'hot'],
+        ['cb',insfT('sCb'),'hot'],['nr',insfT('sNr'),'warm'],['lo',insfT('sLo'),'cold']].map(function(x){
+        return '<div class="insf-st'+(bumpCls!==undefined&&x[2]===bumpCls?' bump':'')+'" id="insf-st-'+x[0]+'"><div class="n">'+s[x[0]]+'</div><div class="l">'+x[1]+'</div></div>';
+      }).join('')
+      +'</div>'
+      +(INSF.feed.length
+        ? '<div class="insf-feed">'+INSF.feed.map(function(f){
+            return '<div class="insf-fi"><span class="nm">'+ins3Esc(f.nm)+'</span><span class="tg insf-tg-'+f.cls+'">'+ins3Esc(f.lb)+'</span><span class="tm">'+f.tm+'</span></div>'; }).join('')+'</div>'
+        : '<div style="font-size:13px;font-weight:700;color:#334155">'+insfT('feedNone')+'</div>')
+      +(insfIsMobile()?'':'<button class="insf-wwb" onclick="insfWaWeb()">'+insfT('waweb')+'</button>');
+  }
+  var strip=document.getElementById('insf-strip');
+  if(strip){
+    var last=INSF.feed[0];
+    strip.innerHTML=
+      '<span class="insf-chip'+(bumpCls!==undefined?' bump':'')+'">📞 <b>'+s.calls+'</b> '+insfT('sCalls')+'</span>'
+      +'<span class="insf-chip'+(bumpCls==='won'?' bump':'')+'">🏆 <b>'+s.won+'</b></span>'
+      +'<span class="insf-chip">📤 <b>'+s.quote+'</b></span>'
+      +'<span class="insf-chip">📅 <b>'+s.cb+'</b></span>'
+      +(last?'<span class="insf-chip" style="background:#f0fdf4;border-color:#86efac">✓ '+ins3Esc(last.nm.split(' ')[0])+' — '+ins3Esc(last.lb)+'</span>':'');
+  }
+}
 function insfShow(keepIdle){
   var el=document.getElementById('insf'); if(!el) return;
   var r=insfCur();
   if(!r){ insfFinish(); return; }
+  var st=document.getElementById('insf-stage'); if(!st) return;
   var s=INS3.state[ins3Key(r[C3.reg])]||{};
   var d=ins3Days(r[C3.expDay]), tier=r[C3.tier]||'D', mood=insfMood(r);
-  var done=insfCallsToday(), target=100;
   var noMob=!r[C3.mob];
   var facts=[];
   facts.push('<span class="insf-pill" style="background:'+d.c+'1a;color:'+d.c+'">⏳ '+(d.n==='TODAY'?'Aaj last day':d.n+' '+d.l)+'</span>');
   facts.push('<span class="insf-pill" style="background:'+(INS3_TIERC[tier]||'#64748b')+'1a;color:'+(INS3_TIERC[tier]||'#64748b')+'">Tier '+tier+' · '+r[C3.score]+'/100</span>');
-  if(r[C3.co]) facts.push('<span class="insf-pill" style="background:#f1f5f9;color:#334155">'+ins3Esc(r[C3.co])+'</span>');
-  if(r[C3.chassis]&&r[C3.engine]) facts.push('<span class="insf-pill" style="background:#f0fdf4;color:#166534">✓ Quote ban sakta hai</span>');
-  if(s.reason) facts.push('<span class="insf-pill" style="background:#fffbeb;color:#b45309">Pichhli baar: '+ins3Esc(s.reason)+'</span>');
+  if(r[C3.co]) facts.push('<span class="insf-pill" style="background:#f1f5f9;color:#1e293b">'+ins3Esc(r[C3.co])+'</span>');
+  if(s.reason) facts.push('<span class="insf-pill" style="background:#fffbeb;color:#92400e">'+ins3Esc(s.reason)+'</span>');
 
-  el.innerHTML=
-   '<div class="insf-head">'
-    +'<button class="insf-x" onclick="insfClose()" title="Band karo">✕</button>'
-    +'<div class="insf-prog">'
-      +'<div class="insf-progt"><span>Customer '+(INSF.pos+1)+' / '+INSF.q.length+'</span><span>📞 Aaj: '+done+' / '+target+'</span></div>'
-      +'<div class="insf-bar"><i style="width:'+Math.min(100,Math.round(done*100/target))+'%"></i></div>'
-    +'</div>'
-    +'<button class="insf-xls" onclick="insfExcel()">⬇ Excel</button>'
-   +'</div>'
-   +'<div class="insf-stage">'
-    +'<div class="insf-masco"><img src="'+mood.img+'" alt="" onerror="this.style.display=\'none\'">'
+  st.innerHTML=
+    '<div class="insf-masco"><img src="'+mood.img+'" alt="" onerror="this.style.display=\'none\'">'
       +'<div class="insf-bub" id="insf-bub">'+ins3Esc(mood.txt)+'</div></div>'
     +'<div class="insf-card">'
       +'<div class="insf-nm">'+ins3Esc(r[C3.cust]||'(no name)')+'</div>'
       +'<div class="insf-rg">'+ins3Esc(r[C3.reg]||'—')+(r[C3.model]?' · '+ins3Esc(r[C3.model]):'')+'</div>'
       +'<div class="insf-row">'+facts.join('')+'</div>'
-      +(r[C3.why]?'<div class="insf-why">💡 '+ins3Esc(r[C3.why])+'</div>':'')
       +'<div class="insf-acts">'
-        +(noMob?'<span class="insf-a off">📵 No mobile</span>':'<a class="insf-a call" href="tel:+91'+ins3Esc(r[C3.mob])+'">📞 Call karo</a>')
-        +(noMob?'<span class="insf-a off">WhatsApp</span>':'<button class="insf-a wa" onclick="insfWa()">🟢 WhatsApp</button>')
+        +(noMob?'<span class="insf-a off">'+insfT('noMob')+'</span>':'<a class="insf-a call" href="tel:+91'+ins3Esc(r[C3.mob])+'">'+insfT('call')+'</a>')
+        +(noMob?'<span class="insf-a off">WhatsApp</span>':'<button class="insf-a wa" id="insf-wab" onclick="insfSend()">'+insfT('wa')+'</button>')
       +'</div>'
-      +'<div class="insf-langrow">'
-        +'<span style="font-size:13px;font-weight:900;color:#475569">Script:</span>'
-        +['en','hi','mr'].map(function(l){ return '<button class="insf-lang'+(INSF.lang===l?' on':'')+'" onclick="insfLang(\''+l+'\')">'+(l==='en'?'English':l==='hi'?'हिंदी':'मराठी')+'</button>'; }).join('')
-        +'<button class="insf-copy" onclick="insfCopyScript()">📋 Copy script</button>'
+      +'<div class="insf-tools">'
+        +'<button class="insf-tool" id="insf-att" onclick="insfAttach()">'+insfT('attach')+'</button>'
+        +'<button class="insf-tool" onclick="insfPortal()">'+insfT('portal')+'</button>'
+      +'</div>'
+      +'<div class="insf-scr">'
+        +'<span class="insf-scrtxt" onclick="this.classList.toggle(\'open\')" style="flex:1;min-width:120px;font-size:13px;font-weight:800;color:#1e293b;line-height:1.35">💬 '+ins3Esc(insfScript(r))+'</span>'
+        +'<button class="insf-tool" style="min-height:40px;flex:none;padding:0 12px" onclick="insfCopyScript()">'+insfT('copy')+'</button>'
       +'</div>'
     +'</div>'
-    +'<div class="insf-sec">Call ka result — ek click, bas</div>'
+    +'<div class="insf-sec">'+insfT('result')+'</div>'
     +'<div class="insf-grid">'
       +INSF_OUT.map(function(o){ return '<button class="insf-o '+o.cls+'" onclick="insfPick(\''+o.code+'\')">'
-        +'<span class="i">'+o.icon+'</span><span class="t">'+ins3Esc(o.t)+'</span><span class="s">'+ins3Esc(o.s)+'</span></button>'; }).join('')
+        +'<span class="i">'+o.icon+'</span><span class="t">'+ins3Esc(o.t[INSF.lang]||o.t.en)+'</span><span class="s">'+ins3Esc(o.s[INSF.lang]||o.s.en)+'</span></button>'; }).join('')
     +'</div>'
-    +'<button class="insf-more" onclick="document.getElementById(\'insf-morewrap\').classList.toggle(\'on\')">Aur options… ▾</button>'
-    +'<div class="insf-morewrap" id="insf-morewrap">'+insfMoreHtml(s)+'</div>'
-    +'<div class="insf-ins">'
-      +'<input class="insf-in" id="insf-prem" placeholder="₹ Premium (optional)" inputmode="numeric" value="'+ins3Esc(s.premium||'')+'">'
-      +'<input class="insf-in" id="insf-note" placeholder="Chhota note (optional)">'
-    +'</div>'
-   +'</div>'
-   +'<div class="insf-foot">'
-    +'<button class="insf-prev" onclick="insfPrev()"'+(INSF.pos===0?' disabled style="opacity:.4"':'')+'>‹ Pichhla</button>'
-    +'<button class="insf-skip" onclick="insfSkip()">Skip — agla customer ›</button>'
-   +'</div>';
-  el.scrollTop=0;
+    +'<input type="file" id="insf-file" accept="application/pdf,image/*" style="display:none" onchange="insfFileGot(this)">'
+    +'<div class="insf-sheet" id="insf-sheet"></div>';
+  st.scrollTop=0;
+  insfPaintHead(); insfPaintScore();
+  INSF.doc=null; insfPaintDoc();
+  insfDocGet(r[C3.reg],function(f){ var cr=insfCur(); if(cr&&cr===r&&f){ INSF.doc=f; insfPaintDoc(); } });
 
   /* soft lock so another SMRE sees "on this call" */
   jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),byName:ins3MyName(),act:'take',
     customer:r[C3.cust],mobile:r[C3.mob]},function(res){
     if(res&&res.ok===false&&res.error==='locked'){
       var b=document.getElementById('insf-bub');
-      if(b){ b.classList.add('angry'); b.textContent='🔒 '+(res.lockedByName||res.lockedBy)+' isi customer par hai — Skip karo!'; }
+      if(b){ b.classList.add('angry'); b.textContent='🔒 '+(res.lockedByName||res.lockedBy)+' '+insfT('lockedBy'); }
     }
   },15000);
 
@@ -16443,28 +16725,52 @@ function insfShow(keepIdle){
   if(!keepIdle){ clearTimeout(INSF.idleT);
     INSF.idleT=setTimeout(function(){
       var b=document.getElementById('insf-bub');
-      if(b && INSF.on){ b.classList.add('angry'); b.textContent='😠 Arre! Call karo na! Customer wait kar raha hai!'; }
+      if(b && INSF.on){ b.classList.add('angry'); b.textContent=insfT('idle'); }
     },180000);
   }
 }
-function insfMoreHtml(s){
-  var disp=(INS3.meta&&INS3.meta.dispositions)||[];
-  if(!disp.length) return '<div style="font-size:13px;color:#64748b;font-weight:700;padding:6px">List load ho rahi hai…</div>';
-  var groups={};
-  disp.forEach(function(x){ (groups[x.group]=groups[x.group]||[]).push(x); });
-  return Object.keys(groups).map(function(g){
-    return '<div class="insf-sec">'+ins3Esc(g)+'</div><div class="insf-md">'
-      +groups[g].map(function(x){ return '<button onclick="insfPick(\''+x.code+'\')">'+ins3Esc(x.label)+'</button>'; }).join('')+'</div>';
-  }).join('');
-}
 
-/* ------------------------- outcome: one tap = saved ------------------------ */
+/* -------------------- outcome: tap → (sheet?) → saved ----------------------
+   Simple outcomes save on the FIRST tap. WON / QUOTE ask premium, CALLBACK
+   asks a time — a small sheet slides up instantly, one more tap finishes. */
 function insfPick(code){
+  var o=null; for(var i=0;i<INSF_OUT.length;i++) if(INSF_OUT[i].code===code) o=INSF_OUT[i];
+  if(!o){ insfCommit(code,'',''); return; }
+  if(!o.ask){ insfCommit(code,'',''); return; }
+  var sh=document.getElementById('insf-sheet'); if(!sh){ insfCommit(code,'',''); return; }
+  INSF.cbWhen='';
+  var inner='<div class="insf-sht">'+o.icon+' '+ins3Esc(o.t[INSF.lang]||o.t.en)+' — '+(o.ask==='prem'?insfT('premT'):insfT('cbT'))+'</div>';
+  if(o.ask==='prem'){
+    inner+='<input class="insf-in" id="insf-prem" placeholder="'+insfT('premP')+'" inputmode="numeric">';
+  } else {
+    inner+='<div class="insf-cbrow">'+insfT('chips').map(function(c,ix){
+      return '<button class="insf-cb" id="insf-cb'+ix+'" onclick="insfCbPick('+ix+')">'+ins3Esc(c)+'</button>'; }).join('')+'</div>';
+  }
+  inner+='<input class="insf-in" id="insf-note" placeholder="'+insfT('note')+'">'
+    +'<div class="insf-shbtns">'
+    +'<button class="insf-shsave" onclick="insfSheetSave(\''+code+'\')">'+insfT('save')+'</button>'
+    +'<button class="insf-shno" onclick="insfSheetSave(\''+code+'\',true)">'+insfT('saveNo')+'</button>'
+    +'</div>';
+  sh.innerHTML=inner;
+  requestAnimationFrame(function(){ sh.classList.add('on'); });
+  var p=document.getElementById('insf-prem'); if(p) setTimeout(function(){ try{p.focus();}catch(e){} },220);
+}
+function insfCbPick(ix){
+  INSF.cbWhen=insfT('chips')[ix]||'';
+  for(var i=0;i<4;i++){ var b=document.getElementById('insf-cb'+i); if(b) b.className='insf-cb'+(i===ix?' on':''); }
+}
+function insfSheetSave(code,bare){
+  var prem=bare?'':((document.getElementById('insf-prem')||{}).value||'');
+  var note=bare?'':((document.getElementById('insf-note')||{}).value||'');
+  if(!bare && INSF.cbWhen) note=(note?note+' | ':'')+'📅 '+INSF.cbWhen;
+  var sh=document.getElementById('insf-sheet'); if(sh) sh.classList.remove('on');
+  insfCommit(code,prem,note);
+}
+function insfCommit(code,prem,note){
   var i=INSF.q[INSF.pos], r=INS3.rows[i]; if(!r) return;
   var k=ins3Key(r[C3.reg]), s=INS3.state[k]||{};
-  var note=(document.getElementById('insf-note')||{}).value||'';
-  var prem=(document.getElementById('insf-prem')||{}).value||'';
-  var disp=((INS3.meta&&INS3.meta.dispositions)||[]).find(function(x){ return x.code===code; })||{};
+  var o=null; for(var x=0;x<INSF_OUT.length;x++) if(INSF_OUT[x].code===code) o=INSF_OUT[x];
+  var disp=((INS3.meta&&INS3.meta.dispositions)||[]).find(function(y){ return y.code===code; })||{};
   /* optimistic, same shape as ins3Save */
   INS3.state[k]=Object.assign({},s,{status:code, reason:disp.label||code, remarks:note||s.remarks,
     premium:prem||s.premium, calls:(Number(s.calls)||0)+1, lastCall:ins3Today(),
@@ -16483,20 +16789,22 @@ function insfPick(code){
   jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),act:'release'},function(){},15000);
   clearTimeout(INSF.idleT);
   INSF.session++;
+  /* the tap lands on screen FIRST — scoreboard bumps, feed slides in */
+  if(o) insfFeedAdd(r,o); else insfPaintScore('');
   insfCelebrate(code, disp);
 }
 function insfCelebrate(code, disp){
   var won=!!disp.won, group=disp.group||'';
   var img, big, sub;
-  if(won){ img='assets/04_trophy_confetti.png'; big='🎉 RENEW HO GAYA!'; sub='Zabardast! Party banti hai!'; }
-  else if(INSF.session%10===0){ img='assets/21_gift_star_mascot.png'; big='⭐ '+INSF.session+' calls done!'; sub='Kya speed hai! Aage badho!'; }
-  else if(group==='In progress'){ img='assets/23_white_red_superhero_jump.png'; big='Badhiya! 💪'; sub='Follow-up pakka. Agla customer…'; }
-  else if(group==='Lost'){ img='assets/29_white_bear_mechanic.png'; big='Koi baat nahi 🙂'; sub='Agla customer better hoga…'; }
-  else { img='assets/09_red_cube_mascot_waving.png'; big='Saved ✓'; sub='Agla customer aa raha hai…'; }
+  if(won){ img='assets/04_trophy_confetti.png'; big=insfT('celWon'); sub=insfT('celWonS'); }
+  else if(INSF.session%10===0){ img='assets/21_gift_star_mascot.png'; big='⭐ '+INSF.session+' calls!'; sub=insfT('celMileS'); }
+  else if(group==='In progress'){ img='assets/23_white_red_superhero_jump.png'; big='💪 '+insfT('savedOk'); sub=insfT('savedNext'); }
+  else if(group==='Lost'){ img='assets/29_white_bear_mechanic.png'; big='🙂 '+insfT('savedOk'); sub=insfT('savedNext'); }
+  else { img='assets/09_red_cube_mascot_waving.png'; big=insfT('savedOk'); sub=insfT('savedNext'); }
   var f=document.createElement('div'); f.className='insf-flash'; f.id='insf-flash';
   f.innerHTML='<img src="'+img+'" alt="" onerror="this.style.display=\'none\'"><div class="b">'+ins3Esc(big)+'</div><div class="s">'+ins3Esc(sub)+'</div>';
   document.body.appendChild(f);
-  setTimeout(function(){ f.remove(); insfNext(); }, won||INSF.session%10===0 ? 1500 : 750);
+  setTimeout(function(){ f.remove(); insfNext(); }, won||INSF.session%10===0 ? 1400 : 650);
 }
 function insfNext(){ INSF.pos++; if(!INSF.on) return; insfShow(); }
 function insfPrev(){ if(INSF.pos>0){ var r=insfCur(); if(r) jgetRaw('inscrm2_lock',{reg:r[C3.reg],by:ins3Me(),act:'release'},function(){},15000); INSF.pos--; insfShow(); } }
@@ -16507,17 +16815,13 @@ function insfSkip(){
   insfShow();
 }
 function insfFinish(){
-  var el=document.getElementById('insf'); if(!el) return;
+  var st=document.getElementById('insf-stage'); if(!st) return;
   clearTimeout(INSF.idleT);
-  el.innerHTML='<div class="insf-head">'
-    +'<button class="insf-x" onclick="insfClose()">✕</button>'
-    +'<div class="insf-prog"><div class="insf-progt"><span>Sab ho gaya!</span><span>📞 Aaj: '+insfCallsToday()+'</span></div>'
-    +'<div class="insf-bar"><i style="width:100%"></i></div></div>'
-    +'<button class="insf-xls" onclick="insfExcel()">⬇ Excel</button></div>'
-    +'<div class="insf-fin"><img src="assets/04_trophy_confetti.png" alt="" onerror="this.style.display=\'none\'">'
-    +'<div style="font-size:28px;font-weight:900;color:#0f172a">🎉 List khatam!</div>'
-    +'<div style="font-size:16px;font-weight:700;color:#475569">Is session me '+INSF.session+' calls ho gayi. Kal phir milte hai!</div>'
-    +'<button class="insf-a call" style="min-width:220px" onclick="insfClose()">Wapas list par</button></div>';
+  insfPaintHead(); insfPaintScore();
+  st.innerHTML='<div class="insf-fin"><img src="assets/04_trophy_confetti.png" alt="" onerror="this.style.display=\'none\'">'
+    +'<div style="font-size:26px;font-weight:900;color:#0f172a">'+insfT('done')+'</div>'
+    +'<div style="font-size:16px;font-weight:800;color:#1e293b">'+INSF.session+' '+insfT('doneSub')+'</div>'
+    +'<button class="insf-a call" style="min-width:220px" onclick="insfClose()">'+insfT('back')+'</button></div>';
 }
 
 /* ----------------------- Excel — HER list, not the DB ---------------------- */
