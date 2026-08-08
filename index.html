@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 36;
-window.HERO_BUILD = 'R43-2026.08.07.3';
+window.HERO_RELEASE = 37;
+window.HERO_BUILD = 'R44-2026.08.08.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15498,6 +15498,10 @@ function ins2MarutiUpload(inp){
 .ins3-band1{background:#b91c1c;color:#fff}
 .ins3-band2{background:#16653418;color:#166534}
 .ins3-band3{background:#64748b1a;color:var(--i-mid)}
+/* R44 P4 = today's boost. Deliberately the QUIETEST band on the row: these are
+   the ten she was given, not the ones she chose, and the pill must never read
+   as more important than her own list sitting above it. */
+.ins3-band4{background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}
 
 /* ---- detail panel ---- */
 .ins3-detail{background:var(--card,#fff);border-radius:15px;padding:13px 14px;box-shadow:0 2px 12px rgba(15,23,42,.09);min-width:0}
@@ -15629,6 +15633,12 @@ const INS3 = {
      opened and kept for the session. undefined = never asked, '...' = in
      flight, null = asked and not found, object = the profile. */
   svc:{},
+  /* R44: TODAY'S BOOST — ten more customers, dealt by the server round-robin
+     across the SMREs on duty so no two of them call the same person.
+     `set` is keyed by reg for ins3Band; `day` guards against yesterday's deal
+     surviving a reload. These rows are band 4: they sit UNDER her own list,
+     always. Ravi, 08-Aug-2026: "never over her own excel sheet." */
+  boost:{set:{}, day:'', n:0, asked:false},
   view:[], shown:120, sel:-1,
   ready:false, syncing:false, manager:false
 };
@@ -15867,6 +15877,7 @@ async function ins3LoadLocal(db){
   INS3.ready = rows.length>0;
   ins3SheetRestore();   /* R37: her sheet queue survives reloads and re-syncs */
   ins3Render();
+  ins3LoadBoost();      /* R44: today's ten extra, appended UNDER her list */
 }
 
 /* Call outcomes, ownership and today's assignments. Small sheet, one call, and
@@ -15940,6 +15951,11 @@ function ins3Band(i){
      loaded must still outrank everyone else. Tested: gating this on sh.on made
      her own list fall back to P3 the moment she toggled the banner. */
   if(sh && sh._set && sh._set[ins3Key(r[C3.reg])]) return 1;
+  /* R44: a boost customer is band 4 — BELOW everything, including the ordinary
+     book. Checked before P2/P3 so a boost row that happens to hold a real
+     policy still cannot climb above a customer she chose herself. Ravi,
+     08-Aug-2026: "never over her own excel sheet." */
+  if(INS3.boost && INS3.boost.set[ins3Key(r[C3.reg])]) return 4;
   if(r[C3.policy] && r[C3.expSrc] !== 'DERIVED') return 2;
   return 3;
 }
@@ -15974,6 +15990,27 @@ function ins3Filter(){
       if(INS3.hideDone && ins3DoneToday(i)) continue;
       outS.push(i);
     }
+    /* R44 — the ten extra, UNDERNEATH. Ravi, 08-Aug-2026: "Add those extra
+       customers ... but never over her own excel sheet."
+       Appended after the last of her rows, in the order the server dealt them.
+       Her order above is still never re-sorted, and a boost row that is also
+       in her sheet is skipped rather than shown twice. */
+    const bset=INS3.boost&&INS3.boost.set;
+    if(bset){
+      const shSet=(INS3.sheet&&INS3.sheet._set)||{};
+      const seen={};
+      for(let n=0;n<outS.length;n++) seen[outS[n]]=1;
+      for(let i=0;i<INS3.rows.length;i++){
+        if(seen[i]) continue;
+        const r=INS3.rows[i]; if(!r) continue;
+        const k=ins3Key(r[C3.reg]);
+        if(!bset[k] || shSet[k]) continue;
+        if(INS3.tier && r[C3.tier]!==INS3.tier) continue;
+        if(INS3.quotableOnly && !(r[C3.chassis] && r[C3.engine])) continue;
+        if(INS3.hideDone && ins3DoneToday(i)) continue;
+        outS.push(i);
+      }
+    }
     INS3.view=outS;
     return outS;
   }
@@ -15989,14 +16026,21 @@ function ins3Filter(){
      must put MH14MN7491 first, not a customer whose mobile contains 7491. */
   const rank = searching ? Object.create(null) : null;
 
+  /* R44: a boost row is admitted whatever bucket she is on. The server dealt it
+     for TODAY, so hiding it because its expiry falls outside the day window
+     would make the ten extra calls invisible — which is the same as not
+     building them. It is still band 4, so it lands at the bottom. */
+  const bset = (INS3.boost && INS3.boost.set) || null;
+
   for(let i=0;i<rows.length;i++){
     const r=rows[i];
+    const isBoost = !!(bset && bset[ins3Key(r[C3.reg])]);
 
     if(searching){
       /* both forms: raw so "26-06-2026" matches a date, stripped so
          "mh14mn6821" matches "MH14 MN 6821" */
       if(keys[i].indexOf(qKey)<0 && String(r[C3.hay]).indexOf(qRaw)<0) continue;
-    } else {
+    } else if(!isBoost){
       const d=r[C3.expDay];
       if(d==null || d<lo || d>hi) continue;
     }
@@ -16009,8 +16053,9 @@ function ins3Filter(){
     const asgn  = s ? s.assignedTo : '';
 
     if(INS3.mine){
-      if(owner!==me && asgn!==me) continue;
-    } else if(!INS3.whole && !searching){
+      /* "Mine only" includes today's boost — the server dealt these to HER. */
+      if(owner!==me && asgn!==me && !isBoost) continue;
+    } else if(!INS3.whole && !searching && !isBoost){
       /* THE OWNERSHIP FIX. Somebody else's customer is not on my screen at all
          unless I ask for the whole book. Searching always ignores this — if a
          customer walks in and asks, the SMRE must be able to find him whoever
@@ -16124,7 +16169,7 @@ function ins3Boot(force){
     setTimeout(function(){ if(Math.abs(at()-y)>2) put(); }, 0);
     setTimeout(function(){ if(Math.abs(at()-y)>2) put(); }, 140);
   }
-  if(INS3.ready && !force){ ins3LoadStates(); }
+  if(INS3.ready && !force){ ins3LoadStates(); ins3LoadBoost(); }
   else ins3Load(force);
 }
 
@@ -17287,6 +17332,64 @@ function ins3SheetFetch(){
     }, 30000);
   })();
 }
+/* ===========================================================================
+   R44 — TODAY'S BOOST. Ten more customers, dealt by the server.
+
+   Ravi, 08-Aug-2026: "By her own methodology, we have to make her call 10
+   customers more which will give conversions. Never going outside the
+   environment." / "Add those extra customers that we feel will convert today
+   as per the total database one by one divided in to the no of SMREs, but
+   never over her own excel sheet."
+
+   So: no new screen, no new button. The rows arrive in the SAME shape as the
+   snapshot (INS3_SNAP_COLS), get appended to INS3.rows like any other
+   customer, and are marked band 4 — the bottom of her list. Everything
+   downstream (search, detail panel, Focus Mode, the Excel export) works on
+   them without knowing they are different.
+
+   The screen never says these will convert. The server ranked them; she
+   decides. A claim she cannot check is how the app stops being believed.
+   =========================================================================== */
+function ins3LoadBoost(force){
+  if(!INS3.ready) return;
+  const today=ins3Today();
+  if(!force && INS3.boost.asked && INS3.boost.day===today) return;
+  INS3.boost.asked=true;
+  jgetRaw('ins_boost',{owner:ins3Me(),n:10},function(res){
+    if(!res || res.ok===false || !Array.isArray(res.rows)){
+      /* A boost that does not arrive costs her nothing — her own list is
+         untouched and the screen is exactly what it was. Silent by design:
+         a red toast about a feature she did not ask for is noise. */
+      INS3.boost.asked=false;
+      return;
+    }
+    if(!INS3._regSet){
+      INS3._regSet={};
+      for(let i=0;i<INS3.rows.length;i++) INS3._regSet[ins3Key(INS3.rows[i][C3.reg])]=1;
+    }
+    const set={};
+    for(let i=0;i<res.rows.length;i++){
+      const r=res.rows[i], k=ins3Key(r[C3.reg]);
+      if(!k) continue;
+      set[k]=1;
+      if(INS3._regSet[k]) continue;                /* already on the device */
+      const hay=[r[C3.reg], r[C3.cust], r[C3.mob], r[C3.alt], r[C3.model],
+                 r[C3.chassis], r[C3.engine], r[C3.policy],
+                 r[C3.co], r[C3.city], r[C3.dos], r[C3.loyalty], r[C3.rel]]
+                .join(' ').toUpperCase();
+      r[C3.hay]=hay;
+      INS3.rows.push(r); INS3.keys.push(ins3Norm(hay));
+      INS3._regSet[k]=1;
+    }
+    INS3.boost={set:set, day:today, n:res.rows.length, asked:true};
+    INS3.total=INS3.rows.length;
+    if(res.rows.length){
+      ins3Render();
+      /* The rule: something visible changes. She sees the count arrive. */
+      ins3Toast('+'+res.rows.length+' aur customer aaj ke liye — aapki list ke NEECHE','good');
+    }
+  },45000);
+}
 function ins3SheetClear(){
   INS3.sheet=null;
   try{ localStorage.removeItem('ins3_sheet'); }catch(e){}
@@ -17621,8 +17724,22 @@ function insfCss(){
   +'.insf-o .s{font-size:10.5px;font-weight:800;color:#334155;text-align:center}'
   +'.insf-o.won{border-color:#86efac;background:#f0fdf4}.insf-o.hot{border-color:#bfdbfe;background:#eff6ff}'
   +'.insf-o.warm{border-color:#fde68a;background:#fffbeb}.insf-o.cold{border-color:#fecaca;background:#fef2f2}'
-  /* dependent sheet — slides up INSIDE the frame the moment a button needs detail */
-  +'.insf-sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:2px solid #0f172a;border-radius:18px 18px 0 0;box-shadow:0 -12px 40px rgba(15,23,42,.25);padding:14px;transform:translateY(105%);transition:transform .18s;z-index:8}'
+  /* the pressed button holds its state until the sheet is on screen. Without
+     this the only feedback for a 3-choice outcome is the sheet itself, and if
+     the sheet is anywhere she is not looking the press reads as "nothing
+     happened" — which is how an SMRE decides the app is dead. */
+  +'.insf-o.pressed{border-color:#0f172a;box-shadow:0 0 0 3px rgba(15,23,42,.18) inset;transform:scale(.97)}'
+  /* dependent sheet — FIXED to the viewport, never to the scroll box.
+     08-Aug-2026: this was `position:absolute` inside `.insf-stage`, which is
+     `overflow-y:auto`. bottom:0 in a scrolling box is the bottom of the whole
+     SCROLL CONTENT, not of the visible area — so the sheet slid up below the
+     eight outcome buttons, off screen, every time. `insfShow` sets
+     st.scrollTop=0, so on a phone it was guaranteed invisible. Renewed, Quote
+     sent and Call back are the three outcomes that open it: the two wins and
+     the callback. Pressing them did nothing she could see. */
+  +'.insf-shbg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99990;opacity:0;transition:opacity .18s}'
+  +'.insf-shbg.on{opacity:1}'
+  +'.insf-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:780px;background:#fff;border-top:2px solid #0f172a;border-radius:18px 18px 0 0;box-shadow:0 -12px 40px rgba(15,23,42,.35);padding:14px calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));transform:translateY(105%);transition:transform .18s;z-index:99991;max-height:88vh;overflow-y:auto}'
   +'.insf-sheet.on{transform:none}'
   +'.insf-sht{font-size:17px;font-weight:900;color:#0f172a;margin-bottom:10px}'
   +'.insf-in{border:2px solid #cbd5e1;border-radius:12px;padding:12px;font-size:16px;font-weight:800;color:#0f172a;width:100%;margin-bottom:8px}'
@@ -17942,10 +18059,11 @@ function insfShow(keepIdle){
     +'</div>'
     +'<div class="insf-sec">'+insfT('result')+'</div>'
     +'<div class="insf-grid">'
-      +INSF_OUT.map(function(o){ return '<button class="insf-o '+o.cls+'" onclick="insfPick(\''+o.code+'\')">'
+      +INSF_OUT.map(function(o){ return '<button class="insf-o '+o.cls+'" id="insf-o-'+o.code+'" onclick="insfPick(\''+o.code+'\')">'
         +'<span class="i">'+o.icon+'</span><span class="t">'+ins3Esc(o.t[INSF.lang]||o.t.en)+'</span><span class="s">'+ins3Esc(o.s[INSF.lang]||o.s.en)+'</span></button>'; }).join('')
     +'</div>'
     +'<input type="file" id="insf-file" accept="application/pdf,image/*" style="display:none" onchange="insfFileGot(this)">'
+    +'<div class="insf-shbg" id="insf-shbg" onclick="insfSheetClose()"></div>'
     +'<div class="insf-sheet" id="insf-sheet"></div>';
   st.scrollTop=0;
   insfPaintHead(); insfPaintScore();
@@ -17974,6 +18092,9 @@ function insfShow(keepIdle){
    Simple outcomes save on the FIRST tap. WON / QUOTE ask premium, CALLBACK
    asks a time — a small sheet slides up instantly, one more tap finishes. */
 function insfPick(code){
+  /* FIRST, before any lookup can fail: the button she pressed changes.
+     Everything below can throw, return early or wait — this cannot. */
+  insfPressed(code);
   var o=null; for(var i=0;i<INSF_OUT.length;i++) if(INSF_OUT[i].code===code) o=INSF_OUT[i];
   if(!o){ insfCommit(code,'',''); return; }
   if(!o.ask){ insfCommit(code,'',''); return; }
@@ -17992,8 +18113,25 @@ function insfPick(code){
     +'<button class="insf-shno" onclick="insfSheetSave(\''+code+'\',true)">'+insfT('saveNo')+'</button>'
     +'</div>';
   sh.innerHTML=inner;
-  requestAnimationFrame(function(){ sh.classList.add('on'); });
+  var bg=document.getElementById('insf-shbg');
+  requestAnimationFrame(function(){ sh.classList.add('on'); if(bg) bg.classList.add('on'); });
   var p=document.getElementById('insf-prem'); if(p) setTimeout(function(){ try{p.focus();}catch(e){} },220);
+}
+/* the pressed outcome button, marked at once and cleared when the sheet goes.
+   `code` null clears every button. */
+function insfPressed(code){
+  for(var i=0;i<INSF_OUT.length;i++){
+    var b=document.getElementById('insf-o-'+INSF_OUT[i].code);
+    if(b) b.classList.toggle('pressed', INSF_OUT[i].code===code);
+  }
+}
+/* backdrop tap, or Back — closes the sheet WITHOUT saving. The customer is
+   left exactly as she found him, and the button un-presses so the screen and
+   the record agree. */
+function insfSheetClose(){
+  var sh=document.getElementById('insf-sheet'); if(sh) sh.classList.remove('on');
+  var bg=document.getElementById('insf-shbg'); if(bg) bg.classList.remove('on');
+  INSF.cbWhen=''; insfPressed(null);
 }
 function insfCbPick(ix){
   INSF.cbWhen=insfT('chips')[ix]||'';
@@ -18004,6 +18142,8 @@ function insfSheetSave(code,bare){
   var note=bare?'':((document.getElementById('insf-note')||{}).value||'');
   if(!bare && INSF.cbWhen) note=(note?note+' | ':'')+'📅 '+INSF.cbWhen;
   var sh=document.getElementById('insf-sheet'); if(sh) sh.classList.remove('on');
+  var bg=document.getElementById('insf-shbg'); if(bg) bg.classList.remove('on');
+  insfPressed(null);
   insfCommit(code,prem,note);
 }
 function insfCommit(code,prem,note){
