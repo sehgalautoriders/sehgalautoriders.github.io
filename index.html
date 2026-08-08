@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 37;
-window.HERO_BUILD = 'R44-2026.08.08.1';
+window.HERO_RELEASE = 38;
+window.HERO_BUILD = 'R47-2026.08.08.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -15745,8 +15745,101 @@ function ins3Say(kind, txt, pct){
 
 /* Loads the book. Uses the local copy when the server says it is still current,
    which is the whole point — after the first visit this costs one small call. */
+/* Deletes the on-device book. Called once when the screen opens in server mode,
+   so the space three devices are already holding is given back without anybody
+   having to find Chrome's site-data screen. Deliberately fire-and-forget: a
+   browser that blocks the delete (another tab still has the DB open) must not
+   stop the customer list from loading. */
+function ins3PurgeDevice(){
+  try{
+    if(localStorage.getItem('ins3_purged_r47')==='1') return;
+    indexedDB.deleteDatabase(INS3_DB);
+    localStorage.setItem('ins3_purged_r47','1');
+  }catch(e){}
+}
+
+/* The chip the SMRE pressed already carries its own window. Asking the server
+   for exactly that window — and nothing more — is the whole difference between
+   a working list and a book. 'all' is clamped: "Sab" must not mean a full-book
+   scan on every tap. */
+function ins3Window(){
+  const b = INS3_BUCKETS.find(function(x){ return x.code===INS3.bucket; }) || INS3_BUCKETS[0];
+  return {from: Math.max(-365, b.from), to: Math.min(365, b.to)};
+}
+
+/* THE SERVER PATH. One call, a few hundred rows, nothing written to the device.
+   Rows arrive in INS3_SNAP_COLS order — the same shape ins3LoadLocal produced —
+   so every table, chip, score and search below this line is untouched. */
+async function ins3LoadServer(force){
+  INS3.syncing=true;
+  ins3PurgeDevice();
+  ins3Render();
+  ins3Say('busy','Aaj ke customers server se aa rahe hain…', null);
+
+  const w = ins3Window();
+  const res = await new Promise(function(r){
+    jgetRaw('ins_worklist', {from:w.from, to:w.to, limit:200, owner:ins3Me()},
+            function(x){ r(x||null); }, 60000);
+  });
+
+  /* Guard on SHAPE, never on ok — an undeployed route answers ok:true with no
+     payload and would look like an empty day. Verification trap #4. */
+  if(!res || !Array.isArray(res.rows)){
+    ins3Say('bad', (res && res.error) || 'Backend has not been updated yet — R47 ins_worklist is not live.');
+    INS3.syncing=false; ins3Render(); return;
+  }
+
+  const rows = res.rows;
+  const keys = new Array(rows.length);
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+    const hay=[r[C3.reg], r[C3.cust], r[C3.mob], r[C3.alt], r[C3.model],
+               r[C3.chassis], r[C3.engine], r[C3.policy],
+               r[C3.co], r[C3.city], r[C3.dos], r[C3.loyalty], r[C3.rel]]
+              .join(' ').toUpperCase();
+    r[C3.hay]=hay;
+    keys[i]=ins3Norm(hay);
+  }
+  INS3.rows=rows;
+  INS3.keys=keys;
+  INS3.total=rows.length;
+  INS3._regSet=null;
+  INS3.links=res.links||{};      /* reg -> minted MISP renewal link */
+  INS3.care=res.care||{};        /* reg -> why this customer is worth the call */
+  INS3.linkValidTill=res.linkValidTill||'';
+  INS3.todayDay = Math.floor(new Date().setHours(0,0,0,0)/86400000);
+  INS3.ready = true;             /* an empty day is an answer, not a failure */
+
+  ins3Say('ok', res.returned.toLocaleString('en-IN')+' customers to call · '+
+          res.skippedNoMobile.toLocaleString('en-IN')+' bina mobile, '+
+          res.skippedNoLink.toLocaleString('en-IN')+' bina chassis/engine chhode');
+  INS3.syncing=false;
+  ins3SheetRestore();
+  ins3Render();
+  ins3LoadStates();
+  ins3LoadBoost();
+}
+
+/* R47, Ravi 08-Aug-2026, after finding this downloading on his PC, his Chrome
+   and his phone at the same time, with Chrome asking him to free up space:
+
+     "Still this insurance book is downloading... 6800 policies also showing
+      the same. Immediately you should have stopped it. Give customers from the
+      server as you seem fit."
+
+   So the device no longer holds a book. INS3_DEVICE_CACHE turns the whole
+   IndexedDB path off and ins3LoadServer asks the backend for today's callable
+   customers — a few hundred rows, already filtered to the ones that HAVE a
+   chassis, an engine and a mobile, and already carrying a renewal link each.
+   The paging code below is left intact and unreachable: it is still how the
+   manager export works, and deleting it would be a restructure, not a fix.
+
+   Turning this back to true would restore the old behaviour. It should not be. */
+const INS3_DEVICE_CACHE = false;
+
 async function ins3Load(force){
   if(INS3.syncing) return;
+  if(!INS3_DEVICE_CACHE){ return ins3LoadServer(force); }
   INS3.syncing=true;
   ins3Render();          /* so the hint says "getting the book", not "tap Sync now" */
   let db=null;
@@ -16389,7 +16482,13 @@ function ins3ClearQ(){
   INS3.q=''; const e=document.getElementById('ins3-q'); if(e) e.value='';
   INS3.shown=120; ins3Deselect(); ins3Render();
 }
-function ins3SetBucket(c){ INS3.bucket=c; INS3.shown=120; ins3Deselect(); ins3Render(); }
+function ins3SetBucket(c){
+  INS3.bucket=c; INS3.shown=120; ins3Deselect(); ins3Render();
+  /* R47: in server mode the device holds ONE window, so a new chip is a new
+     question for the server. Render first (the chip lights up in the same
+     frame she pressed it), fetch second. */
+  if(!INS3_DEVICE_CACHE) ins3Load(true);
+}
 function ins3Toggle(k){
   if(k==='mine') INS3.mine=!INS3.mine;
   else if(k==='whole') INS3.whole=!INS3.whole;
