@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 41;
-window.HERO_BUILD = 'R51-2026.08.10.1';
+window.HERO_BUILD = 'R51-2026.08.10.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8151,20 +8151,46 @@ function heroPhotoView(url,label){
   // Try the direct public thumbnail; if Drive refuses (old un-shared file), fall
   // back to our backend proxy which reads the file server-side.
   const direct=id?('https://drive.google.com/thumbnail?id='+id+'&sz=w1600'):url;
-  const probe=new Image();
   let settled=false;
-  probe.onload=function(){ if(settled)return; settled=true; show(direct);
-    try{ const c=document.createElement('canvas'); c.width=probe.naturalWidth; c.height=probe.naturalHeight; c.getContext('2d').drawImage(probe,0,0); heroPhotoCachePut(id,c.toDataURL('image/jpeg',0.7)); }catch(e){} };
-  probe.onerror=function(){ if(settled)return; settled=true; heroPhotoProxy(id,url,show,box); };
+
+  /* ROOT CAUSE (Ravi 10-Aug-2026: "photograph is not loading directly — Open in
+     drive is coming"). This used to set probe.crossOrigin='anonymous' so the
+     canvas could cache the bytes. Drive's /thumbnail endpoint returns NO
+     Access-Control-Allow-Origin header, so an anonymous-CORS request is
+     REJECTED BY THE BROWSER — onerror fired on a photo that displays perfectly
+     well without CORS. Every gate photo therefore fell through to the proxy,
+     and any hiccup there ended at "open in Drive".
+
+     So: try WITH CORS first (that path can still populate the cache), and if it
+     fails try the SAME url WITHOUT CORS before giving up. Displaying the photo
+     matters more than caching it. */
+  function attempt(useCors, onFail){
+    const probe=new Image();
+    probe.onload=function(){
+      if(settled)return; settled=true; show(direct);
+      if(!useCors) return;                     /* un-CORSed pixels taint the canvas */
+      try{ const c=document.createElement('canvas'); c.width=probe.naturalWidth; c.height=probe.naturalHeight;
+        c.getContext('2d').drawImage(probe,0,0); heroPhotoCachePut(id,c.toDataURL('image/jpeg',0.7)); }catch(e){}
+    };
+    probe.onerror=function(){ if(settled)return; onFail(); };
+    if(useCors) probe.crossOrigin='anonymous';
+    probe.src=direct;
+  }
+
+  attempt(true, function(){ attempt(false, function(){
+    if(settled)return; settled=true; heroPhotoProxy(id,url,show,box);
+  }); });
   setTimeout(function(){ if(!settled){ settled=true; heroPhotoProxy(id,url,show,box); } },6000);
-  probe.crossOrigin='anonymous';
-  probe.src=direct;
 }
 function heroPhotoProxy(id,url,show,box){
   if(typeof jgetRaw!=='function'){ box.innerHTML='<a style="color:#93c5fd" href="'+url+'" target="_blank">Open photo</a>'; return; }
   jgetRaw('photo_b64',{id:id||'',url:url||''},function(res){
     if(res&&res.ok&&res.b64){ const src='data:'+(res.ct||'image/jpeg')+';base64,'+res.b64; show(src); if(id) heroPhotoCachePut(id,src); }
-    else box.innerHTML='<div style="color:#94a3b8;font-size:13px">Could not load — <a style="color:#93c5fd" href="'+url+'" target="_blank">open in Drive</a><br><span style="font-size:11px">(photo_b64 needs the next backend deploy)</span></div>';
+    /* The old hint here said "photo_b64 needs the next backend deploy". That
+       route has been live since R12 and answers correctly — verified against the
+       deployment 10-Aug-2026 — so the hint sent anyone debugging this in exactly
+       the wrong direction. Report what actually failed instead. */
+    else box.innerHTML='<div style="color:#94a3b8;font-size:13px">Could not load this photo — <a style="color:#93c5fd" href="'+url+'" target="_blank">open in Drive</a><br><span style="font-size:11px">'+((res&&res.error)?raviEsc(String(res.error)):'no answer from the photo proxy')+'</span></div>';
   },20000);
 }
 function huPhotoKey(r){ return HU_PHOTO_KEY_PREFIX+String(r[HU_COLS.jcNo]||'').trim()+'|'+String(r[HU_COLS.code]||'').trim(); }
