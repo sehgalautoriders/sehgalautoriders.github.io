@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 38;
-window.HERO_BUILD = 'R47-2026.08.08.2';
+window.HERO_RELEASE = 40;
+window.HERO_BUILD = 'R50-2026.08.10.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -215,6 +215,36 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
       if (b) { b.textContent = '⟳ New build ready'; b.className = 'ok'; }
     } catch (e) {}
   });
+
+  /* LOCALHOST IS FOR DEVELOPMENT — NO SERVICE WORKER THERE. (Ravi 08-Aug-2026)
+     From R47 onward the work is done on a local server and only published to
+     GitHub Pages in batches, so the people at the back do not see a new version
+     every ten minutes. The service worker exists to push a build onto a phone;
+     on a dev box it does the opposite of what is wanted — it serves the file
+     from cache after an edit, and heroForceUpdate() throws the full-screen
+     "Updating..." cover over the screen being worked on. Ctrl+Shift+R alone
+     does not fix this: it bypasses the worker for the page request only, and
+     everything the worker precached still comes back stale.
+     So on localhost: register nothing, and tear down any worker a previous
+     session left registered on this port, so the caches cannot outlive it.
+     This branch is dead on sehgalautoriders.github.io — phone behaviour is
+     byte-for-byte unchanged. */
+  var HERO_IS_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
+  if (HERO_IS_LOCAL) {
+    window.addEventListener('load', function () {
+      try {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          rs.forEach(function (r) { r.unregister(); });
+        });
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+        }
+      } catch (e) {}
+      window.heroCheckForUpdate = function () {};
+      console.info('HERO local dev: service worker off, caches cleared. Build ' + window.HERO_BUILD);
+    });
+    return;
+  }
 
   window.addEventListener('load', function () {
     heroShowUpdatedToast();
@@ -6509,6 +6539,50 @@ function esRenderGatePhotos(g){
 /* ================= MASTER DATA MODULE ================= */
 let MD_TABLES=[], MD_CURRENT=null, MD_COLUMNS=[], MD_ROWS=[], MD_NTCOLS=[];
 
+/* ── R50: the LOGIN table is served from Supabase (profiles), not a sheet.
+   Its rows are edited through readable GET actions (login_update/delete/create)
+   because the generic grid saves with jpost (no-cors) and can never read a
+   reply — an admin console must confirm "password set" / "not authorised".
+   Writes are token-gated: the superadmin enters LOGIN_ADMIN_TOKEN once, stored
+   on this device. The UNIQUE ID (userid) is locked; PASSWORD is set-only. */
+function mdIsLogin(){ return /^(login|md_login)$/i.test(String(MD_CURRENT||'')); }
+function mdLoginToken(force){
+  let t = localStorage.getItem('hero_login_admin_token') || '';
+  if(force || !t){
+    t = (prompt('Login-admin token (needed to edit logins — stored on this device only):')||'').trim();
+    if(t) localStorage.setItem('hero_login_admin_token', t);
+  }
+  return t;
+}
+function mdLoginCell(ri, col, value, el){
+  const row = MD_ROWS[ri]; if(!row) return;
+  const token = mdLoginToken(); if(!token){ mdFlag('Token needed'); return; }
+  mdFlag('Saving…');
+  jgetRaw('login_update', {row:row._row, col:col, value:value, token:token}, function(res){
+    if(res && res.ok){
+      if(col==='PASSWORD'){ if(el) el.value=''; mdFlag('Password set'); }
+      else { row[col]=value; mdFlag('Saved'); }
+      if(typeof clearMasterCache==='function') clearMasterCache();
+    } else {
+      const err=(res&&res.error)||'Save failed';
+      if(/not authoris/i.test(err)) localStorage.removeItem('hero_login_admin_token');
+      alert('Could not save: '+err); mdFlag('');
+      if(col!=='PASSWORD' && el) el.value = (row[col]!=null?row[col]:''); /* revert */
+    }
+  }, 20000);
+}
+function mdLoginAdd(){
+  const token = mdLoginToken(); if(!token){ mdFlag('Token needed'); return; }
+  const code = (prompt('New login code (e.g. sa.5099):')||'').trim(); if(!code) return;
+  const pass = (prompt('Initial password (min 6 characters):')||'').trim();
+  if(pass.length<6){ alert('Password must be at least 6 characters.'); return; }
+  mdFlag('Creating…');
+  jgetRaw('login_create', {code:code, pass:pass, token:token}, function(res){
+    if(res && res.ok){ if(typeof clearMasterCache==='function') clearMasterCache(); mdSelectTable(MD_CURRENT); mdFlag('Login created'); }
+    else { alert('Could not create login: '+((res&&res.error)||'failed')); mdFlag(''); }
+  }, 25000);
+}
+
 function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); }
 function mdRenderTableList(){
   const box=document.getElementById('md-tablelist');
@@ -6528,26 +6602,45 @@ function mdRenderGrid(){
   let html='<div style="overflow-x:auto"><table class="gridtable"><thead><tr>';
   MD_COLUMNS.forEach(c=>{ html+=`<th>${c}<button class="rmcol" onclick="mdRemoveColumn('${c.replace(/'/g,"\\'")}')" title="Delete column">✕</button></th>`; });
   html+='<th style="width:40px"></th></tr></thead><tbody>';
+  const isLogin=mdIsLogin();
   MD_ROWS.forEach((row,ri)=>{
     html+='<tr>';
     MD_COLUMNS.forEach(c=>{ const v=(row[c]!==undefined&&row[c]!==null)?String(row[c]).replace(/"/g,'&quot;'):'';
+      if(isLogin){
+        const cu=String(c).toUpperCase();
+        if(cu==='UNIQUE ID'){ html+=`<td><input value="${v}" readonly title="Userid is locked" style="background:#f1f5f9;color:#64748b;font-weight:700"></td>`; return; }
+        if(cu==='PASSWORD'){ html+=`<td><input type="password" placeholder="•••• set new" autocomplete="new-password" onchange="mdLoginCell(${ri},'PASSWORD',this.value,this)"></td>`; return; }
+        html+=`<td><input value="${v}" onchange="mdLoginCell(${ri},'${c.replace(/'/g,"\\'")}',this.value,this)"></td>`; return;
+      }
       html+=`<td><input value="${v}" onchange="mdCellChanged(${ri},'${c.replace(/'/g,"\\'")}',this.value)"></td>`; });
-    html+=`<td><button class="rmrow" onclick="mdRemoveRow(${ri})" title="Delete row">✕</button></td></tr>`;
+    html+=`<td><button class="rmrow" onclick="mdRemoveRow(${ri})" title="${isLogin?'Deactivate login':'Delete row'}">✕</button></td></tr>`;
   });
   html+='</tbody></table></div><button class="btn ghost block" style="margin-top:8px" onclick="mdAddRow()">+ Add Row</button> <span id="md-saveflag" class="hint" style="color:var(--ok)"></span>';
   area.innerHTML=html;
 }
 function mdFlag(msg){ const f=document.getElementById('md-saveflag'); if(f){ f.textContent=msg; setTimeout(()=>{ if(f) f.textContent=''; },2000); } }
 function mdCellChanged(ri,col,value){ MD_ROWS[ri][col]=value; jpost({type:'master_updaterow',table:MD_CURRENT,row:MD_ROWS[ri]._row,values:{[col]:value}}); mdFlag('Saved'); }
-function mdAddRow(){ const blank={}; MD_COLUMNS.forEach(c=>blank[c]=''); jpost({type:'master_addrow',table:MD_CURRENT,values:blank});
+function mdAddRow(){ if(mdIsLogin()) return mdLoginAdd();  /* R50 */
+  const blank={}; MD_COLUMNS.forEach(c=>blank[c]=''); jpost({type:'master_addrow',table:MD_CURRENT,values:blank});
   MD_ROWS.push(Object.assign({_row:MD_ROWS.length+2},blank)); mdRenderGrid(); }
-function mdRemoveRow(ri){ const row=MD_ROWS[ri]; if(!confirm('Delete this row?')) return; jpost({type:'master_deleterow',table:MD_CURRENT,row:row._row}); MD_ROWS.splice(ri,1); mdRenderGrid(); mdFlag('Deleted'); }
+function mdRemoveRow(ri){ const row=MD_ROWS[ri];
+  if(mdIsLogin()){  /* R50: deactivate the login, never hard-delete the auth user */
+    if(!confirm('Deactivate login "'+(row['UNIQUE ID']||'')+'"? They will no longer be able to sign in. (Not deleted — can be re-enabled.)')) return;
+    const token=mdLoginToken(); if(!token){ mdFlag('Token needed'); return; }
+    jgetRaw('login_delete', {row:row._row, token:token}, function(res){
+      if(res && res.ok){ MD_ROWS.splice(ri,1); mdRenderGrid(); if(typeof clearMasterCache==='function') clearMasterCache(); mdFlag('Deactivated'); }
+      else { alert('Could not deactivate: '+((res&&res.error)||'failed')); }
+    }, 20000);
+    return;
+  }
+  if(!confirm('Delete this row?')) return; jpost({type:'master_deleterow',table:MD_CURRENT,row:row._row}); MD_ROWS.splice(ri,1); mdRenderGrid(); mdFlag('Deleted'); }
 function mdRemoveColumn(col){ if(!confirm('Delete column "'+col+'"? This removes it for every row.')) return;
   jpost({type:'master_deletecolumn',table:MD_CURRENT,column:col}); MD_COLUMNS=MD_COLUMNS.filter(c=>c!==col); MD_ROWS.forEach(r=>delete r[col]); mdRenderGrid(); }
-function mdOpenAddColumn(){ document.getElementById('ac-name').value=''; document.getElementById('modal-addcolumn').style.display='flex'; }
+function mdOpenAddColumn(){ if(mdIsLogin()){ alert('The LOGIN table structure is fixed — columns cannot be added here.'); return; } document.getElementById('ac-name').value=''; document.getElementById('modal-addcolumn').style.display='flex'; }
 function mdAddColumn(){ const name=val('ac-name'); if(!name) return; jpost({type:'master_addcolumn',table:MD_CURRENT,column:name});
   MD_COLUMNS.push(name); MD_ROWS.forEach(r=>r[name]=''); mdCloseModal('modal-addcolumn'); mdRenderGrid(); }
-function mdDeleteCurrentTable(){ if(!confirm('Delete the entire table "'+MD_CURRENT+'"? This cannot be undone.')) return;
+function mdDeleteCurrentTable(){ if(mdIsLogin()){ alert('The LOGIN table cannot be deleted — it is the login store for both apps.'); return; }
+  if(!confirm('Delete the entire table "'+MD_CURRENT+'"? This cannot be undone.')) return;
   jpost({type:'master_deletetable',table:MD_CURRENT}); MD_TABLES=MD_TABLES.filter(t=>t!==MD_CURRENT); MD_CURRENT=null; MD_COLUMNS=[]; MD_ROWS=[];
   document.getElementById('md-tabletitle').textContent='Select a table'; document.getElementById('md-tabletools').style.display='none';
   document.getElementById('md-tablearea').innerHTML='<div class="empty"><div class="cond">No table selected</div><p style="margin-top:8px">Pick a table on the left, or create a new one.</p></div>'; mdRenderTableList(); }
