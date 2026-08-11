@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 42;
-window.HERO_BUILD = 'R52-2026.08.10.1';
+window.HERO_RELEASE = 43;
+window.HERO_BUILD = 'R53-2026.08.10.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2065,6 +2065,13 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
     align-items:center;justify-content:center;font:800 10px 'Roboto Mono',monospace}
   .ps2-refresh{margin-left:auto;border:0;background:transparent;color:#b42318;padding:6px;font:800 10px Inter,sans-serif;
     text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
+  /* R53: Excel export sits beside Refresh. Outlined, not solid — Refresh is the
+     everyday button and the export is the occasional one; the outline keeps the
+     hierarchy without adding a second red block to the header. */
+  .ps2-export{border:1px solid #d6d3cd;background:#fff;color:#15803d;border-radius:7px;padding:5px 9px;
+    font:800 10px Inter,sans-serif;text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
+  .ps2-export:hover:not(:disabled){background:#f0fdf4;border-color:#86efac}
+  .ps2-export:disabled{opacity:.6;cursor:default}
   .ps2-recent{max-height:438px;overflow:auto;scrollbar-width:thin}
   .ps2-scan-row{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:11px;align-items:center;
     padding:12px 16px;border-bottom:1px solid #ebe8e2;background:#fff}
@@ -2186,7 +2193,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
       <aside class="ps2-side">
         <section class="ps2-panel" aria-labelledby="ps2-recent-title">
-          <div class="ps2-recent-head"><h2 id="ps2-recent-title">Recent scans</h2><span id="ps-recent-count" class="ps2-count"></span><button class="ps2-refresh" onclick="psLoadRecent()">Refresh</button></div>
+          <div class="ps2-recent-head"><h2 id="ps2-recent-title">Recent scans</h2><span id="ps-recent-count" class="ps2-count"></span><button class="ps2-refresh" onclick="psLoadRecent()">Refresh</button><button class="ps2-export" id="ps-export-btn" onclick="psExportExcel()" title="Download every saved scan as an Excel file">Excel</button></div>
           <div id="ps-recent" class="ps2-recent"><div class="ps2-recent-state">Loading recent scans…</div></div>
         </section>
         <section class="ps2-panel ps2-guide" aria-labelledby="ps2-guide-title">
@@ -3121,19 +3128,48 @@ function updateQueueBadge(){
   if(n>0){ el.style.display='inline-flex'; el.textContent='⏳ '+n+' pending sync'; }
   else el.style.display='none';
 }
+/* AN ITEM BEING UPLOADED RIGHT NOW IS NOT AN ITEM WAITING TO BE SENT.
+   (10-Aug-2026 — this is what wrote every gate entry 2 to 5 times.)
+   jpost() queues first and only removes the item AFTER its upload finishes. A
+   gate entry carries five photos, so on workshop mobile data that item sits in
+   the queue for tens of seconds — and the 20-second flush timer below, plus the
+   'online' listener firing on every network flap, re-POSTed the very row that
+   was still in flight. mode:'no-cors' returns an opaque response, so neither
+   side could ever learn the server had already taken it. Result on 10-Aug: 175
+   rows for 81 vehicles, 92 of the duplicates byte-identical apart from the
+   server timestamp, gaps of 0.2s to 81s (median 12s).
+   Fix: the item carries `sending` = the millisecond its upload started. The
+   flusher skips those. If the tab is killed mid-upload the stamp goes stale
+   after QUEUE_STALE_MS and the item becomes sendable again, so nothing is ever
+   stranded — the offline guarantee is untouched, only the double-send is gone. */
+const QUEUE_STALE_MS=180000;                   // 3 min — an upload still running after this is dead, retry it
+function queueSendable_(it){ return !it || !it.sending || (Date.now()-it.sending)>QUEUE_STALE_MS; }
+/* Read-modify-write ONE item, re-reading the queue first so a write made by the
+   other path in the meantime is never clobbered. */
+function queueMark_(qid, patch){
+  const q=getQueue(); let hit=false;
+  for(const it of q){ if(it.id===qid){ Object.assign(it, patch); hit=true; break; } }
+  if(hit) setQueue(q);
+}
 let FLUSHING=false;
 async function flushQueue(){
   if(FLUSHING || !navigator.onLine) return;
   let q=getQueue();
   if(!q.length) return;
   FLUSHING=true;
-  const remaining=[];
+  const sent=[];
   for(const item of q){
+    if(!queueSendable_(item)) continue;        // in flight in jpost — re-sending it is the duplicate
+    queueMark_(item.id,{sending:Date.now()});
     try{
       await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(item.body)});
-    }catch(e){ remaining.push(item); }
+      sent.push(item.id);
+    }catch(e){ queueMark_(item.id,{sending:0}); } // stays queued for the next round
   }
-  setQueue(remaining);
+  /* Re-read before removing, and remove only what THIS pass sent. The old
+     `setQueue(remaining)` overwrote the whole queue with the snapshot taken
+     before the awaits, silently dropping anything jpost queued during them. */
+  if(sent.length) setQueue(getQueue().filter(x=>sent.indexOf(x.id)<0));
   FLUSHING=false;
 }
 async function globalSyncNow(){
@@ -3188,13 +3224,18 @@ async function jpost(body){
      network, then decide" delay — Save now confirms instantly, syncing happens quietly
      after. */
   const qid='q'+Date.now()+Math.random().toString(36).slice(2);
-  const q=getQueue(); q.push({id:qid, body, ts:Date.now()}); setQueue(q);
-  if(!navigator.onLine) return; // stays queued; background retry sends it once online
+  const online=navigator.onLine;
+  /* `sending` is stamped in the SAME write that queues the item, before the
+     fetch is even started — there is no window in which the flusher can see
+     this row as idle and send it a second time. See queueSendable_ above. */
+  const q=getQueue(); q.push({id:qid, body, ts:Date.now(), sending: online?Date.now():0}); setQueue(q);
+  if(!online) return; // stays queued; background retry sends it once online
   try{
     await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
     setQueue(getQueue().filter(x=>x.id!==qid)); // sent — remove only this item, not the whole queue
   }catch(e){
-    // stays queued — background retry will pick it up, nothing lost
+    // stays queued — hand it back to the background retry, nothing lost
+    queueMark_(qid,{sending:0});
   }
 }
 
@@ -14603,6 +14644,82 @@ function psLoadRecent(){
         +'<div class="ps2-scan-meta">'+raviEsc(meta.join(' · ')||'Saved scan')+'</div></div>'+conf+'</div>';
     }).join('');
   });
+}
+
+/* R53 — EXPORT EVERY SAVED SCAN TO EXCEL.
+   The side panel deliberately lists only the last 20; this is the "give me the
+   whole book" button beside it.
+
+   Three things that are easy to get wrong here:
+
+   1. It asks for EVERY row, not 20. psRecent() caps at Math.min(limit, rows),
+      so a big number means "all" and needs no backend change at all.
+   2. The columns are NOT a fixed list. psSave() turns any unknown field on a
+      part label into a real sheet column, so an old Hero Honda sticker can add
+      a column nobody planned. The header spine is therefore built from the rows
+      themselves, in first-seen order, and any late-appearing column is appended
+      rather than dropped. A hardcoded header list would silently lose exactly
+      the fields the scanner exists to capture.
+   3. jgetRaw, not jget: jget serves from cache and would happily export a stale
+      copy of the book, and its 25s ceiling is too tight for a few thousand rows.
+
+   MRP and Confidence % go in as real numbers so the sheet can be summed and
+   sorted; everything else stays text, because part numbers and barcodes with
+   leading zeros are ruined the moment Excel treats them as numeric. */
+function psExportExcel(){
+  if(!window.__heroLibsOK_psExport){
+    heroEnsureLibs('xlsx', function(ok){ if(!ok) return; window.__heroLibsOK_psExport=1; psExportExcel(); window.__heroLibsOK_psExport=0; });
+    return;
+  }
+  if(!window.XLSX){ alert('Excel engine still loading, try again in a moment.'); return; }
+  const btn=document.getElementById('ps-export-btn');
+  const restore=function(){ if(btn){ btn.disabled=false; btn.textContent='Excel'; } };
+  if(btn){ btn.disabled=true; btn.textContent='Preparing…'; }
+
+  jgetRaw('ps_recent',{limit:100000},function(res){
+    try{
+      if(!res||res.ok===false){ alert('Could not fetch the scans: '+((res&&res.error)||'backend not reachable')); restore(); return; }
+      const rows=res.rows||[];
+      if(!rows.length){ alert('No scans saved yet — nothing to export.'); restore(); return; }
+
+      /* Column spine: first-seen order across every row, so a column that only
+         appears on the 300th scan still gets its own place. */
+      const cols=[];
+      rows.forEach(function(r){ Object.keys(r).forEach(function(k){ if(cols.indexOf(k)<0) cols.push(k); }); });
+
+      const NUMERIC={'MRP':1,'Confidence %':1};
+      const aoa=[cols];
+      rows.forEach(function(r){
+        aoa.push(cols.map(function(c){
+          const v=r[c];
+          if(v===undefined||v===null) return '';
+          if(NUMERIC[c]){
+            const n=Number(String(v).replace(/[₹,%\s]/g,''));
+            if(String(v).trim()!=='' && isFinite(n)) return n;
+          }
+          return String(v);
+        }));
+      });
+
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      /* Readable widths — the label text fields are long and the default 8 chars
+         makes the sheet unusable without hand-dragging every column. */
+      ws['!cols']=cols.map(function(c){
+        return {wch: c==='Description'||c==='LABEL FULL TEXT'||c==='Remarks' ? 42 : Math.max(12, Math.min(28, c.length+4))};
+      });
+      ws['!freeze']={xSplit:0,ySplit:1};
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'PartsScanned');
+      XLSX.writeFile(wb,'PartsScanned_'+new Date().toISOString().slice(0,10)+'.xlsx');
+
+      /* Rule 8 — the press has to show something. The count is the honest
+         receipt: it says how much actually left the building. */
+      if(btn){ btn.textContent='✓ '+rows.length; setTimeout(restore,2200); }
+    }catch(e){
+      alert('Export failed: '+String(e.message||e).slice(0,160));
+      restore();
+    }
+  },90000);
 }
 
 /* --------------------------- INSURANCE RENEWAL CRM --------------------------- */
