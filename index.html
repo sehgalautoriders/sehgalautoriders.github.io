@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 49;
-window.HERO_BUILD = 'R61-2026.08.12.6';
+window.HERO_BUILD = 'R62-2026.08.12.7';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -7221,10 +7221,14 @@ function engSay(msg){ const el=document.getElementById('eng-msg'); if(el) el.inn
 
 async function engBoot(runTests){
   const card=document.getElementById('ge-engines-card'); if(!card) return;
-  /* Visible to the people who can act on it. RLS refuses the write regardless. */
-  if(!(typeof isAdmin==='function' && isAdmin()) && !(typeof isTopMgmtUser==='function' && isTopMgmtUser())){
-    card.style.display='none'; return;
-  }
+  /* CEO / superadmin ONLY (Ravi, 12-Aug-2026: "Do not show the google engines to
+     anyone. only the superadmin. Why is it seen in dealeradmin"). This is the
+     SAME gate as the Cameras card (hikBoot) — a dealeradmin (GM/WM) is neither
+     superadmin nor CEO by designation, so they no longer see it. The Google
+     accounts, their live billing/credit and the switcher are the CEO's alone. */
+  const ceo = (typeof isAdmin==='function' && isAdmin())
+           || (USER && /\bCEO\b/i.test(String(USER.designation||'')));
+  if(!ceo){ card.style.display='none'; return; }
   card.style.display='block';
   if(!SB_ON){ engSay('Supabase is switched off in this build (SB_ON=false), so the engine registry cannot be read.'); return; }
   try{
