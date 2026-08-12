@@ -200,7 +200,17 @@ async function signIn() {
   $('loginErr').textContent = ''
   if (!code || !pass) { $('loginErr').textContent = 'Enter login ID and password.'; return }
   $('loginBtn').disabled = true
-  const email = code.includes('@') ? code : code + DOMAIN
+  // Old-sheet logins work exactly (12-Aug): a bare emp-no (1050) or login code
+  // (parts.1050) both resolve to the real auth email via resolve_login
+  // (migration 0023). Fallback keeps code+domain working if the RPC is down.
+  let email = code.includes('@') ? code : ''
+  if (!email) {
+    try {
+      const { data: mapped } = await sb.rpc('resolve_login', { p_id: code })
+      if (typeof mapped === 'string' && mapped) email = mapped
+    } catch { /* fall through */ }
+    if (!email) email = code + DOMAIN
+  }
   const { error } = await sb.auth.signInWithPassword({ email, password: pass })
   $('loginBtn').disabled = false
   if (error) { $('loginErr').textContent = 'Wrong login or password.'; return }
