@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 46;
-window.HERO_BUILD = 'R58-2026.08.12.3';
+window.HERO_RELEASE = 47;
+window.HERO_BUILD = 'R59-2026.08.12.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2611,6 +2611,43 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
           which is exactly why a dead account can sit unnoticed. Credit left is an
           estimate: the last Billing-console reading, minus every paid call since.
           Below the threshold, <b>rvp9192@gmail.com</b> is mailed every 2 hours.
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CAMERAS (HIKVISION) — CEO ONLY =====================
+         Ravi 12-Aug-2026: "I need this connected in the Hero app today. Only
+         available for me to see. No one else. CEO login only - superadmin."
+
+         Hidden here AND refused by RLS: hik_events has a CEO-only policy, so a
+         workshop manager who finds this markup in the page source still gets
+         nothing back. Hiding a card is not security; the policy is.
+
+         Nothing on this screen polls a camera. The NVR posts one alarm with one
+         picture when its own Line Crossing rule fires, and the plate is only
+         sent to OCR when the camera could not read it itself — Ravi's rule:
+         "it should not randomly extract photographs, only use when necessary
+         to ensure minimum spend amount."  ============================== -->
+    <div class="card" id="hik-card" style="display:none;margin-top:12px">
+      <div class="card-h">Cameras — vehicles seen
+        <button class="navbtn" onclick="hikBoot()" title="Reload the latest camera events">↻ Refresh</button>
+        <button class="navbtn" onclick="hikShowSetup()" title="The URL to give the IT lead for each NVR">⚙ Connect an NVR</button>
+      </div>
+      <div class="card-b">
+        <div id="hik-msg" class="hint" style="margin-bottom:8px">Loading…</div>
+        <div id="hik-setup" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:10px;font-size:12px"></div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+            <thead><tr style="text-align:left;border-bottom:2px solid var(--line,#ddd)">
+              <th style="padding:6px 8px">Time</th>
+              <th style="padding:6px 8px">Workshop</th>
+              <th style="padding:6px 8px">Registration</th>
+              <th style="padding:6px 8px">Read by</th>
+              <th style="padding:6px 8px">Customer</th>
+              <th style="padding:6px 8px">What to say</th>
+            </tr></thead>
+            <tbody id="hik-rows"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -7009,7 +7046,7 @@ function mdLoginAdd(){
   }, 25000);
 }
 
-function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); engBoot(false); }
+function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); engBoot(false); hikBoot(); }
 
 /* ==========================================================================
    GOOGLE ENGINES — the CEO master for "which Google account are we reading
@@ -7107,6 +7144,106 @@ async function engTest(id){
 
 async function engTestAll(){
   for(const r of ENG_ROWS){ await engTest(r.id); }
+}
+
+/* ==========================================================================
+   CAMERAS — the Hikvision feed, CEO only. Ravi 12-Aug-2026.
+
+   The cameras at the workshops are ordinary CCTV, not the ~Rs 1 lakh ANPR
+   cameras. They do not need to be: the NVR posts an alarm with a snapshot when
+   a vehicle crosses its own Line Crossing rule, and the plate is read from that
+   one picture. Proved end to end on 12-Aug against a simulated alarm — plate
+   read by Cloud Vision, matched to TANAJI RANGRAO CHALKE, Passion Pro.
+
+   Nothing here streams video and nothing polls. Every row on this screen cost
+   one snapshot upload and, only when the camera itself could not read the
+   plate, one OCR call.
+   ========================================================================== */
+let HIK_ROWS=[];
+
+async function hikBoot(){
+  const card=document.getElementById('hik-card'); if(!card) return;
+  /* CEO / superadmin only, per Ravi. RLS refuses everyone else regardless of
+     what this check says — hiding the card is the courtesy, not the gate. */
+  const ceo = (typeof isAdmin==='function' && isAdmin())
+           || (USER && /\bCEO\b/i.test(String(USER.designation||'')));
+  if(!ceo){ card.style.display='none'; return; }
+  card.style.display='block';
+  if(!SB_ON){ document.getElementById('hik-msg').textContent='Supabase is off in this build.'; return; }
+  try{
+    const res=await sbFetch('/rest/v1/hik_events?select=*&order=at.desc&limit=100');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    HIK_ROWS=await res.json();
+    hikRender();
+  }catch(e){
+    document.getElementById('hik-msg').innerHTML=
+      '<span style="color:#991b1b">Could not read the camera feed: '+raviEsc(String(e.message||e))+'</span>';
+  }
+}
+
+function hikRender(){
+  const tb=document.getElementById('hik-rows'), msg=document.getElementById('hik-msg');
+  if(!tb) return;
+  if(!HIK_ROWS.length){
+    tb.innerHTML='';
+    msg.innerHTML='No camera events yet. Press <b>⚙ Connect an NVR</b> for the one URL your IT lead '
+      +'has to paste into the NVR — after that, every vehicle that crosses the line appears here on its own.';
+    return;
+  }
+  const READER={camera:'Camera (ANPR)',gemini:'Gemini',vision:'Cloud Vision',docai:'Document AI'};
+  msg.innerHTML='<b>'+HIK_ROWS.length+'</b> vehicles seen. Newest first.';
+  tb.innerHTML=HIK_ROWS.map(function(r){
+    const t=new Date(r.at);
+    const pitch=[];
+    if(r.service_due) pitch.push('<span style="color:#065f46;font-weight:700">Service due</span>');
+    if(r.insurance_expiry){
+      const d=Math.round((new Date(r.insurance_expiry)-new Date())/86400000);
+      if(d<=45) pitch.push('<span style="color:'+(d<0?'#991b1b':'#92400e')+';font-weight:700">Insurance '
+        +(d<0?('expired '+(-d)+'d ago'):('expires in '+d+'d'))+'</span>');
+    }
+    if(!r.matched_reg && r.plate) pitch.push('<span style="color:#6b7280">New vehicle — not in our records</span>');
+    return '<tr style="border-bottom:1px solid #eee">'
+      +'<td style="padding:6px 8px;white-space:nowrap">'+t.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})
+        +'<div style="font-size:10.5px;color:#6b7280">'+t.toLocaleDateString('en-IN')+'</div></td>'
+      +'<td style="padding:6px 8px">'+raviEsc(r.site_id||'—')
+        +(r.channel?'<div style="font-size:10.5px;color:#6b7280">ch '+raviEsc(r.channel)+'</div>':'')+'</td>'
+      +'<td style="padding:6px 8px"><b>'+raviEsc(r.plate||'—')+'</b>'
+        +(r.confidence?'<div style="font-size:10.5px;color:#6b7280">'+r.confidence+'%</div>':'')+'</td>'
+      +'<td style="padding:6px 8px;font-size:11px">'+raviEsc(READER[r.plate_source]||r.plate_source||'—')+'</td>'
+      +'<td style="padding:6px 8px">'+raviEsc(r.customer_name||'—')+'</td>'
+      +'<td style="padding:6px 8px">'+(pitch.join(' · ')||'<span style="color:#9ca3af">—</span>')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+async function hikShowSetup(){
+  const box=document.getElementById('hik-setup');
+  box.style.display = box.style.display==='none' ? 'block' : 'none';
+  if(box.style.display==='none') return;
+  box.innerHTML='Loading the sites…';
+  try{
+    const res=await sbFetch('/rest/v1/hik_sites?select=id,workshop,label,ingest_token,last_event_at&order=id');
+    const sites=await res.json();
+    box.innerHTML=
+      '<b>Give this to the IT lead — one URL per NVR.</b><br>'
+      +'In the NVR web page: <i>Configuration → Network → Advanced → HTTP Listening</i> '
+      +'(on some firmware: <i>Event → Basic Event → Alarm → HTTP host</i>). Paste the URL, '
+      +'save, then draw a <b>Line Crossing</b> rule where cars stop at the bay entrance and '
+      +'tick <i>Notify surveillance centre / HTTP</i> as its action.<br><br>'
+      +sites.map(function(s){
+        return '<div style="margin-bottom:8px">'
+          +'<b>'+raviEsc(s.workshop)+'</b> — '+raviEsc(s.label)
+          +(s.last_event_at?' <span style="color:#065f46">· last event '+new Date(s.last_event_at).toLocaleString('en-IN')+'</span>'
+                           :' <span style="color:#92400e">· nothing received yet</span>')
+          +'<br><code style="font-size:11px;word-break:break-all;background:#fff;padding:2px 4px;border:1px solid #ddd">'
+          +SB_URL+'/functions/v1/hik-events?site='+encodeURIComponent(s.id)+'&t='+raviEsc(s.ingest_token)
+          +'</code></div>';
+      }).join('')
+      +'<div style="color:#6b7280">No local PC is installed anywhere and no camera password is stored in this app. '
+      +'The URL is the whole credential, it is different for every NVR, and it can be changed in one line if it ever leaks.</div>';
+  }catch(e){
+    box.innerHTML='<span style="color:#991b1b">Could not load the sites: '+raviEsc(String(e.message||e))+'</span>';
+  }
 }
 
 async function engUse(id){
