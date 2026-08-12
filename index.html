@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 48;
-window.HERO_BUILD = 'R60-2026.08.12.5';
+window.HERO_RELEASE = 49;
+window.HERO_BUILD = 'R61-2026.08.12.6';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2631,7 +2631,9 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
     <div class="card" id="hik-card" style="display:none;margin-top:12px">
       <div class="card-h">Cameras — vehicles seen
         <button class="navbtn" onclick="hikBoot()" title="Reload the latest camera events">↻ Refresh</button>
-        <button class="navbtn" onclick="hikShowSetup()" title="The URL to give the IT lead for each NVR">⚙ Connect an NVR</button>
+        <button class="navbtn" onclick="hikShowSetup()" title="How to connect the cameras yourself — no IT guy, no Hikvision approval">⚙ Connect cameras</button>
+        <button class="navbtn" onclick="hikEzvizTest()" title="Check the EZVIZ / Hik-Connect key and list what it can see">🔌 Test connection</button>
+        <button class="navbtn" onclick="hikEzvizPull()" title="Pull the latest camera alarms now">⬇ Pull alarms</button>
       </div>
       <div class="card-b">
         <div id="hik-msg" class="hint" style="margin-bottom:8px">Loading…</div>
@@ -7355,29 +7357,88 @@ async function hikShowSetup(){
   const box=document.getElementById('hik-setup');
   box.style.display = box.style.display==='none' ? 'block' : 'none';
   if(box.style.display==='none') return;
-  box.innerHTML='Loading the sites…';
+  /* REWRITTEN 12-Aug-2026. The first version printed a URL for the IT lead to
+     paste into each NVR's HTTP Listening setting. Ravi: "IT cannot put anything
+     anywhere. Whatever he had he has given me... I cannot contact the HikVision
+     backend team. I need to do everything myself." So that route is gone, and
+     so is Hik-Connect OpenAPI, which needs Hikvision partner approval.
+
+     What survives needs nobody. Hik-Connect for end users runs on the EZVIZ /
+     ys7 cloud -- the app's own binary is full of ys7.com and ezvizlife.com --
+     and the two share ONE account system. EZVIZ has a self-service developer
+     platform: register, take two strings, paste them once. No NVR is touched,
+     nobody is asked, nothing is approved. Verified 12-Aug: all three regional
+     hosts answer the token endpoint. */
+  box.innerHTML =
+    '<b>Connecting the cameras \u2014 you can do all of this yourself.</b><br>'
+   +'Nothing here needs the IT lead and nothing needs Hikvision to approve anything. '
+   +'Hik-Connect runs on the EZVIZ cloud and they share one account, so your existing '
+   +'admin login already owns the devices.<br><br>'
+   +'<b>1.</b> Go to <b>open.ezvizlife.com</b> and sign in with the same Hik-Connect '
+   +'admin account. If it says the account is a business one, use '
+   +'<b>isgpopen.ezvizlife.com</b> instead \u2014 both are live.<br>'
+   +'<b>2.</b> Open the developer console and create an application. It gives you two '
+   +'strings: an <b>AppKey</b> and an <b>AppSecret</b>. Self-service \u2014 no approval queue.<br>'
+   +'<b>3.</b> Send both to me, or paste them yourself: Supabase dashboard \u2192 Project '
+   +'Settings \u2192 Edge Functions \u2192 Secrets, named exactly <code>EZVIZ_APP_KEY</code> and '
+   +'<code>EZVIZ_APP_SECRET</code>.<br>'
+   +'<b>4.</b> Press <b>Test connection</b> above. It lists every camera the key can see, '
+   +'by name \u2014 Donaje, Bavdhan, Bhor, Nexa Manjri, Khedshivapur, Kamshet, Law College Road.<br><br>'
+   +'<span style="color:#6b7280">Cost: listing devices and pulling alarms is free. The only '
+   +'thing that costs money is reading a number plate, and that runs only when an alarm '
+   +'arrives with a picture and the camera did not read the plate itself.</span>';
+}
+
+async function hikEzvizTest(){
+  const box=document.getElementById('hik-setup');
+  box.style.display='block'; box.innerHTML='Checking the EZVIZ / Hik-Connect connection\u2026';
   try{
-    const res=await sbFetch('/rest/v1/hik_sites?select=id,workshop,label,ingest_token,last_event_at&order=id');
-    const sites=await res.json();
-    box.innerHTML=
-      '<b>Give this to the IT lead — one URL per NVR.</b><br>'
-      +'In the NVR web page: <i>Configuration → Network → Advanced → HTTP Listening</i> '
-      +'(on some firmware: <i>Event → Basic Event → Alarm → HTTP host</i>). Paste the URL, '
-      +'save, then draw a <b>Line Crossing</b> rule where cars stop at the bay entrance and '
-      +'tick <i>Notify surveillance centre / HTTP</i> as its action.<br><br>'
-      +sites.map(function(s){
-        return '<div style="margin-bottom:8px">'
-          +'<b>'+raviEsc(s.workshop)+'</b> — '+raviEsc(s.label)
-          +(s.last_event_at?' <span style="color:#065f46">· last event '+new Date(s.last_event_at).toLocaleString('en-IN')+'</span>'
-                           :' <span style="color:#92400e">· nothing received yet</span>')
-          +'<br><code style="font-size:11px;word-break:break-all;background:#fff;padding:2px 4px;border:1px solid #ddd">'
-          +SB_URL+'/functions/v1/hik-events?site='+encodeURIComponent(s.id)+'&t='+raviEsc(s.ingest_token)
-          +'</code></div>';
-      }).join('')
-      +'<div style="color:#6b7280">No local PC is installed anywhere and no camera password is stored in this app. '
-      +'The URL is the whole credential, it is different for every NVR, and it can be changed in one line if it ever leaks.</div>';
+    const res=await sbFetch('/functions/v1/ezviz',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test'})});
+    const j=await res.json();
+    if(j.reason==='not-configured'){
+      box.innerHTML='<b style="color:#92400e">Not connected yet.</b><br>'+raviEsc(j.detail)
+        +'<br><br>Press <b>Connect cameras</b> for the four steps.';
+      return;
+    }
+    if(!j.ok){
+      box.innerHTML='<b style="color:#991b1b">The key did not work.</b><br>EZVIZ said: '
+        +raviEsc(String(j.msg||j.error||j.code||'unknown'))
+        +'<br><br><span style="color:#6b7280">Code 10017 means the AppKey does not exist; '
+        +'10030 means the AppKey and AppSecret do not match. If the account is a business '
+        +'one the host may need to be isgpopen.ezvizlife.com \u2014 tell me and I will switch it.</span>';
+      return;
+    }
+    box.innerHTML='<b style="color:#065f46">Connected.</b> '+j.deviceCount+' device(s) visible.<br><br>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<tr style="text-align:left"><th style="padding:3px 6px">Device</th><th style="padding:3px 6px">Serial</th>'
+      +'<th style="padding:3px 6px">Model</th><th style="padding:3px 6px">Ch</th><th style="padding:3px 6px">Online</th></tr>'
+      +(j.devices||[]).map(function(d){
+        return '<tr style="border-top:1px solid #eee"><td style="padding:3px 6px"><b>'+raviEsc(d.name||'')+'</b></td>'
+          +'<td style="padding:3px 6px;font-size:11px">'+raviEsc(d.serial||'')+'</td>'
+          +'<td style="padding:3px 6px;font-size:11px">'+raviEsc(d.model||'')+'</td>'
+          +'<td style="padding:3px 6px">'+raviEsc(String(d.channels==null?'':d.channels))+'</td>'
+          +'<td style="padding:3px 6px">'+(String(d.online)==='1'
+              ?'<span style="color:#065f46">online</span>':'<span style="color:#991b1b">offline</span>')+'</td></tr>';
+      }).join('')+'</table>';
   }catch(e){
-    box.innerHTML='<span style="color:#991b1b">Could not load the sites: '+raviEsc(String(e.message||e))+'</span>';
+    box.innerHTML='<span style="color:#991b1b">Test failed: '+raviEsc(String(e.message||e))+'</span>';
+  }
+}
+
+async function hikEzvizPull(){
+  const msg=document.getElementById('hik-msg');
+  msg.textContent='Pulling the latest camera alarms\u2026';
+  try{
+    const res=await sbFetch('/functions/v1/ezviz',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'alarms'})});
+    const j=await res.json();
+    if(j.reason==='not-configured'){ msg.innerHTML='Not connected yet \u2014 press <b>Connect cameras</b>.'; return; }
+    if(!j.ok){ msg.innerHTML='<span style="color:#991b1b">'+raviEsc(String(j.msg||j.error||'failed'))+'</span>'; return; }
+    msg.textContent=j.seen+' alarm(s) checked, '+j.saved+' new.';
+    await hikBoot();
+  }catch(e){
+    msg.innerHTML='<span style="color:#991b1b">'+raviEsc(String(e.message||e))+'</span>';
   }
 }
 
