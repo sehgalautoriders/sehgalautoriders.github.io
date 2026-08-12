@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 44;
-window.HERO_BUILD = 'R55-2026.08.12.1';
+window.HERO_RELEASE = 45;
+window.HERO_BUILD = 'R57-2026.08.12.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -4266,7 +4266,11 @@ geSyncPurposeUI();
       types name + mobile. Everything stays editable.
    Gemini key is set once (Settings), stored on the device only — mirrors the reference
    ANPR tool Ravi provided. No key printed anywhere, no server round-trip for the image. */
-const GE_GEMINI_MODEL='gemini-2.5-flash';
+/* 'gemini-2.5-flash' was RETIRED for new API users and 404s on every call
+   (11-Aug-2026). The '-latest' alias survives the next retirement too. This
+   path is now only the offline fallback — the ordered cascade runs server-side
+   in the read-text Edge Function — but a dead fallback is not a fallback. */
+const GE_GEMINI_MODEL='gemini-flash-latest';
 const GE_GEMINI_BASE='https://generativelanguage.googleapis.com/v1beta/models/';
 /* ===== UNIVERSAL API KEY (Ravi 09-Jul) =============================================
    The Gemini key is now an APP-WIDE setting entered once by the CEO/superadmin, stored
@@ -11674,7 +11678,7 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      again and again. How many times are you going to waste reading like this.
      If it is not caught in the first time it should stop at that."
      He is right, and it was costing a Vision/Gemini call every time. */
-  const GE_ID = { busy:false, plate:'', done:false, tried:{} };
+  const GE_ID = { busy:false, plate:'', done:false, tried:{}, engine:'' };
   window.GE_ID = GE_ID;
 
   function el(id){ return document.getElementById(id); }
@@ -11758,19 +11762,70 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     }catch(e){ return ''; }
   }
 
+  /* ---------------------------------------------------------------- THE ORDER
+     Ravi, 12-Aug-2026, on gate entry, as an instruction and not a preference:
+
+         "first gemini usage then cloud vision api then document api
+          in that order only"
+
+     The cascade itself lives in the read-text Edge Function, which is the only
+     place that can hold it: Document AI takes an OAuth token, not an API key,
+     so it can never be called from a phone, and the Gemini and Vision keys have
+     no business being on a phone either (index.html is published to a PUBLIC
+     repo — anyone who opened the app could read both keys out of localStorage).
+
+     One call goes up; the server runs Gemini, checks the answer against this
+     task's validator, and only then spends a Cloud Vision scan, and only then a
+     Document AI page. The engine that answered comes back in `provider`, so the
+     screen can say which one read the plate.
+
+     `validated` is the server's own check for the task (a real state code on a
+     plate, the MBL anchor on a chassis number). Unvalidated text is still
+     returned and still offered to accept() — the client extractors are the
+     proven ones and get the last word. */
+  async function srvRead(canvas, task){
+    if(!SB_ON) return null;
+    try{
+      if(!(await sbToken())) return null;
+      const blob=await new Promise(function(res){ canvas.toBlob(res,'image/jpeg',0.92); });
+      if(!blob) return null;
+      const form=new FormData();
+      form.append('task', task||'plate');
+      form.append('image', blob, 'scan.jpg');
+      const r=await sbFetch('/functions/v1/read-text',{method:'POST', body:form});
+      if(!r.ok) return null;
+      const j=await r.json();
+      if(!j || !j.text) return null;
+      return j;    /* {text, raw, provider, validated, tried} */
+    }catch(e){ return null; }
+  }
+
   /* Read text from a photo, trying three orientations. `accept` decides when we
-     have what we came for, so we stop as soon as a valid VIN or plate appears. */
-  window.geOcrRead = async function(src, accept){
+     have what we came for, so we stop as soon as a valid VIN or plate appears.
+     `task` names the job for the server cascade — 'plate' | 'vin' | 'odometer'. */
+  window.geOcrRead = async function(src, accept, task){
     const base=await loadUpright(src, 1600);
     const tries=[base, rotateCanvas(base,90), rotateCanvas(base,270)];
-    let best='';
+    let best='', bestEngine='';
     for(let i=0;i<tries.length;i++){
+      /* 1. Gemini  2. Cloud Vision  3. Document AI — all three, server-side. */
+      const s=await srvRead(tries[i], task);
+      if(s){
+        const clean=String(s.validated ? s.text : (s.raw || s.text || ''));
+        if(clean && !best){ best=clean; bestEngine=s.provider||'server'; }
+        if(clean && accept && accept(clean)) return {text:clean, engine:s.provider, rotated:i>0, validated:!!s.validated};
+        if(clean && !accept) return {text:clean, engine:s.provider, rotated:i>0, validated:!!s.validated};
+        continue;
+      }
+      /* Server unreachable (signed out, offline, function down). The old
+         direct-from-browser Vision path is left exactly as it was so a backend
+         outage costs accuracy, never the ability to log a vehicle in. */
       const t=await visionText(tries[i]);
-      if(t && !best) best=t;
-      if(t && accept && accept(t)) return {text:t, engine:'vision', rotated:i>0};
-      if(t && !accept) return {text:t, engine:'vision', rotated:i>0};
+      if(t && !best){ best=t; bestEngine='vision'; }
+      if(t && accept && accept(t)) return {text:t, engine:'vision', rotated:i>0, validated:false};
+      if(t && !accept) return {text:t, engine:'vision', rotated:i>0, validated:false};
     }
-    return {text:best, engine:best?'vision':'', rotated:false};
+    return {text:best, engine:bestEngine, rotated:false, validated:false};
   };
 
   /* ---------------------------------------------------------------- one call,
@@ -11838,12 +11893,16 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     GE_ID.busy=true;
     try{
       let plate='', from='';
-      // Dedicated OCR first (same engine class as Lens), AI only if that misses.
+      /* geOcrRead now runs the whole ordered cascade server-side — Gemini, then
+         Cloud Vision, then Document AI. askGemini below is no longer "the AI
+         step"; it is the last-ditch direct-from-browser attempt for when the
+         server could not be reached at all, and it costs nothing when the
+         cascade has already answered. */
       const readPlate=async function(dataUrl){
         try{
-          const r=await geOcrRead(dataUrl, function(t){ return !!geExtractPlate(t); });
+          const r=await geOcrRead(dataUrl, function(t){ return !!geExtractPlate(t); }, 'plate');
           const p=geExtractPlate(r.text);
-          if(p) return p;
+          if(p){ GE_ID.engine=r.engine||''; return p; }
         }catch(e){}
         return geNormPlate(await askGemini(dataUrl, PLATE_PROMPT, 'registration_number'));
       };
@@ -11895,7 +11954,11 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
            else GE_AI_RESULT={registration_number:plate}; }catch(e){}
       const regEl=el('ge-reg'); if(regEl) regEl.value=plate;
       try{ GE_LAST_REG_LOOKED=plate; }catch(e){}
-      status('🔎 Plate read from the '+from+' photo: <b>'+plate+'</b> · checking records…','info');
+      /* Name the engine. Ravi asked for a fixed order; the only way anyone can
+         see the order is being kept is if the screen says who answered. */
+      const ENGINE_NAME={gemini:'Gemini', vision:'Cloud Vision', docai:'Document AI'};
+      const eng=ENGINE_NAME[GE_ID.engine]||'';
+      status('🔎 Plate read from the '+from+' photo'+(eng?' by '+eng:'')+': <b>'+plate+'</b> · checking records…','info');
       GE_ID.busy=false;
       geIdLookup(plate);                                   // STAGE 3
     }catch(e){ GE_ID.busy=false; status('⚠ '+String(e.message||e),'error'); }
@@ -11975,9 +12038,12 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
       const hint=el('ge-vin-hint');
       let n='', how='';
       try{
-        // 1. Dedicated OCR on the ORIGINAL file — full resolution, upright,
-        //    and re-read rotated if the first pass gives nothing usable.
-        const r=await geOcrRead(f, function(t){ return !!geExtractVin(t); });
+        // 1. The ordered cascade on the ORIGINAL file — full resolution,
+        //    upright, Gemini then Cloud Vision then Document AI, and re-read
+        //    rotated if the first pass gives nothing usable. Document AI earns
+        //    its place here more than anywhere: a chassis number stamped into a
+        //    frame is a dense-document read, not signage.
+        const r=await geOcrRead(f, function(t){ return !!geExtractVin(t); }, 'vin');
         if(r.text){ n=geExtractVin(r.text); how=r.rotated?'scan (rotated)':'scan'; }
       }catch(e){}
       if(!n){
@@ -13162,7 +13228,7 @@ function esOnKmPhoto(e){
   esKmHint('\u23F3 Reading the odometer\u2026','');
   var fr=new FileReader();
   fr.onload=function(){
-    window.geOcrRead(fr.result, function(t){ return esKmCandidates(t).length>0; })
+    window.geOcrRead(fr.result, function(t){ return esKmCandidates(t).length>0; }, 'odometer')
       .then(function(r){
         var cands=esKmCandidates(r && r.text);
         if(!cands.length){
