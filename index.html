@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 47;
-window.HERO_BUILD = 'R59-2026.08.12.4';
+window.HERO_RELEASE = 48;
+window.HERO_BUILD = 'R60-2026.08.12.5';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5177,7 +5177,15 @@ const WEARTEAR=[
   {k:'wt_clutch', l:'Clutch Plate Kit', p:380},
   {k:'wt_brakepad', l:'Brake Pads (Front+Rear)', p:240},
 ];
-const PRESET={free:['chain','battery','horn'],paid:['chain','throttle','brakefluid','fidiag'],joyride:['chain','battery'],general:['fidiag','battery'],accidental:[]};
+/* NOTHING IS PRE-TICKED. Ravi, 12-Aug-2026: "Variable labour should not be
+   marked before hand."  These four boxes arrived on every paid estimate ticked
+   on — chain lube, throttle body, brake fluid, FI scan, about Rs 960 of work
+   nobody had agreed to. The SA then either untick them in front of the customer,
+   which looks like caught-out padding, or leaves them, which is worse. Optional
+   labour is now what the word says: the SA ticks what the vehicle actually
+   needs, on purpose. The 1:1 ratio is earned on the parts that are genuinely
+   being fitted (esLabourForEveryPart_), not on boxes that tick themselves. */
+const PRESET={free:[],paid:[],joyride:[],general:[],accidental:[]};
 const FLOOR={free:300, paid:2400, joyride:1800, general:300, accidental:2500}; // base minimums; PAID is now model-scaled via FAM.paidFloor below (Ravi: Splendor ~4000 → Xtreme 6500 → Harley/Maverick 7000, linear by tier)
 // Paid-service TOTAL-BILL floors by family tier. Root cause of the "Harley 3400 / Splendor 4240"
 // complaint: a flat paid floor ignored model tier, so costlier bikes quoted lower. These make the
@@ -6292,6 +6300,121 @@ let ES_DUE_TIMER=null;
    own — has no _fromPart/_fromPn and is never touched.
    ========================================================================== */
 let ES_ORPHAN_LABOUR = [];
+/* ==========================================================================
+   LABOUR ON EVERY PART                                (Ravi, 12-Aug-2026)
+
+   "We have to ensure that for every part put, labour has to be taken.
+    Our target is 1:1 parts : labour ratio and 15 lacs rupees labour target."
+
+   This is not a preference, it is where the money is. Measured across all 885
+   real estimates in sheet_estimates on 12-Aug-2026:
+
+       average parts + oil    Rs 1,075
+       average labour         Rs   561      -> 2 : 1, not 1 : 1
+       part lines per estimate     9.9
+       labour lines per estimate   3.6
+
+   Six parts out of every ten are being fitted and no labour is charged for
+   fitting them. That gap IS the shortfall. Closing it takes labour from Rs 561
+   to about Rs 1,075 on the same job, with the same parts, at a price the
+   customer already understands — which is the whole of the 1:1 target and most
+   of the way to Rs 15 lakh. At Rs 561 the target needs 2,674 estimates; at
+   1:1 it needs 1,395.
+
+   Note what this deliberately does NOT do: it does not raise a single part
+   price and it does not invent a service. Every line it adds is work a mechanic
+   physically performs on a part that is already on the estimate.
+
+   Three rules keep it honest:
+
+   1. CONSUMABLES ARE EXEMPT. Nut/bolt packs, adhesive, grease, cotton waste —
+      the LSP* pseudo-parts. Charging Rs 60 fitting on a Rs 15 grease pack is
+      how an estimate starts looking padded, and a padded estimate is the thing
+      that made the SAs stop trusting this screen.
+   2. THE REAL RATE FIRST. MD_PartLabourMap holds Hero's own DMS labour for the
+      part; that is used whenever it exists, with its real job code. The banded
+      fallback is only for parts the map has never heard of.
+   3. IT COMES OFF WITH ITS PART. Each added line is tagged _fromPart, so
+      esEnforceLinkedLabour_ removes it the moment the SA deletes the part. The
+      SA can also delete any of these outright — this proposes the labour, it
+      does not impose it.
+   ========================================================================== */
+
+/* Parts that are consumables, not fitted items. Matched on the label because
+   the pseudo part numbers (LSPWASALL, LSPADHALL…) are not universal. */
+function esIsConsumable_(label, pn){
+  const s=String(label||'').toUpperCase();
+  const p=String(pn||'').toUpperCase();
+  if(p.indexOf('LSP')===0) return true;
+  return /NUT|BOLT|WASHER|FASTNER|FASTENER|ADHESIVE|GREASE|COTTON|CONSUMABLE|SEALANT|CLIP|O RING|O-RING|PACKING|GASKET|SEAL\b/.test(s);
+}
+
+/* What fitting a part is worth when MD_PartLabourMap has no row for it.
+   Banded, not a percentage: a percentage of a Rs 4,000 part gives a labour
+   figure nobody will pay, and a percentage of a Rs 40 part gives one nobody
+   will bill. These bands are the shape of Hero's own mapped labour where it
+   does exist, rounded to numbers an advisor can say out loud. */
+function esFitLabourFor_(price){
+  const p=+price||0;
+  if(p<80)   return 0;      /* not worth a line */
+  if(p<200)  return 60;
+  if(p<500)  return 110;
+  if(p<1000) return 180;
+  if(p<2500) return 280;
+  return 400;
+}
+
+function esLabourForEveryPart_(items){
+  if(!items || !Array.isArray(items.parts)) return items;
+  items.labour = items.labour || [];
+
+  const key = v => String(v==null?'':v).trim().toUpperCase();
+  /* Which parts already have labour hanging off them? */
+  const covered = new Set();
+  items.labour.forEach(function(lb){
+    if(lb && lb._fromPart) covered.add(key(lb._fromPart));
+    if(lb && lb._fromPn)   covered.add(key(lb._fromPn));
+  });
+  /* And which labour lines already exist by name, so nothing is added twice. */
+  const haveLabel = new Set(items.labour.map(function(lb){ return key(lb && lb.l); }));
+
+  const added=[];
+  items.parts.forEach(function(pt){
+    if(!pt || !pt.l) return;
+    if(esIsConsumable_(pt.l, pt.pn)) return;
+    if(covered.has(key(pt.l)) || (pt.pn && covered.has(key(pt.pn)))) return;
+
+    /* 1. Hero's own DMS labour for this part, if the map knows it. */
+    let link=null;
+    try{ link = esFindLinkedLabours(pt.l); }catch(e){ link=null; }
+    if(link && link.labours && link.labours.length){
+      link.labours.forEach(function(lb){
+        if(!lb.l || haveLabel.has(key(lb.l))) return;
+        if(!(+lb.p>0)) return;
+        haveLabel.add(key(lb.l));
+        items.labour.push({l:lb.l, p:+lb.p, code:lb.code||'', cc:lb.cc||'',
+                           _fromPart:pt.l, _fromPn:pt.pn||'', _auto:true});
+        added.push(lb.l);
+      });
+      return;
+    }
+
+    /* 2. Nothing mapped — a banded fitting charge, named after the part so the
+          customer can see exactly what they are paying to have done. */
+    const amt=esFitLabourFor_(pt.p);
+    if(!amt) return;
+    const label='Fitting / Replacement — '+pt.l;
+    if(haveLabel.has(key(label))) return;
+    haveLabel.add(key(label));
+    items.labour.push({l:label, p:amt, code:'', cc:'',
+                       _fromPart:pt.l, _fromPn:pt.pn||'', _auto:true, _unmapped:true});
+    added.push(label);
+  });
+
+  items._autoLabourAdded = added;
+  return items;
+}
+
 function esEnforceLinkedLabour_(items){
   ES_ORPHAN_LABOUR = [];
   if(!items || !Array.isArray(items.labour) || !items.labour.length) return items;
@@ -6490,7 +6613,7 @@ function esComputeCurrent(){
   const dec=esDecide(fam,ftype,freeStage); if(!dec) return null;
   /* esEnforceLinkedLabour_ runs BEFORE anything is summed, so no total, no
      printed line and no saved record can ever contain labour whose part is gone. */
-  const items=esEnforceLinkedLabour_(esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName));
+  const items=esEnforceLinkedLabour_(esLabourForEveryPart_(esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName)));
   if(!items.protection) items.protection=[];
   const sumGross=a=>a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0);
   const sumNet=a=>a.reduce((x,y)=>x+(y.netP!==undefined?+y.netP:(+y.p||0)),0);
@@ -6557,7 +6680,19 @@ function esUpdateLive(){
       bd.innerHTML=`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>🛢 Oil</span><b class="mono">${inr(c.oil)}</b></div>`+
         `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>🔧 Labour${c.topup>0?' <span style=\"font-size:10px;color:#b45309\">(incl. service min)</span>':''}</span><b class="mono">${inr(labTotal)}</b></div>`+
         `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>⚙️ Parts</span><b class="mono">${inr(c.parts)}</b></div>`+
-        `<div style="display:flex;justify-content:space-between;padding:2px 0;color:#6d28d9"><span>⚖ Parts : Labour</span><b class="mono">${c.labour>0?((c.parts+c.oil)/c.labour).toFixed(2)+' : 1':'—'}</b></div>`+
+        /* THE 1:1 LINE. Ravi's target, with the gap in rupees rather than as a
+           ratio, because "add Rs 340 of labour" is actionable and "1.6 : 1" is
+           not. Measured baseline across 885 real estimates: 2 : 1. */
+        (function(){
+          const partsSide=c.parts+c.oil, lab=c.labour;
+          const gap=Math.max(0, Math.round(partsSide-lab));
+          const ratio=lab>0?(partsSide/lab):0;
+          const good=lab>0&&ratio<=1.15;
+          const auto=(c.items&&c.items._autoLabourAdded&&c.items._autoLabourAdded.length)||0;
+          return `<div style="display:flex;justify-content:space-between;padding:2px 0;color:${good?'#065f46':'#6d28d9'}"><span>⚖ Parts : Labour <span style="font-size:10px;opacity:.8">(target 1 : 1)</span></span><b class="mono">${lab>0?ratio.toFixed(2)+' : 1':'—'}</b></div>`+
+            (gap>0&&lab>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px;color:#92400e"><span>↳ labour short of 1 : 1</span><b class="mono">${inr(gap)}</b></div>`:'')+
+            (auto?`<div style="padding:2px 0;font-size:10.5px;color:#065f46">✔ ${auto} fitting labour line${auto===1?'':'s'} added automatically for parts on this estimate — delete any that do not apply.</div>`:'');
+        })()+
         (c.protection>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:#92400e"><span>🛡 ${c.protectionLabel}</span><b class="mono">${inr(c.protection)}</b></div>`:'')+
         (c.lineDisc>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:#b45309"><span>Line discounts</span><b class="mono">−${inr(c.lineDisc)}</b></div>`:'')+
         (c.expressFee>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--signal-d)"><span>⚡ Express delivery</span><b class="mono">${inr(c.expressFee)}</b></div>`:'')+
