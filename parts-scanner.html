@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Parts Scanner — Sehgal Hero</title>
+<!-- ============================================================================
+  PARTS SCANNER (11-Aug-2026) — NEW MODULE, Supabase-only (CLAUDE.md rule 11).
+  Photographs a spare part, reads it with the identify-part Edge Function
+  (Gemini first, Vision fallback), matches against parts_all_india via the
+  match_part() SQL ladder, and appends to scanned_parts. NO DELETE anywhere —
+  the table has no delete policy and this page draws no delete control.
+  Talks ONLY to Supabase: no Apps Script, no Google Sheets.
+============================================================================ -->
+<style>
+  :root {
+    --red: #d61f2c; --dark: #1a1a1a; --bg: #f4f4f6; --line: #ddd;
+    --ok: #1a7f37; --warn: #b58900; --info: #b45309; --bad: #b91c1c;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, 'Segoe UI', sans-serif; }
+  html, body { height: 100%; background: var(--bg); }
+  #app { height: 100%; display: flex; flex-direction: column; max-width: 640px; margin: 0 auto; background: #fff; }
+
+  header { background: var(--red); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header h1 { font-size: 17px; font-weight: 700; flex: 1; }
+  header .who { font-size: 12px; opacity: .9; text-align: right; line-height: 1.3; }
+
+  main { flex: 1; overflow-y: auto; padding: 12px; }
+  footer { flex-shrink: 0; border-top: 2px solid var(--line); background: #fafafa; }
+
+  .hidden { display: none !important; }
+
+  /* login */
+  .login-box { margin-top: 12vh; padding: 0 8px; }
+  .login-box h2 { font-size: 20px; margin-bottom: 18px; text-align: center; }
+  .login-box label { display: block; font-size: 13px; color: #555; margin: 12px 0 4px; }
+  .login-box input { width: 100%; font-size: 18px; padding: 12px; border: 1px solid #bbb; border-radius: 6px; }
+  .login-box .err { color: var(--bad); font-size: 14px; margin-top: 10px; min-height: 20px; }
+
+  .btn { display: block; width: 100%; border: 0; border-radius: 8px; cursor: pointer; font-weight: 700; }
+  .btn-red { background: var(--red); color: #fff; font-size: 18px; padding: 14px; margin-top: 18px; }
+  .btn-red:disabled { opacity: .5; }
+
+  /* scan stage */
+  .ctx { display: flex; gap: 8px; margin-bottom: 10px; }
+  .ctx input, .ctx select { flex: 1; font-size: 15px; padding: 9px; border: 1px solid #bbb; border-radius: 6px; min-width: 0; }
+
+  #scanBtn { background: var(--dark); color: #fff; font-size: 22px; padding: 26px 14px; border-radius: 10px; }
+  #scanBtn small { display: block; font-size: 12px; font-weight: 400; opacity: .75; margin-top: 4px; }
+
+  #busy { text-align: center; padding: 26px 0; font-size: 16px; color: #444; }
+  #busy img { max-width: 130px; max-height: 130px; border-radius: 8px; display: block; margin: 0 auto 12px; }
+  .spin { display: inline-block; width: 17px; height: 17px; border: 3px solid #ccc; border-top-color: var(--red); border-radius: 50%; animation: r 0.8s linear infinite; vertical-align: -3px; margin-right: 8px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+
+  /* result panel */
+  #result { border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; overflow: hidden; }
+  #result .band { padding: 8px 12px; color: #fff; font-weight: 700; font-size: 15px; }
+  #result .band.ok { background: var(--ok); } #result .band.warn { background: var(--warn); }
+  #result .band.info { background: var(--info); } #result .band.bad { background: var(--bad); }
+  #result table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  #result td { padding: 7px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+  #result td:first-child { color: #666; width: 34%; font-size: 13px; padding-top: 9px; }
+  #result td b.big { font-size: 18px; }
+  .qtyrow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .qtyrow button { width: 44px; height: 44px; font-size: 22px; border: 1px solid #bbb; background: #fff; border-radius: 8px; cursor: pointer; }
+  .qtyrow input { width: 70px; text-align: center; font-size: 20px; padding: 8px; border: 1px solid #bbb; border-radius: 6px; }
+  .saverow { display: flex; gap: 8px; padding: 10px 12px 12px; }
+  .saverow .btn-red { margin-top: 0; font-size: 17px; padding: 13px; }
+  .btn-grey { background: #e5e5e8; color: #333; font-size: 15px; padding: 13px; }
+
+  /* manual entry */
+  .manual { display: flex; gap: 8px; margin-top: 12px; }
+  .manual input { flex: 1; font-size: 16px; padding: 11px; border: 1px solid #bbb; border-radius: 6px; text-transform: uppercase; min-width: 0; }
+  .manual button { background: var(--dark); color: #fff; border: 0; border-radius: 6px; padding: 0 18px; font-size: 15px; cursor: pointer; }
+
+  /* footer log */
+  .logbar { display: flex; align-items: center; padding: 8px 12px; font-size: 14px; }
+  .logbar b { font-size: 17px; margin: 0 5px; }
+  .logbar .spacer { flex: 1; }
+  #log { max-height: 160px; overflow-y: auto; }
+  #log table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #log td { padding: 4px 8px; border-top: 1px solid #eee; white-space: nowrap; }
+  #log td.desc { white-space: normal; }
+  #log .m-exact, #log .m-key, #log .m-superseded { color: var(--ok); font-weight: 700; }
+  #log .m-visual { color: var(--info); font-weight: 700; }
+  #log .m-none { color: var(--bad); font-weight: 700; }
+  #log .m-manual { color: #333; font-weight: 700; }
+
+  #toast { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 20px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 9; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🔩 Parts Scanner</h1>
+    <div class="who" id="who"></div>
+  </header>
+
+  <main id="main">
+    <!-- LOGIN -->
+    <div id="loginView" class="login-box">
+      <h2>Parts Scanner Login</h2>
+      <label>Login ID (only the name — e.g. <b>parts.1050</b>)</label>
+      <input id="loginCode" autocomplete="username" autocapitalize="none" placeholder="parts.1050">
+      <label>Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password">
+      <div class="err" id="loginErr"></div>
+      <button class="btn btn-red" id="loginBtn">Sign in</button>
+    </div>
+
+    <!-- SCANNER -->
+    <div id="scanView" class="hidden">
+      <div class="ctx">
+        <input id="boxNo" placeholder="Box / shelf no (optional)">
+        <select id="cond">
+          <option value="boxed">Boxed</option>
+          <option value="loose">Loose</option>
+          <option value="damaged">Damaged</option>
+        </select>
+      </div>
+
+      <button class="btn" id="scanBtn">📷 SCAN PART
+        <small>photo of the box label or the part itself</small>
+      </button>
+      <input type="file" id="camInput" accept="image/*" capture="environment" class="hidden">
+
+      <div id="busy" class="hidden"></div>
+      <div id="result" class="hidden"></div>
+
+      <div class="manual">
+        <input id="manualNo" placeholder="Or type part no…">
+        <button id="manualBtn">Find</button>
+      </div>
+    </div>
+  </main>
+
+  <footer id="foot" class="hidden">
+    <div class="logbar">
+      Today: <b id="nToday">0</b> parts · ₹<b id="vToday">0</b>
+      <span class="spacer"></span>
+      <span id="logToggle" style="color:#888;cursor:pointer">▾ list</span>
+    </div>
+    <div id="log"></div>
+  </footer>
+</div>
+<div id="toast"></div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+// ZXing decodes the Code-128 barcode on Hero/Hero Honda MRP labels ON the
+// phone — free, no API call, and often outlives the printed text on old stock.
+// The low-level pipeline (not @zxing/browser) — verified: the wrapper's
+// decodeFromImageElement missed codes this pipeline reads.
+import {
+  MultiFormatReader, DecodeHintType, BinaryBitmap, HybridBinarizer,
+  HTMLCanvasElementLuminanceSource,
+} from 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm'
+
+const SUPABASE_URL = 'https://tiwfuwfzjxcsbrifcdpu.supabase.co'
+const ANON_KEY = 'sb_publishable_slimmjt0POF4fhAnTAfLyQ_P1jYG9Xh'   // publishable by design
+const DOMAIN = '@sehgalautoriders.co.in'
+
+const sb = createClient(SUPABASE_URL, ANON_KEY)
+const $ = (id) => document.getElementById(id)
+
+let profile = null
+let pending = null          // the scan awaiting SAVE
+
+// ---------------------------------------------------------------- helpers
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.opacity = 1
+  setTimeout(() => { t.style.opacity = 0 }, 2200)
+}
+const money = (n) => n == null ? '—' : '₹' + Math.round(Number(n)).toLocaleString('en-IN')
+
+/** Phone photos are 3–8 MB; the label is readable at 1280px for a fraction
+ *  of the data. Downscale on-device before anything leaves the phone. */
+function shrink(file) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 1280
+      let { width: w, height: h } = img
+      if (Math.max(w, h) > MAX) { const k = MAX / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) }
+      const c = document.createElement('canvas'); c.width = w; c.height = h
+      c.getContext('2d').drawImage(img, 0, 0, w, h)
+      c.toBlob((b) => resolve(b || file), 'image/jpeg', 0.85)
+      URL.revokeObjectURL(img.src)
+    }
+    img.onerror = () => resolve(file)
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+// ---------------------------------------------------------------- login
+async function signIn() {
+  const code = $('loginCode').value.trim().toLowerCase()
+  const pass = $('loginPass').value
+  $('loginErr').textContent = ''
+  if (!code || !pass) { $('loginErr').textContent = 'Enter login ID and password.'; return }
+  $('loginBtn').disabled = true
+  const email = code.includes('@') ? code : code + DOMAIN
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass })
+  $('loginBtn').disabled = false
+  if (error) { $('loginErr').textContent = 'Wrong login or password.'; return }
+  await enter()
+}
+
+async function enter() {
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return
+  const { data: p } = await sb.from('profiles').select('display_name, login_code, role').eq('id', user.id).single()
+  profile = p || { display_name: user.email, login_code: '' }
+  $('who').innerHTML = `${profile.display_name}<br>${profile.login_code}`
+  $('loginView').classList.add('hidden')
+  $('scanView').classList.remove('hidden')
+  $('foot').classList.remove('hidden')
+  refreshLog()
+}
+
+// ---------------------------------------------------------------- scanning
+/** Try to decode a barcode (Code-128 etc.) straight off the photo. Tries the
+ *  photo as-is, rotated 90° (labels on shelved boxes), and upscaled 2× (thin
+ *  stripes). Returns the decoded text or null — never throws, never blocks
+ *  the AI path. */
+async function readBarcode(file) {
+  try {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = url })
+    URL.revokeObjectURL(url)
+    const reader = new MultiFormatReader()
+    reader.setHints(new Map([[DecodeHintType.TRY_HARDER, true]]))
+    const attempt = (w, h, draw) => {
+      const c = document.createElement('canvas'); c.width = w; c.height = h
+      draw(c.getContext('2d'))
+      try {
+        return reader
+          .decode(new BinaryBitmap(new HybridBinarizer(new HTMLCanvasElementLuminanceSource(c))))
+          .getText().trim() || null
+      } catch { return null }
+    }
+    const W = img.naturalWidth, H = img.naturalHeight
+    return attempt(W, H, (x) => x.drawImage(img, 0, 0))
+        || attempt(H, W, (x) => { x.translate(H, 0); x.rotate(Math.PI / 2); x.drawImage(img, 0, 0) })
+        || attempt(W * 2, H * 2, (x) => { x.scale(2, 2); x.drawImage(img, 0, 0) })
+  } catch { return null }
+}
+
+async function onPhoto(file) {
+  if (!file) return
+  $('result').classList.add('hidden')
+  const busy = $('busy')
+  busy.classList.remove('hidden')
+  busy.innerHTML = `<img src="${URL.createObjectURL(file)}"><span class="spin"></span>Reading the part…`
+
+  try {
+    // Barcode decode runs on the full-resolution photo, in parallel with the
+    // AI read — on faded old-stock labels the stripe outlives the print.
+    const barcodePromise = readBarcode(file)
+    const small = await shrink(file)
+    const { data: { session } } = await sb.auth.getSession()
+    const form = new FormData()
+    form.append('image', small, 'scan.jpg')
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/identify-part`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY },
+      body: form,
+    })
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`)
+    await buildResult(body, await barcodePromise)
+  } catch (e) {
+    busy.classList.add('hidden')
+    showUnreadable(null, 'Reading failed: ' + e.message)
+  }
+}
+
+/** Try every number the AI saw against the master until one lands. */
+async function matchNumbers(numbers) {
+  for (const raw of numbers) {
+    const { data, error } = await sb.rpc('match_part', { p_raw: raw })
+    if (!error && data && data.length) return { raw, hit: data[0] }
+  }
+  return null
+}
+
+async function stockOf(partNo) {
+  const { data } = await sb.from('part_stock')
+    .select('curr_qty').eq('part_number', partNo).gt('curr_qty', 0)
+  return (data || []).reduce((s, r) => s + (r.curr_qty || 0), 0)
+}
+
+async function avgFor(category) {
+  if (!category || category === 'Unknown') return null
+  const { data } = await sb.from('category_avg_price')
+    .select('avg_mrp, median_mrp, priced_parts').eq('category', category)
+  if (!data || !data.length) return null
+  const tot = data.reduce((s, r) => s + Number(r.priced_parts), 0)
+  const avg = data.reduce((s, r) => s + Number(r.avg_mrp) * Number(r.priced_parts), 0) / (tot || 1)
+  return Math.round(avg)
+}
+
+async function buildResult(body, barcode) {
+  const ai = body.result
+  $('busy').classList.add('hidden')
+
+  if (!ai && !barcode) { showUnreadable(body.photo_path, 'Could not read anything on the photo.'); return }
+
+  // Barcode first — it IS the part number on Hero MRP labels, decoded
+  // exactly; the AI's readings follow as fallbacks.
+  const candidates = [...(barcode ? [barcode] : []), ...((ai && ai.part_numbers) || [])]
+  const m = await matchNumbers(candidates)
+
+  if (!ai) {
+    // Barcode alone (AI unreadable): still a solid identification if it matched.
+    if (m) {
+      const dms = await stockOf(m.hit.part_no)
+      pending = {
+        photo_path: body.photo_path, ocr_text: 'barcode: ' + barcode, provider: 'barcode',
+        ai_name: null, ai_category: null, ai_brand: null,
+        part_no: m.hit.part_no, description: m.hit.description, category: m.hit.category,
+        match_method: m.hit.match_method, match_confidence: 1,
+        mrp: m.hit.mrp != null ? Number(m.hit.mrp) : null,
+        price_source: m.hit.mrp != null ? 'master' : null, qty: 1,
+      }
+      renderCard('ok', '✔ FOUND BY BARCODE', [
+        ['Part no', `<b class="big">${m.hit.part_no}</b>`],
+        ['Description', `<b>${m.hit.description || '—'}</b>`],
+        ['Category', [m.hit.category, m.hit.subcategory].filter(Boolean).join(' · ') || '—'],
+        ['MRP', `<b class="big">${money(m.hit.mrp)}</b>`],
+        ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+      ])
+    } else {
+      showUnreadable(body.photo_path,
+        `Barcode read "${barcode}" but it is not in the master, and the label text was unreadable.`)
+    }
+    return
+  }
+
+  if (m) {
+    const dms = await stockOf(m.hit.part_no)
+    const mrp = m.hit.mrp != null ? Number(m.hit.mrp) : ai.printed_mrp
+    pending = {
+      photo_path: body.photo_path, ocr_text: ai.raw_text, provider: ai.provider,
+      ai_name: ai.part_name, ai_category: ai.category, ai_brand: ai.brand,
+      part_no: m.hit.part_no, description: m.hit.description, category: m.hit.category,
+      match_method: m.hit.match_method, match_confidence: 1,
+      mrp, price_source: m.hit.mrp != null ? 'master' : (ai.printed_mrp != null ? 'printed' : null),
+      qty: ai.count_guess || 1,
+    }
+    renderCard('ok', m.raw === barcode ? '✔ FOUND — BARCODE MATCH' : '✔ FOUND IN MASTER', [
+      ['Part no', `<b class="big">${m.hit.part_no}</b>` + (m.hit.match_method !== 'exact' ? ` <small>(${m.hit.match_method})</small>` : '')],
+      ['Description', `<b>${m.hit.description || '—'}</b>`],
+      ['Category', [m.hit.category, m.hit.subcategory].filter(Boolean).join(' · ') || '—'],
+      ['MRP', `<b class="big">${money(mrp)}</b>` + (m.hit.mrp == null && ai.printed_mrp != null ? ' <small>(printed on label)</small>' : '')],
+      ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+      ...(m.hit.superseded_by ? [['Superseded by', m.hit.superseded_by]] : []),
+    ])
+    return
+  }
+
+  if ((ai.part_numbers || []).length) {
+    // a number was read but the master doesn't know it — record it anyway
+    pending = {
+      photo_path: body.photo_path, ocr_text: ai.raw_text, provider: ai.provider,
+      ai_name: ai.part_name, ai_category: ai.category, ai_brand: ai.brand,
+      part_no: ai.part_numbers[0], description: ai.part_name !== 'unknown' ? ai.part_name : null,
+      category: ai.category !== 'Unknown' ? ai.category : null,
+      match_method: 'none', match_confidence: 0.5,
+      mrp: ai.printed_mrp, price_source: ai.printed_mrp != null ? 'printed' : null,
+      qty: ai.count_guess || 1,
+    }
+    renderCard('warn', '⚠ NUMBER READ — NOT IN MASTER', [
+      ['Part no (as read)', `<b class="big">${ai.part_numbers.join('</b>, <b>')}</b>`],
+      ['Looks like', ai.part_name || '—'],
+      ['Brand', ai.brand || '—'],
+      ['MRP on label', money(ai.printed_mrp)],
+      ['Note', 'Saved for checking — maybe a newer part or another brand.'],
+    ])
+    return
+  }
+
+  // no number at all — identify visually, price by category average
+  const avg = await avgFor(ai.category)
+  pending = {
+    photo_path: body.photo_path, ocr_text: ai.raw_text, provider: ai.provider,
+    ai_name: ai.part_name, ai_category: ai.category, ai_brand: ai.brand,
+    part_no: null, description: ai.part_name !== 'unknown' ? ai.part_name : null,
+    category: ai.category !== 'Unknown' ? ai.category : null,
+    match_method: 'visual', match_confidence: 0.3,
+    mrp: ai.printed_mrp != null ? ai.printed_mrp : avg,
+    price_source: ai.printed_mrp != null ? 'printed' : (avg != null ? 'category_average' : null),
+    qty: ai.count_guess || 1,
+  }
+  renderCard('info', '👁 NO NUMBER — IDENTIFIED BY SIGHT', [
+    ['Looks like', `<b class="big">${ai.part_name || '—'}</b>`],
+    ['Category', ai.category || '—'],
+    ['Brand', ai.brand || '—'],
+    ['Avg price of this category', money(pending.mrp) + (pending.price_source === 'category_average' ? ' <small>(average — not exact)</small>' : '')],
+  ])
+}
+
+function showUnreadable(photoPath, msg) {
+  pending = photoPath ? {
+    photo_path: photoPath, ocr_text: null, provider: 'none',
+    ai_name: null, ai_category: null, ai_brand: null,
+    part_no: null, description: null, category: null,
+    match_method: 'none', match_confidence: 0, mrp: null, price_source: null, qty: 1,
+  } : null
+  renderCard('bad', '✖ COULD NOT READ', [
+    ['What now', msg + '<br>Retake closer to the label, or type the part no below.'],
+  ], !photoPath)
+}
+
+function renderCard(kind, title, rows, hideSave = false) {
+  const r = $('result')
+  r.className = ''
+  r.innerHTML = `
+    <div class="band ${kind}">${title}</div>
+    <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>
+    ${hideSave ? '' : `
+    <div class="qtyrow">
+      <span style="font-size:14px;color:#666">Qty</span>
+      <button id="qMinus">−</button>
+      <input id="qty" type="number" min="1" value="${pending ? pending.qty : 1}">
+      <button id="qPlus">+</button>
+    </div>
+    <div class="saverow">
+      <button class="btn btn-red" id="saveBtn" style="flex:2">💾 SAVE PART</button>
+      <button class="btn btn-grey" id="skipBtn" style="flex:1">Scan next</button>
+    </div>`}
+  `
+  if (!hideSave) {
+    $('qMinus').onclick = () => { const q = $('qty'); q.value = Math.max(1, +q.value - 1) }
+    $('qPlus').onclick = () => { const q = $('qty'); q.value = +q.value + 1 }
+    $('saveBtn').onclick = savePending
+    $('skipBtn').onclick = () => { r.classList.add('hidden'); pending = null; $('camInput').click() }
+  }
+  r.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+// ---------------------------------------------------------------- saving
+async function savePending() {
+  if (!pending) return
+  const btn = $('saveBtn'); btn.disabled = true; btn.textContent = 'Saving…'
+  const row = {
+    ...pending,
+    qty: Math.max(1, +($('qty')?.value || pending.qty || 1)),
+    box_no: $('boxNo').value.trim() || null,
+    condition: $('cond').value,
+  }
+  const { error } = await sb.from('scanned_parts').insert(row)
+  if (error) {
+    btn.disabled = false; btn.textContent = '💾 SAVE PART'
+    toast('Save failed: ' + error.message)
+    return
+  }
+  pending = null
+  $('result').classList.add('hidden')
+  toast('Saved ✔')
+  refreshLog()
+}
+
+// ---------------------------------------------------------------- manual find
+async function manualFind() {
+  const raw = $('manualNo').value.trim()
+  if (!raw) return
+  $('result').classList.add('hidden')
+  const { data, error } = await sb.rpc('match_part', { p_raw: raw })
+  if (error) { toast(error.message); return }
+  if (data && data.length) {
+    const hit = data[0]
+    const dms = await stockOf(hit.part_no)
+    pending = {
+      photo_path: null, ocr_text: 'manual: ' + raw, provider: 'none',
+      ai_name: null, ai_category: null, ai_brand: null,
+      part_no: hit.part_no, description: hit.description, category: hit.category,
+      match_method: 'manual', match_confidence: 1,
+      mrp: hit.mrp != null ? Number(hit.mrp) : null,
+      price_source: hit.mrp != null ? 'master' : null, qty: 1,
+    }
+    renderCard('ok', '✔ FOUND IN MASTER (typed)', [
+      ['Part no', `<b class="big">${hit.part_no}</b>`],
+      ['Description', `<b>${hit.description || '—'}</b>`],
+      ['Category', [hit.category, hit.subcategory].filter(Boolean).join(' · ') || '—'],
+      ['MRP', `<b class="big">${money(hit.mrp)}</b>`],
+      ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+    ])
+  } else {
+    showUnreadable(null, `"${raw}" is not in the master.`)
+  }
+}
+
+// ---------------------------------------------------------------- today log
+async function refreshLog() {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const { data } = await sb.from('scanned_parts')
+    .select('scanned_at, part_no, description, ai_name, mrp, qty, match_method')
+    .gte('scanned_at', today.toISOString())
+    .order('scanned_at', { ascending: false }).limit(200)
+  const rows = data || []
+  $('nToday').textContent = rows.reduce((s, r) => s + (r.qty || 1), 0)
+  $('vToday').textContent = Math.round(rows.reduce((s, r) => s + (Number(r.mrp) || 0) * (r.qty || 1), 0)).toLocaleString('en-IN')
+  $('log').innerHTML = '<table>' + rows.map((r) => `
+    <tr>
+      <td>${new Date(r.scanned_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+      <td class="m-${r.match_method}">${r.part_no || '(no number)'}</td>
+      <td class="desc">${r.description || r.ai_name || ''}</td>
+      <td>${r.qty}×</td>
+      <td>${money(r.mrp)}</td>
+    </tr>`).join('') + '</table>'
+}
+
+// ---------------------------------------------------------------- wiring
+$('loginBtn').onclick = signIn
+$('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn() })
+$('scanBtn').onclick = () => $('camInput').click()
+$('camInput').addEventListener('change', (e) => { onPhoto(e.target.files[0]); e.target.value = '' })
+$('manualBtn').onclick = manualFind
+$('manualNo').addEventListener('keydown', (e) => { if (e.key === 'Enter') manualFind() })
+$('logToggle').onclick = () => {
+  const l = $('log'); const open = !l.classList.contains('hidden')
+  l.classList.toggle('hidden', open)
+  $('logToggle').textContent = open ? '▸ list' : '▾ list'
+}
+
+// resume a session if one exists
+enter()
+</script>
+</body>
+</html>

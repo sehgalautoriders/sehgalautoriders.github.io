@@ -38,3 +38,7 @@
 # it can be opened from /manual.html, saved, or sent on WhatsApp as a single file.
 # No customer data of any kind is in it. Whitelisted by NAME, as above.
 !manual.html
+# 12-Aug-2026: parts-scanner.html is the Parts Scanner page (R55). Fully
+# self-contained — Supabase + CDN references only, no customer data, no keys
+# beyond the publishable one that already ships in index.html. By NAME, as above.
+!parts-scanner.html

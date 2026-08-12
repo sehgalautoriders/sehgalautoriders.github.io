@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 43;
-window.HERO_BUILD = 'R53-2026.08.10.3';
+window.HERO_RELEASE = 44;
+window.HERO_BUILD = 'R55-2026.08.12.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3396,7 +3396,115 @@ function ins3WipeLocal(){
     indexedDB.deleteDatabase('heroIns3');
   }catch(e){}
 }
-function logout(){ USER = null; try{ localStorage.removeItem('sehgalhero_user'); localStorage.removeItem('sehgalhero_user_ts'); }catch(e){} clearVolatileUserCache(); try{ ins3WipeLocal(); }catch(e){} showView('login'); }
+function logout(){ USER = null; try{ localStorage.removeItem('sehgalhero_user'); localStorage.removeItem('sehgalhero_user_ts'); localStorage.removeItem('sb_at'); localStorage.removeItem('sb_rt'); localStorage.removeItem('sb_at_exp'); }catch(e){} clearVolatileUserCache(); try{ ins3WipeLocal(); }catch(e){} showView('login'); }
+
+/* ==========================================================================
+   SB BRIDGE — direct Supabase auth + data (R55 rewire, 11-Aug-2026).
+
+   Login and the Parts Scanner now speak to Supabase directly: GoTrue for the
+   session, PostgREST for RPCs and inserts, Edge Functions for the paid Google
+   calls. No Apps Script in these paths — which also means the revoked-grant
+   403 cannot take them down. The old jget/jpost routes are left in place and
+   guarded by SB_ON as the rollback: flip it false and the previous behaviour
+   returns untouched.
+
+   The publishable key is public by design (it is compiled into the React app
+   too); every table right still comes from RLS on the session user.
+   ========================================================================== */
+const SB_ON = true;
+const SB_URL = 'https://tiwfuwfzjxcsbrifcdpu.supabase.co';
+const SB_ANON = 'sb_publishable_slimmjt0POF4fhAnTAfLyQ_P1jYG9Xh';
+const SB_DOMAIN = '@sehgalautoriders.co.in';
+
+function sbTokens(){ try{ return {at:localStorage.getItem('sb_at')||'', rt:localStorage.getItem('sb_rt')||'', exp:Number(localStorage.getItem('sb_at_exp')||0)}; }catch(e){ return {at:'',rt:'',exp:0}; } }
+function sbStoreSession(s){
+  try{
+    localStorage.setItem('sb_at', s.access_token||'');
+    localStorage.setItem('sb_rt', s.refresh_token||'');
+    localStorage.setItem('sb_at_exp', String(Date.now()+((s.expires_in||3600)-120)*1000));
+  }catch(e){}
+}
+async function sbRefresh(){
+  const t=sbTokens(); if(!t.rt) return '';
+  const r=await fetch(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',
+    headers:{apikey:SB_ANON,'Content-Type':'application/json'},
+    body:JSON.stringify({refresh_token:t.rt})});
+  if(!r.ok) return '';
+  const s=await r.json(); sbStoreSession(s); return s.access_token||'';
+}
+async function sbToken(){
+  const t=sbTokens();
+  if(t.at && Date.now()<t.exp) return t.at;
+  return await sbRefresh();
+}
+/* Signed-in fetch against PostgREST / Edge Functions, one 401 retry via refresh. */
+async function sbFetch(path, opts){
+  opts=opts||{};
+  const doCall=async function(tok){
+    const h=Object.assign({apikey:SB_ANON, Authorization:'Bearer '+tok}, opts.headers||{});
+    return await fetch(SB_URL+path, Object.assign({}, opts, {headers:h}));
+  };
+  let tok=await sbToken();
+  if(!tok) throw new Error('not-signed-in');
+  let res=await doCall(tok);
+  if(res.status===401){ tok=await sbRefresh(); if(!tok) throw new Error('not-signed-in'); res=await doCall(tok); }
+  return res;
+}
+async function sbRpc(name, args){
+  const res=await sbFetch('/rest/v1/rpc/'+name,{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(args||{})});
+  if(!res.ok) throw new Error('rpc '+name+' HTTP '+res.status);
+  return await res.json();
+}
+async function sbInsert(table, row){
+  const res=await sbFetch('/rest/v1/'+table,{method:'POST',
+    headers:{'Content-Type':'application/json', Prefer:'return=representation'},
+    body:JSON.stringify(row)});
+  if(!res.ok){ let msg=''; try{ msg=(await res.json()).message||''; }catch(e){}
+    throw new Error(msg||('insert HTTP '+res.status)); }
+  const out=await res.json(); return Array.isArray(out)?out[0]:out;
+}
+/* Direct login: code (guard1 / sa.5004 / parts.1050) + password -> GoTrue,
+   then the profile row -> the exact user shape doLogin always saved. */
+async function sbLogin(emp, pass){
+  const code=String(emp||'').trim().toLowerCase();
+  /* Old-sheet logins work EXACTLY (12-Aug): a bare Employee No (275506) is not
+     an address on its own — resolve_login maps emp-no OR login code to the
+     real auth email (275506 -> ceo@…). Falls back to code+domain if the RPC
+     is unreachable, which keeps the guard1-style codes working regardless. */
+  let email=code.indexOf('@')>=0?code:'';
+  if(!email){
+    try{
+      const rr=await fetch(SB_URL+'/rest/v1/rpc/resolve_login',{method:'POST',
+        headers:{apikey:SB_ANON,'Content-Type':'application/json'},
+        body:JSON.stringify({p_id:code})});
+      if(rr.ok){ const em=await rr.json(); if(em&&typeof em==='string') email=em; }
+    }catch(e){}
+    if(!email) email=code+SB_DOMAIN;
+  }
+  const r=await fetch(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',
+    headers:{apikey:SB_ANON,'Content-Type':'application/json'},
+    body:JSON.stringify({email:email, password:pass})});
+  if(r.status===400){ const e=new Error('bad-creds'); e.code='bad-creds'; throw e; }
+  if(!r.ok) throw new Error('auth HTTP '+r.status);
+  const s=await r.json(); sbStoreSession(s);
+  const uid=(s.user&&s.user.id)||'';
+  let p=null;
+  try{
+    const pr=await sbFetch('/rest/v1/profiles?id=eq.'+uid+
+      '&select=login_code,display_name,role,level,modules,designation,is_active,workshop:workshops(name)');
+    const rows=await pr.json(); p=(rows&&rows[0])||null;
+  }catch(e){ p=null; }
+  if(p && p.is_active===false){ const e=new Error('This login is disabled.'); e.code='bad-creds'; throw e; }
+  return {
+    empno:(p&&p.login_code)||code,
+    name:(p&&p.display_name)||code,
+    ws:(p&&p.workshop&&p.workshop.name)||'ALL',
+    designation:(p&&(p.designation||p.role))||'',
+    level:(p&&p.level)||'',
+    modules:(p&&p.modules)||''
+  };
+}
 
 function fpOpen(){
   document.getElementById('fp-modal').style.display='block';
@@ -3478,6 +3586,38 @@ function doLogin(){
   const emp = val('li-emp'), pass = val('li-pass'), msg = document.getElementById('li-msg');
   msg.style.color='var(--steel)'; msg.textContent='Checking…';
   if(!emp || !pass){ msg.style.color='var(--signal-d)'; msg.textContent='Enter employee number and password.'; return; }
+  /* R55: Supabase directly, Apps Script only as fallback. A wrong password is
+     final (no point asking the dead backend); only a NETWORK failure falls
+     through to the old path, so rollback behaviour is preserved. */
+  if(SB_ON){
+    sbLogin(emp, pass).then(function(u){
+      finishLogin_(u, emp); msg.textContent='';
+    }).catch(function(err){
+      if(err && err.code==='bad-creds'){
+        msg.style.color='var(--signal-d)';
+        msg.textContent=err.message==='bad-creds'?'Wrong login ID or password.':err.message;
+        return;
+      }
+      doLoginLegacy_(emp, pass, msg);   /* network / unexpected — old path */
+    });
+    return;
+  }
+  doLoginLegacy_(emp, pass, msg);
+}
+function finishLogin_(u, emp){
+  const modulesRaw = String(u.modules || '').trim();
+  const modules = modulesRaw.toUpperCase()==='ALL' ? ['ALL'] : modulesRaw.split(',').map(canonicalModule).filter(Boolean);
+  saveUser({
+    id: u.empno || '', empno: u.empno || emp,
+    personName: u.name || '',
+    ws: String(u.ws || 'ALL').trim().toUpperCase(),
+    designation: u.designation || u.level || '',
+    level: String(u.level || '').trim().toLowerCase(),
+    modules: modules
+  });
+  goHome();
+}
+function doLoginLegacy_(emp, pass, msg){
   jget('login', {emp, pass}, function(res){
     if(!res || res.ok===false){
       msg.style.color='var(--signal-d)';
@@ -3485,19 +3625,8 @@ function doLogin(){
         : (res && res.error) ? res.error : 'Could not reach the server. Check your connection and try again.';
       return;
     }
-    const u = res.user;
-    const modulesRaw = String(u.modules || '').trim();
-    const modules = modulesRaw.toUpperCase()==='ALL' ? ['ALL'] : modulesRaw.split(',').map(canonicalModule).filter(Boolean);
-    saveUser({
-      id: u.empno || '', empno: u.empno || emp,
-      personName: u.name || '',
-      ws: String(u.ws || 'ALL').trim().toUpperCase(),
-      designation: u.designation || u.level || '',
-      level: String(u.level || '').trim().toLowerCase(),
-      modules: modules
-    });
+    finishLogin_(res.user, emp);
     msg.textContent='';
-    goHome();
   });
 }
 function hasModule(name){
@@ -14128,11 +14257,13 @@ function psClearScan(){
   PS_LAST={photo:'',extra:{},guess:null}; PS_VERIFY=null; PS_VSEQ++;
   psSetBusy(false); psSetSaving(false); psStatus('');
   ['ps-preview','ps-result'].forEach(function(id){ const el=document.getElementById(id); if(el) el.style.display='none'; });
-  ['ps-partno','ps-desc','ps-mrp','ps-barcode','ps-remarks'].forEach(function(id){ const el=document.getElementById(id); if(el) el.value=''; });
+  ['ps-partno','ps-desc','ps-mrp','ps-barcode','ps-remarks','ps-raw'].forEach(function(id){ const el=document.getElementById(id); if(el) el.value=''; });
+  const tk=document.getElementById('ps-think'); if(tk){ tk.style.display='none'; tk.innerHTML=''; }
   const img=document.getElementById('ps-img'); if(img) img.removeAttribute('src');
   const extra=document.getElementById('ps-extra-wrap'); if(extra) extra.innerHTML='';
   const guess=document.getElementById('ps-guess-wrap'); if(guess){ guess.style.display='none'; guess.innerHTML=''; }
   psVerifyBox(''); if(typeof psCorrectHide==='function') psCorrectHide();
+  if(typeof psDrillHide==='function') psDrillHide();
 }
 /* Two explicit buttons (Ravi 03-Aug-2026). Relying on the phone's own chooser
    failed in the installed app — an Android WebView often resolves a bare
@@ -14204,16 +14335,161 @@ function psRotate(src, deg){
 }
 function psB64(canvas, q){ return canvas.toDataURL('image/jpeg', q||0.92).split(',')[1]; }
 
+/* R55: the barcode on a Hero MRP label IS the part number. Decoded on the
+   phone with ZXing (free, instant); on faded old stock the stripe often
+   outlives the print. Low-level pipeline — the @zxing/browser wrapper misses
+   codes this reads. TRY_HARDER + 90° + 2× retries for shelf photos. */
+let PS_ZX=null;
+async function psBarcode(canvas){
+  /* Chrome on Android exposes ML Kit's barcode engine as the native
+     BarcodeDetector — much stronger than any JS decoder, and it is what the
+     staff phones will actually use. Desktop Chrome lacks it; ZXing follows. */
+  try{
+    if('BarcodeDetector' in window){
+      const det=new window.BarcodeDetector();
+      const found=await det.detect(canvas);
+      if(found && found.length && found[0].rawValue) return String(found[0].rawValue).trim();
+    }
+  }catch(e){}
+  try{
+    if(!PS_ZX) PS_ZX=await import('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm');
+    const Z=PS_ZX;
+    const reader=new Z.MultiFormatReader();
+    reader.setHints(new Map([[Z.DecodeHintType.TRY_HARDER,true]]));
+    const attempt=function(w,h,draw){
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      draw(c.getContext('2d'));
+      try{
+        return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(c)))).getText().trim()||null;
+      }catch(e){ return null; }
+    };
+    const W=canvas.width,H=canvas.height;
+    return attempt(W,H,x=>x.drawImage(canvas,0,0))
+        || attempt(H,W,x=>{x.translate(H,0);x.rotate(Math.PI/2);x.drawImage(canvas,0,0);})
+        || attempt(W*2,H*2,x=>{x.scale(2,2);x.drawImage(canvas,0,0);});
+  }catch(e){ return null; }
+}
+/* R55.3 — the visible thinking. Every step of a read is logged where the
+   operator can see WHY the scanner concluded what it did. */
+function psThink(msg){
+  if(!PS_LAST.think) PS_LAST.think=[];
+  PS_LAST.think.push(msg);
+  const el=document.getElementById('ps-think');
+  if(el){
+    el.style.display='block';
+    el.innerHTML='<div style="font-weight:800;margin-bottom:4px">🧠 How I read it</div>'
+      +PS_LAST.think.map(function(t,i){ return '<div style="margin-top:2px">'+(i+1)+'. '+raviEsc(t)+'</div>'; }).join('');
+  }
+}
+/* The LongText box + thinking box, injected once above the result form. */
+function psEnsureRawUI(){
+  if(document.getElementById('ps-raw')) return;
+  const anchor=document.getElementById('ps-result');
+  if(!anchor||!anchor.parentNode) return;
+  const think=document.createElement('div');
+  think.id='ps-think';
+  think.style.cssText='display:none;margin:8px 0;padding:9px 12px;border-radius:9px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;font-size:12px;line-height:1.5';
+  anchor.parentNode.insertBefore(think, anchor);
+  const wrap=document.createElement('div');
+  wrap.id='ps-raw-wrap';
+  wrap.style.cssText='margin:8px 0;padding:9px 12px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0';
+  wrap.innerHTML='<div style="font-size:10.5px;font-weight:800;color:#334155;letter-spacing:.05em;margin-bottom:5px">RAW READING — EVERYTHING READ FROM THE PHOTO (edit anything, then re-decode)</div>'
+    +'<textarea id="ps-raw" rows="6" style="width:100%;font:12px/1.45 Consolas,monospace;border:1px solid #cbd5e1;border-radius:7px;padding:8px;resize:vertical"></textarea>'
+    +'<button class="btn ghost sm" style="margin-top:6px" onclick="psDecodeFromText()">↻ Re-decode from this text</button>';
+  anchor.parentNode.insertBefore(wrap, anchor);
+}
+/* Where is the LABEL in the photo? The union of Vision blocks that carry
+   label-row words, padded — in pass-1 (1600px) coordinates. */
+function psStickerBox_(resp, W, H){
+  try{
+    const page=(((resp.fullTextAnnotation||{}).pages)||[])[0];
+    if(!page||!page.blocks) return null;
+    let x1=1e9,y1=1e9,x2=-1,y2=-1,hits=0;
+    page.blocks.forEach(function(b){
+      let txt='';
+      (b.paragraphs||[]).forEach(function(p){ (p.words||[]).forEach(function(w){
+        txt+=(w.symbols||[]).map(function(s){ return s.text||''; }).join('')+' '; }); });
+      if(!/PART\s*NUMBER|PACKING|QUANTITY|DESCRIPTION|M\.?R\.?P|DIMENSION/i.test(txt)) return;
+      ((b.boundingBox||{}).vertices||[]).forEach(function(v){
+        x1=Math.min(x1,v.x||0); y1=Math.min(y1,v.y||0);
+        x2=Math.max(x2,v.x||0); y2=Math.max(y2,v.y||0);
+      });
+      hits++;
+    });
+    if(!hits||x2<=x1||y2<=y1) return null;
+    const padX=(x2-x1)*0.25, padY=(y2-y1)*0.35;
+    return { x:Math.max(0,x1-padX), y:Math.max(0,y1-padY),
+             w:Math.min(W,(x2-x1)+2*padX), h:Math.min(H,(y2-y1)+2*padY) };
+  }catch(e){ return null; }
+}
+/* Decode the FIELDS from whatever is in the raw text box — the operator can
+   fix an OCR mistake in the text and press re-decode; the same dictionary
+   and master checks run again. */
+function psDecodeFromText(){
+  const rawEl=document.getElementById('ps-raw'); if(!rawEl) return;
+  const raw=rawEl.value||'';
+  const aux=(PS_LAST&&PS_LAST.aux)||{};
+  const g=psParseVision_({fullTextAnnotation:raw.trim()?{text:raw}:null,
+                          webDetection:aux.web, labelAnnotations:aux.labels});
+  if(aux.barcode){
+    g.barcode=aux.barcode;
+    g.extra['BARCODE DECODED']=aux.barcode;
+    if(!g.part_no && /\d/.test(aux.barcode) && /[A-Z]/i.test(aux.barcode)) g.part_no=aux.barcode.toUpperCase();
+  }
+  PS_LAST.guess=g; PS_LAST.extra=g.extra&&typeof g.extra==='object'?g.extra:{};
+  PS_LAST.fullText=raw;
+  document.getElementById('ps-partno').value=String(g.part_no||'');
+  document.getElementById('ps-desc').value=String(g.description||g.part_guess||'');
+  document.getElementById('ps-mrp').value=String(g.mrp||'').replace(/[₹,\s]/g,'');
+  document.getElementById('ps-barcode').value=String(g.barcode||'');
+  const xw=document.getElementById('ps-extra-wrap');
+  const keys=Object.keys(PS_LAST.extra);
+  xw.innerHTML=keys.length?('<div style="font-size:10.5px;font-weight:800;color:#0f766e;margin:4px 0">EXTRA FIELDS FOUND ON THE LABEL (new columns in the sheet)</div>'+keys.map((k,i)=>`<div class="fld"><label>${raviEsc(k)}</label><input id="ps-extra-${i}" value="${raviEsc(String(PS_LAST.extra[k]))}"></div>`).join('')):'';
+  const gw=document.getElementById('ps-guess-wrap');
+  if(!g.label_found && (g.part_guess||String(g.confidence_percent||''))){
+    gw.style.display='block';
+    gw.innerHTML='🔎 <b>No sticker readable.</b> AI identification: <b>'+raviEsc(String(g.part_guess||'unknown'))+'</b>'
+      +(Array.isArray(g.probable_models)&&g.probable_models.length?' · Probable models: '+raviEsc(g.probable_models.join(', ')):'')
+      +' · Accuracy: <b>'+Math.round(Number(g.confidence_percent)||0)+'%</b>';
+  } else gw.style.display='none';
+  psThink('Decoded from the raw text: '+(g.part_no?('candidate number '+g.part_no):'no part-shaped number')
+    +(g.description?(' · description "'+g.description+'"'):'')
+    +(g.mrp?(' · MRP '+g.mrp):'')+'.');
+  if(typeof psDrillShow==='function') psDrillShow(g);
+  document.getElementById('ps-result').style.display='block';
+  psSetBusy(false);
+  psStatus(g.label_found?'✔ Read complete. Check the raw text and fields, correct anything, then save.':'No label text — AI identification shown. Add what you know and save.','ok');
+  psCorrectFromCatalogue();   /* R29 — the dictionary. Never blocks the save. */
+  psVerifyPart();             /* R24 — never blocks the save. */
+}
 async function psAnalyze(dataUrl){
-  /* Cloud Vision, NOT Gemini (Ravi 03-Aug-2026). VISION_API_KEY comes from App
-     Settings the same way the Gemini key does; geVisionKey() falls back to the
-     Gemini key only if no Vision key is set. */
-  const key=(typeof geVisionKey==='function')?geVisionKey():'';
-  if(!key){ psSetBusy(false); psStatus('No Vision key set. Ask admin to save the Cloud Vision key in App Settings, then Sync Now.','err'); return; }
+  /* R55 rewire: Vision now runs behind the vision-annotate Edge Function —
+     the key lives in Supabase secrets, the caller must be signed in, and the
+     response shape is the same raw annotate object, so psParseVision_ and
+     everything after it is untouched. The old direct-with-synced-key path is
+     kept under !SB_ON as the rollback. */
+  if(SB_ON && !(await sbToken())){ psSetBusy(false); psStatus('Sign in again to use the scanner (session expired).','err'); return; }
+  const key=SB_ON?'':((typeof geVisionKey==='function')?geVisionKey():'');
+  if(!SB_ON && !key){ psSetBusy(false); psStatus('No Vision key set. Ask admin to save the Cloud Vision key in App Settings, then Sync Now.','err'); return; }
   psStatus('🔍 Reading the part label…');
   try{
     const url='https://vision.googleapis.com/v1/images:annotate?key='+encodeURIComponent(key);
-    const shoot=async function(b64){
+    const shoot=async function(b64, storePhoto){
+      if(SB_ON){
+        const bin=atob(b64); const bytes=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+        const form=new FormData();
+        form.append('image', new Blob([bytes],{type:'image/jpeg'}), 'scan.jpg');
+        /* R55.3: analysis NEVER stores the photo — evidence is uploaded once,
+           compressed, at SAVE time, after everything has been deduced. */
+        form.append('store','0');
+        const call=async function(){ return await sbFetch('/functions/v1/vision-annotate',{method:'POST',body:form}); };
+        let r=await call();
+        if(r.status===429){ psStatus('⏳ AI busy, retrying…'); await new Promise(s=>setTimeout(s,4000)); r=await call(); }
+        const j=await r.json();
+        if(j.error) throw new Error(j.error);
+        return j.response||{};
+      }
       const body={requests:[{image:{content:b64},features:[
         {type:'DOCUMENT_TEXT_DETECTION'},
         {type:'LABEL_DETECTION',maxResults:6},
@@ -14229,45 +14505,74 @@ async function psAnalyze(dataUrl){
       return rp;
     };
 
-    const base=await psUpright(dataUrl, 1600);
-    let resp=await shoot(psB64(base, 0.92));
-    let g=psParseVision_(resp);
+    /* ------------------------------------------------------------------
+       R55.3 — THE LONGTEXT PIPELINE (Ravi, 11-Aug-2026 evening):
+       "First it should get everything in a large text box… then start
+        decoding from that written wordings… break the barcode into a
+        separate image… take the sticker into a separate image and keep
+        the high resolution… lower it only while saving."
+       ------------------------------------------------------------------ */
+    PS_LAST.think=[];
+    psEnsureRawUI();
+    document.getElementById('ps-raw').value='';
+    psThink('Photo received — analysing at FULL resolution; compression happens only at save.');
 
-    /* Rotate-and-read-again. A sticker photographed on a shelf is very often
-       90° out, and Vision reads sideways text as nothing at all. Only pays the
-       extra call when the first read produced no part number. */
-    if(!g.part_no){
+    /* full-res canvas + a 1600px copy for the first (whole-photo) pass */
+    const full=await psUpright(dataUrl, 100000);
+    let base=full;
+    if(full.width>1600){
+      base=document.createElement('canvas');
+      const k=1600/full.width;
+      base.width=1600; base.height=Math.round(full.height*k);
+      base.getContext('2d').drawImage(full,0,0,base.width,base.height);
+    }
+
+    /* barcode attempt #1 — whole photo, native resolution */
+    const bcFullPromise=psBarcode(full);
+    let resp=await shoot(psB64(base,0.92));
+    if(!(((resp.fullTextAnnotation||{}).text)||'').trim()){
       for(const deg of [90,270]){
         psStatus('🔄 Ghuma kar dobara padh raha hoon…');
-        const rr=await shoot(psB64(psRotate(base, deg), 0.92));
-        const gg=psParseVision_(rr);
-        if(gg.part_no){ resp=rr; g=gg; break; }
+        const rr=await shoot(psB64(psRotate(base,deg),0.92));
+        if((((rr.fullTextAnnotation||{}).text)||'').trim()){ resp=rr; psThink('Photo was '+deg+'° rotated — re-read upright.'); break; }
       }
     }
-    PS_LAST.guess=g; PS_LAST.extra=g.extra&&typeof g.extra==='object'?g.extra:{};
-    /* Everything Vision read, kept for the dictionary pass below. The parsed
-       part_no is one candidate; the full block is what lets part_ocr try the
-       others and score them against the description on the label. */
-    PS_LAST.fullText=(resp.fullTextAnnotation&&resp.fullTextAnnotation.text)||'';
-    document.getElementById('ps-partno').value=String(g.part_no||'');
-    document.getElementById('ps-desc').value=String(g.description||g.part_guess||'');
-    document.getElementById('ps-mrp').value=String(g.mrp||'').replace(/[₹,\s]/g,'');
-    document.getElementById('ps-barcode').value=String(g.barcode||'');
-    const xw=document.getElementById('ps-extra-wrap');
-    const keys=Object.keys(PS_LAST.extra);
-    xw.innerHTML=keys.length?('<div style="font-size:10.5px;font-weight:800;color:#0f766e;margin:4px 0">EXTRA FIELDS FOUND ON THE LABEL (new columns in the sheet)</div>'+keys.map((k,i)=>`<div class="fld"><label>${raviEsc(k)}</label><input id="ps-extra-${i}" value="${raviEsc(String(PS_LAST.extra[k]))}"></div>`).join('')):'';
-    const gw=document.getElementById('ps-guess-wrap');
-    if(!g.label_found && (g.part_guess||String(g.confidence_percent||''))){
-      gw.style.display='block';
-      gw.innerHTML='🔎 <b>No sticker readable.</b> AI identification: <b>'+raviEsc(String(g.part_guess||'unknown'))+'</b>'
-        +(Array.isArray(g.probable_models)&&g.probable_models.length?' · Probable models: '+raviEsc(g.probable_models.join(', ')):'')
-        +' · Accuracy: <b>'+Math.round(Number(g.confidence_percent)||0)+'%</b>';
-    } else gw.style.display='none';
-    document.getElementById('ps-result').style.display='block';
-    psSetBusy(false);
-    psStatus(g.label_found?'✔ Label read. Check the fields, correct anything, then save.':'No label found — AI identification shown. Add what you know and save.','ok');
-    psCorrectFromCatalogue();   /* R29 — the dictionary. Never blocks the save. */
-    psVerifyPart();             /* R24 — see below. Never blocks the save. */
+    psThink('Vision pass 1 (whole photo): '+((((resp.fullTextAnnotation||{}).text)||'').split(/\n+/).filter(Boolean).length)+' lines read.');
+
+    /* THE STICKER AS ITS OWN HIGH-RES IMAGE. Pass 1 says where the label
+       sits; cut that region from the FULL-resolution photo and read it
+       again — label print that dies at 1600px survives at native size. */
+    let resp2=null, sticker=null;
+    const sb=psStickerBox_(resp, base.width, base.height);
+    if(sb){
+      const kx=full.width/base.width, ky=full.height/base.height;
+      const sx=Math.max(0,Math.round(sb.x*kx)), sy=Math.max(0,Math.round(sb.y*ky));
+      const sw=Math.min(full.width-sx,Math.round(sb.w*kx)), sh=Math.min(full.height-sy,Math.round(sb.h*ky));
+      if(sw>80&&sh>60){
+        sticker=document.createElement('canvas'); sticker.width=sw; sticker.height=sh;
+        sticker.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
+        psThink('Label located — cut out as a separate image at '+sw+'×'+sh+'px (native resolution).');
+        try{
+          resp2=await shoot(psB64(sticker,0.95));
+          psThink('Vision pass 2 (hi-res label): '+((((resp2.fullTextAnnotation||{}).text)||'').split(/\n+/).filter(Boolean).length)+' lines.');
+        }catch(e2){ resp2=null; psThink('Hi-res label pass failed ('+String(e2.message||e2).slice(0,60)+') — using pass 1.'); }
+      }
+    } else psThink('Could not locate a label block — working from the whole photo.');
+
+    /* barcode attempt #2 — the hi-res label cut-out */
+    let bc=await bcFullPromise;
+    if(!bc && sticker) bc=await psBarcode(sticker);
+    psThink(bc?('Barcode decoded: '+bc+' ('+('BarcodeDetector' in window?'ML Kit engine':'ZXing')+').')
+              :('Barcode not decodable — stripes damaged/blurred (tried '+('BarcodeDetector' in window?'ML Kit + ZXing':'ZXing')+', full photo'+(sticker?' + hi-res label':'')+').'));
+
+    /* EVERYTHING READ goes into the LongText box; decoding works FROM it,
+       and the operator can correct the text and re-decode. */
+    const t1=(((resp.fullTextAnnotation||{}).text)||'').trim();
+    const t2=resp2?((((resp2.fullTextAnnotation||{}).text)||'').trim()):'';
+    document.getElementById('ps-raw').value=
+      (t2?('--- LABEL (HI-RES) ---\n'+t2+'\n\n'):'')+(t1?('--- WHOLE PHOTO ---\n'+t1):'');
+    PS_LAST.aux={web:resp.webDetection, labels:resp.labelAnnotations, barcode:bc||''};
+    psDecodeFromText();
   }catch(e){
     psSetBusy(false);
     psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err');
@@ -14278,10 +14583,42 @@ async function psAnalyze(dataUrl){
    Label present  -> DOCUMENT_TEXT_DETECTION text, parsed field by field.
    No label       -> WEB_DETECTION / LABEL_DETECTION identify the part, shown
                      with a confidence % exactly like before. */
+/* R55: WHERE the text sits matters. A warehouse photo catches the boxes
+   BEHIND the one in hand — an engine-oil carton's "JASO MA 2 2016" once won
+   the part-number contest. Vision gives every block a bounding box; blocks
+   whose centre falls in the middle of the frame (the box being photographed)
+   outrank the edges. */
+function psVisionCentral_(resp){
+  try{
+    const page=(((resp.fullTextAnnotation||{}).pages)||[])[0];
+    if(!page||!page.blocks||!page.blocks.length) return null;
+    const W=page.width||0, H=page.height||0;
+    const out=[];
+    page.blocks.forEach(function(b){
+      let txt='';
+      (b.paragraphs||[]).forEach(function(p){
+        (p.words||[]).forEach(function(w){
+          txt+=(w.symbols||[]).map(function(s){ return s.text||''; }).join('')+' ';
+        });
+      });
+      txt=txt.trim(); if(!txt) return;
+      const vs=((b.boundingBox||{}).vertices)||[];
+      let cx=0,cy=0,n=0;
+      vs.forEach(function(v){ cx+=(v.x||0); cy+=(v.y||0); n++; });
+      if(n){ cx/=n; cy/=n; }
+      const central=(W&&H)?(cx>W*0.18&&cx<W*0.82&&cy>H*0.15&&cy<H*0.85):true;
+      if(central) out.push(txt);
+    });
+    return out.length?out:null;
+  }catch(e){ return null; }
+}
+/* Label boilerplate that must never become a description or part number. */
+const PS_BOILER=/CUSTOMER CARE|TOLL ?FREE|E-?MAIL|ADDRESS|MOTOCORP|MOTORS LTD|VAS[AU]NT|BASANT|DASANT|VASU|VIHAR|\bLOK\b|NEW DELHI|GENUINE|HERO MOTO|HERO HONDA|WWW\.|JASO|ENGINE OIL|SYNTHETIC|ALL TAXES|PACKING DATE|QUANTITY|DIMENSION|FOR MOTORCYCLE/i;
 function psParseVision_(resp){
   const g={label_found:false,part_no:'',description:'',mrp:'',barcode:'',extra:{},part_guess:'',probable_models:[],confidence_percent:0};
   const text=(resp.fullTextAnnotation&&resp.fullTextAnnotation.text)||'';
   const lines=String(text).split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  const centralLines=psVisionCentral_(resp);
   if(lines.length){
     g.label_found=true;
     const flat=text.replace(/\n/g,' ');
@@ -14335,24 +14672,36 @@ function psParseVision_(resp){
       if(!cand || cand===g.barcode) return;
       /* a pure-digit run is a barcode or an MRP, never a part number */
       if(/^\d+$/.test(cand)) return;
+      /* R55: an MRP line with spaces stripped ("MRP67500INCLOFALLTAXES",
+         "GLOFALLTAXESIN95") is part-shaped and long — longest-wins used to
+         prefer it over the true number. No real part number contains these
+         words anywhere in it. */
+      if(/MRP|INCL|TAXES|PRICE|OFALL|PERPACK|PERUNIT/.test(cand)) return;
       if(cand.length>bestPart.length) bestPart=cand;
     };
-    for(const ln of lines){
-      const c=ln.replace(/[\s.]/g,'').toUpperCase();
-      for(const re of PS_PARTPATS){
-        re.lastIndex=0;
-        let m;
-        while((m=re.exec(c))) takePart(m[0]);
+    const scanLines=function(list){
+      for(const ln of list){
+        if(PS_BOILER.test(ln)) continue;   /* R55: boilerplate never competes */
+        const c=ln.replace(/[\s.]/g,'').toUpperCase();
+        for(const re of PS_PARTPATS){
+          re.lastIndex=0;
+          let m;
+          while((m=re.exec(c))) takePart(m[0]);
+        }
+        /* The shaped patterns above still miss whole families that carry no
+           5-digit block at all — SPDMCYL01SS, 1754BACJ000S. So every alphanumeric
+           token of 7-16 characters holding at least one digit AND one letter is
+           also a candidate. Measured over all 7,135 scraped part numbers:
+           shaped-only 91.18%, shaped + token 97.95%, and zero regressions
+           against the old code's 90.64%. */
+        const toks=c.match(/[A-Z0-9]{7,16}/g)||[];
+        for(const t of toks) if(/\d/.test(t)&&/[A-Z]/.test(t)) takePart(t);
       }
-      /* The shaped patterns above still miss whole families that carry no
-         5-digit block at all — SPDMCYL01SS, 1754BACJ000S. So every alphanumeric
-         token of 7-16 characters holding at least one digit AND one letter is
-         also a candidate. Measured over all 7,135 scraped part numbers:
-         shaped-only 91.18%, shaped + token 97.95%, and zero regressions
-         against the old code's 90.64%. */
-      const toks=c.match(/[A-Z0-9]{7,16}/g)||[];
-      for(const t of toks) if(/\d/.test(t)&&/[A-Z]/.test(t)) takePart(t);
-    }
+    };
+    /* Centre of the frame first — that is the box in the operator's hand.
+       Only if the centre holds no part-shaped token do the edges compete. */
+    if(centralLines) scanLines(centralLines);
+    if(!bestPart) scanLines(lines);
     if(bestPart) g.part_no=bestPart;
     /* KEY: VALUE lines become extra fields (-> new sheet columns) */
     const skip=/M\.?R\.?P|PRICE|PART\s*NO|₹/i;
@@ -14360,17 +14709,23 @@ function psParseVision_(resp){
       const kv=ln.match(/^([A-Za-z][A-Za-z .\/#&()-]{1,24})\s*[:\-]\s*(\S.*)$/);
       if(kv&&!skip.test(kv[1])) g.extra[kv[1].trim().toUpperCase()]=kv[2].trim();
     });
-    /* Description: longest mostly-letters line not already used elsewhere */
-    let best='';
-    lines.forEach(ln=>{
-      if(skip.test(ln)) return;
-      if(g.part_no&&ln.replace(/[\s.]/g,'').toUpperCase().indexOf(g.part_no)>=0) return;
-      if(/^[\d\s.,-]+$/.test(ln)) return;
-      if(ln.indexOf(':')>=0) return;
-      const letters=(ln.match(/[A-Za-z]/g)||[]).length;
-      if(letters/ln.length>=0.55&&ln.length>best.length) best=ln;
-    });
-    g.description=best;
+    /* Description: longest mostly-letters line not already used elsewhere.
+       R55: centre-of-frame lines first, and boilerplate (toll-free lines,
+       company addresses, the oil box behind) never qualifies. */
+    const pickDesc=function(list){
+      let best='';
+      list.forEach(ln=>{
+        if(skip.test(ln)) return;
+        if(PS_BOILER.test(ln)) return;
+        if(g.part_no&&ln.replace(/[\s.]/g,'').toUpperCase().indexOf(g.part_no)>=0) return;
+        if(/^[\d\s.,-]+$/.test(ln)) return;
+        if(ln.indexOf(':')>=0) return;
+        const letters=(ln.match(/[A-Za-z]/g)||[]).length;
+        if(letters/ln.length>=0.55&&ln.length>best.length) best=ln;
+      });
+      return best;
+    };
+    g.description=(centralLines?pickDesc(centralLines):'')||pickDesc(lines);
     /* Nothing on the label is ever lost: full raw text goes to one column */
     g.extra['LABEL FULL TEXT']=lines.join(' | ').slice(0,500);
     return g;
@@ -14421,7 +14776,9 @@ function psVerifyPart(){
   if(!pn){ psVerifyBox(''); return; }
   const my=++PS_VSEQ;
   psVerifyBox('Checking '+raviEsc(pn)+' against the all-India Hero parts master…','#f8fafc','#e2e8f0','var(--steel)');
-  jgetRaw('part_lookup',{pn:pn,stock:'1'},function(res){
+  /* R55: the lookup is a Supabase RPC returning the same shape part_lookup
+     did, so everything below this line is unchanged. */
+  const psVerifyHandle_=function(res){
     if(my!==PS_VSEQ) return;                      /* a newer read already won */
     /* An UNDEPLOYED route does not come back as an error. CodeAppEntry's doGet
        falls through to {ok:true,msg:'Hero backend … live'} for any action it
@@ -14441,6 +14798,9 @@ function psVerifyPart(){
         +(near.length?'<div style="margin-top:6px;font-weight:700">Closest numbers:</div>'
           +near.map(n=>'<div style="margin-top:3px"><a href="#" onclick="psTakePart(\''+raviEsc(n.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800">'+raviEsc(n.part)+'</a> · '+raviEsc(n.desc||'')+'</div>').join(''):''),
         '#fef2f2','#fecaca','#b91c1c');
+      /* R55: a number the master rejects is NOT a confirmed number — open the
+         drill-down so the operator standing at the shelf can keep going. */
+      if(typeof psDrillShow==='function') psDrillShow({});
       return;
     }
     const p=res.current||res.part;
@@ -14456,7 +14816,9 @@ function psVerifyPart(){
     if(!res.labourLinked) h+='<div style="margin-top:3px;color:var(--steel)">No labour linked to this part yet — an estimate will need labour added by hand.</div>';
     h+='<div style="margin-top:7px"><button class="btn ghost sm" onclick="psUseOfficial()">Use this description'+(p.hasPrice?' &amp; MRP':'')+'</button></div>';
     psVerifyBox(h,'#f0fdf4','#bbf7d0','#166534');
-  },20000);
+  };
+  if(SB_ON) sbRpc('part_lookup_sb',{pn:pn}).then(psVerifyHandle_).catch(function(){ psVerifyHandle_(null); });
+  else jgetRaw('part_lookup',{pn:pn,stock:'1'},psVerifyHandle_,20000);
 }
 function psTakePart(pn){
   const el=document.getElementById('ps-partno'); if(!el) return;
@@ -14522,7 +14884,9 @@ function psCorrectFromCatalogue(){
   const my=++PS_CSEQ;
   const desc=String((document.getElementById('ps-desc')||{}).value||'');
 
-  jgetRaw('part_ocr',{text:text, desc:desc}, function(res){
+  /* R55: same dictionary, now the part_ocr_sb RPC (exact tokens, the camera
+     substitution table via translate(), description agreement scoring). */
+  const psCorrectHandle_=function(res){
     if(my!==PS_CSEQ) return;                        /* a newer scan already won */
     /* An undeployed route falls through to {ok:true,msg:'…live'} — ok proves
        nothing. typeof found is the real test. Same trap as psVerifyPart. */
@@ -14560,7 +14924,9 @@ function psCorrectFromCatalogue(){
         String(x.part.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800">'+
         raviEsc(x.part.part)+'</a> · '+raviEsc(x.part.desc||'')+
         ' <span style="color:#64748b">('+x.score+'%)</span></div>').join(''));
-  },20000);
+  };
+  if(SB_ON) sbRpc('part_ocr_sb',{p_text:text, p_desc:desc}).then(psCorrectHandle_).catch(function(){ psCorrectHide(); });
+  else jgetRaw('part_ocr',{text:text, desc:desc},psCorrectHandle_,20000);
 }
 function psUseOfficial(){
   if(!PS_VERIFY||!PS_VERIFY.found) return;
@@ -14570,6 +14936,93 @@ function psUseOfficial(){
   if(p.hasPrice) document.getElementById('ps-mrp').value=String(p.mrp);
   psStatus('Official description'+(p.hasPrice?' and MRP':'')+' taken from the parts master.','ok');
   psVerifyPart();
+}
+
+/* ---------------------------------------------------------------------------
+   R55 — THE DRILL-DOWN. (Ravi, 11-Aug-2026)
+
+   "I am not 1000s of miles long. I am standing there. It could ask further
+   questions... The operator just pulls the part out from the box and takes a
+   photo... Some parts have part nos embossed on them also."
+
+   When a scan ends without a confirmed number, the scanner now works the
+   problem WITH the operator instead of stopping:
+     1. photograph the BARE part out of the box (labels lie, castings don't)
+     2. look for the embossed / cast number on the part itself
+     3. say what it looks like (+ optionally the model) -> live candidates
+        from model_part_tree (what this workshop actually fits) and the
+        all-India master, one tap to take a candidate into the form.
+   --------------------------------------------------------------------------- */
+let PS_MODELS=null;
+function psDrillHide(){ const el=document.getElementById('ps-drill'); if(el){ el.style.display='none'; } }
+function psDrillShow(g){
+  const anchor=document.getElementById('ps-guess-wrap');
+  if(!anchor||!anchor.parentNode) return;
+  if(g && g.part_no){ psDrillHide(); return; }   /* a number was read — verify handles it */
+  let el=document.getElementById('ps-drill');
+  if(!el){
+    el=document.createElement('div');
+    el.id='ps-drill';
+    el.style.cssText='margin:8px 0;padding:10px 12px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;color:#78350f;font-size:12.5px;line-height:1.5';
+    anchor.parentNode.insertBefore(el, anchor.nextSibling);
+    el.innerHTML=''
+      +'<div style="font-weight:800;margin-bottom:6px">🧭 No number confirmed — let\'s narrow it down together:</div>'
+      +'<div style="margin-bottom:6px"><b>1.</b> Pull the part OUT of the box and '
+      +'<button class="btn ghost sm" onclick="psPickPhoto(\'camera\')">📷 photo the bare part</button></div>'
+      +'<div style="margin-bottom:6px"><b>2.</b> Look for an <b>embossed / cast number</b> on the part itself '
+      +'(near the centre, an edge, or a mounting face) and '
+      +'<button class="btn ghost sm" onclick="document.getElementById(\'ps-partno\').focus()">⌨ type it above</button></div>'
+      +'<div><b>3.</b> Or tell me whatever you CAN see + what it looks like:</div>'
+      +'<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'
+      +'<input id="ps-drill-frag" placeholder="Visible characters IN ORDER — e.g. 41..KCC..940, ..940S, just an S…" style="flex:1;min-width:200px;font-size:12.5px;padding:6px;border:1px solid #d6c58a;border-radius:7px;text-transform:uppercase">'
+      +'</div>'
+      +'<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'
+      +'<select id="ps-drill-model" style="flex:1;min-width:130px;font-size:12.5px;padding:6px;border:1px solid #d6c58a;border-radius:7px"><option value="">Any model</option></select>'
+      +'<input id="ps-drill-q" placeholder="e.g. rear sprocket 43 teeth, clutch plate…" style="flex:2;min-width:170px;font-size:12.5px;padding:6px;border:1px solid #d6c58a;border-radius:7px">'
+      +'<button class="btn ghost sm" onclick="psDrillFind()">Find candidates</button></div>'
+      +'<div id="ps-drill-hits" style="margin-top:6px"></div>';
+    const qi=el.querySelector('#ps-drill-q');
+    if(qi) qi.addEventListener('keydown',function(e){ if(e.key==='Enter') psDrillFind(); });
+  }
+  el.style.display='block';
+  const hits=document.getElementById('ps-drill-hits'); if(hits) hits.innerHTML='';
+  /* Seed the search box with whatever the AI thought it saw */
+  const qi=document.getElementById('ps-drill-q');
+  if(qi && !qi.value && g && g.part_guess && g.part_guess!=='unknown') qi.value=g.part_guess;
+  if(SB_ON && !PS_MODELS){
+    sbRpc('ps_models',{}).then(function(list){
+      PS_MODELS=Array.isArray(list)?list:[];
+      const sel=document.getElementById('ps-drill-model');
+      if(sel && sel.options.length<=1) PS_MODELS.forEach(function(m){
+        const o=document.createElement('option'); o.value=m; o.textContent=m; sel.appendChild(o);
+      });
+    }).catch(function(){});
+  }
+}
+function psDrillFind(){
+  const q=(document.getElementById('ps-drill-q')||{}).value||'';
+  const frag=((document.getElementById('ps-drill-frag')||{}).value||'').trim();
+  const model=(document.getElementById('ps-drill-model')||{}).value||'';
+  const out=document.getElementById('ps-drill-hits');
+  if(!q.trim() && !frag){ if(out) out.innerHTML='<span style="color:#b45309">Type the visible characters and/or what the part looks like first.</span>'; return; }
+  if(out) out.innerHTML='Searching the masters…';
+  /* Fragments given -> the word-recognition matcher: visible characters in
+     order + description + model, exactly like reading a smudged word from its
+     first/middle/last letters. Otherwise the description suggester. */
+  const call=frag
+    ? sbRpc('fragment_parts',{p_frag:frag, q:q.trim()||null, p_model:model||null})
+    : sbRpc('suggest_parts',{q:q.trim(), p_model:model||null});
+  call.then(function(list){
+    if(!out) return;
+    const rows=Array.isArray(list)?list:[];
+    if(!rows.length){ out.innerHTML='<span style="color:#b45309">Nothing close in the masters — save with the photo and description; it can be named later.</span>'; return; }
+    out.innerHTML=rows.slice(0,8).map(function(r){
+      return '<div style="margin-top:4px"><a href="#" onclick="psTakePart(\''+String(r.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800">'+raviEsc(r.part)+'</a>'
+        +' · '+raviEsc(r.desc||'')
+        +(r.mrp!=null?' · ₹'+raviEsc(String(r.mrp)):'')
+        +' <span style="color:#92700c;font-size:11px">('+raviEsc(r.source||'')+')</span></div>';
+    }).join('');
+  }).catch(function(e){ if(out) out.innerHTML='Search failed: '+raviEsc(String(e.message||e).slice(0,100)); });
 }
 
 function psSaveScan(){
@@ -14603,6 +15056,56 @@ function psSaveScan(){
     remarks:document.getElementById('ps-remarks').value||'', extra:JSON.stringify(extra)};
   if(!payload.partNo && !payload.desc){ psStatus('Nothing to save — need at least a part no or a description.','err'); return; }
   psSetSaving(true); psStatus('Saving the verified part…');
+  if(SB_ON){
+    /* R55: straight into scanned_parts — append-only by RLS (no delete policy
+       exists), photo evidence path included, every label field kept in extra.
+       R55.3: the photo is compressed and uploaded HERE, at save — analysis ran
+       on the full-resolution image and never lowered it. */
+    const vOK=PS_VERIFY&&PS_VERIFY.found;
+    const v=(vOK&&(PS_VERIFY.current||PS_VERIFY.part))||{};
+    if(payload.barcode) extra['BARCODE']=payload.barcode;
+    if(payload.guessModels) extra['GUESS MODELS']=payload.guessModels;
+    if(PS_LAST&&PS_LAST.think&&PS_LAST.think.length) extra['READ STEPS']=PS_LAST.think.join(' | ').slice(0,900);
+    const row={
+      part_no: payload.partNo||null,
+      description: payload.desc||null,
+      category: vOK?(v.category||null):null,
+      mrp: (payload.mrp!=='' && isFinite(Number(payload.mrp)))?Number(payload.mrp):null,
+      price_source: vOK&&v.hasPrice&&String(v.mrp)===String(payload.mrp)?'master':(payload.mrp?'printed':null),
+      match_method: vOK?(PS_VERIFY.superseded?'superseded':'exact'):(payload.partNo?'none':(payload.guess?'visual':'none')),
+      match_confidence: vOK?1:(Number(payload.confidence)>0?Number(payload.confidence)/100:null),
+      ai_name: payload.guess||null,
+      ocr_text: String((PS_LAST&&PS_LAST.fullText)||'').slice(0,4000)||null,
+      provider: 'vision',
+      photo_path: (PS_LAST&&PS_LAST.photoPath)||null,
+      qty: 1,
+      notes: payload.remarks||null,
+      extra: extra
+    };
+    const doInsert=function(){
+      sbInsert('scanned_parts', row).then(function(){
+        psSetSaving(false);
+        psStatus('✔ Scan saved. It will appear in Recent scans in a moment.','ok');
+        document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none';
+        PS_LAST={photo:'',extra:{},guess:null}; setTimeout(psLoadRecent,800);
+      }).catch(function(e){ psSetSaving(false); psStatus('Save failed: '+String(e.message||e).slice(0,140),'err'); });
+    };
+    if(!row.photo_path && PS_LAST && PS_LAST.photo){
+      /* compress NOW (1280px), upload as evidence, then insert. A failed
+         upload never blocks the save — a scan without its photo still counts. */
+      psUpright(PS_LAST.photo, 1280).then(function(c){
+        const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
+        const bin=atob(b64); const bytes=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+        const form=new FormData();
+        form.append('image', new Blob([bytes],{type:'image/jpeg'}), 'scan.jpg');
+        form.append('mode','store');
+        return sbFetch('/functions/v1/vision-annotate',{method:'POST',body:form}).then(function(r){ return r.json(); });
+      }).then(function(j){ if(j&&j.photo_path) row.photo_path=j.photo_path; doInsert(); })
+        .catch(function(){ doInsert(); });
+    } else doInsert();
+    return;
+  }
   /* jpost queues durably and resolves undefined — undefined is SUCCESS here,
      not failure (the old check showed "Save failed" on every good save). */
   jpost(payload).then(function(res){
@@ -14618,7 +15121,9 @@ function psLoadRecent(){
   const el=document.getElementById('ps-recent'); if(!el) return;
   const count=document.getElementById('ps-recent-count');
   el.innerHTML='<div class="ps2-recent-state">Loading recent scans…</div>';
-  jget('ps_recent',{limit:20},function(res){
+  /* R55: rows come from scanned_parts via ps_recent_sb, in the same key shape
+     the sheet rows carried — the renderer below is untouched. */
+  const psRecentHandle_=function(res){
     if(!res||res.ok===false){
       if(count) count.style.display='none';
       el.innerHTML='<div class="ps2-recent-state">'+raviEsc((res&&res.error)||'Recent scans are unavailable right now.')+'<div style="margin-top:7px"><button class="ps2-clear" onclick="psLoadRecent()">Try again</button></div></div>';
@@ -14643,7 +15148,9 @@ function psLoadRecent(){
         +'<div class="ps2-scan-title">'+raviEsc(part)+'</div><div class="ps2-scan-desc">'+raviEsc(desc)+'</div>'
         +'<div class="ps2-scan-meta">'+raviEsc(meta.join(' · ')||'Saved scan')+'</div></div>'+conf+'</div>';
     }).join('');
-  });
+  };
+  if(SB_ON) sbRpc('ps_recent_sb',{p_limit:20}).then(psRecentHandle_).catch(function(e){ psRecentHandle_({ok:false,error:String(e.message||e)}); });
+  else jget('ps_recent',{limit:20},psRecentHandle_);
 }
 
 /* R53 — EXPORT EVERY SAVED SCAN TO EXCEL.
@@ -14676,7 +15183,7 @@ function psExportExcel(){
   const restore=function(){ if(btn){ btn.disabled=false; btn.textContent='Excel'; } };
   if(btn){ btn.disabled=true; btn.textContent='Preparing…'; }
 
-  jgetRaw('ps_recent',{limit:100000},function(res){
+  const psExportHandle_=function(res){
     try{
       if(!res||res.ok===false){ alert('Could not fetch the scans: '+((res&&res.error)||'backend not reachable')); restore(); return; }
       const rows=res.rows||[];
@@ -14719,7 +15226,9 @@ function psExportExcel(){
       alert('Export failed: '+String(e.message||e).slice(0,160));
       restore();
     }
-  },90000);
+  };
+  if(SB_ON) sbRpc('ps_recent_sb',{p_limit:100000}).then(psExportHandle_).catch(function(e){ psExportHandle_({ok:false,error:String(e.message||e)}); });
+  else jgetRaw('ps_recent',{limit:100000},psExportHandle_,90000);
 }
 
 /* --------------------------- INSURANCE RENEWAL CRM --------------------------- */
