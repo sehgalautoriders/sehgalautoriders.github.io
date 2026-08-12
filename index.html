@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 49;
-window.HERO_BUILD = 'R62-2026.08.12.7';
+window.HERO_BUILD = 'R62-2026.08.12.8';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -717,8 +717,15 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 /* Keep everything inside the phone screen (Ravi 15-Jul): long names and reg
    numbers wrap to the next line instead of pushing the box wider than the screen. */
 #ravi-kpi-modal{max-width:100vw}
-#ravi-kpi-modal .modal-box{width:calc(100vw - 24px);max-width:640px;box-sizing:border-box}
-#ravi-kpi-body{overflow-x:hidden;max-width:100%}
+/* PHONE MODAL SCROLL FIX (Ravi 12-Aug-2026): the gate-history / KPI modal could
+   not be scrolled down to its photos on a real phone. The overlay used height:100%
+   + overflow-y:auto, but 100% resolves to the layout viewport that EXCLUDES the
+   mobile address bar, so the box bottom sat under the browser chrome and the
+   overlay saw "nothing to scroll". Cap the box to the DYNAMIC viewport (100dvh) and
+   make the body itself the touch scroller. Scoped to this modal only. */
+#ravi-kpi-modal .modal-box{width:calc(100vw - 24px);max-width:640px;box-sizing:border-box;display:flex;flex-direction:column;margin:16px auto;max-height:calc(100dvh - 32px)}
+#ravi-kpi-modal .modal-head{flex:0 0 auto}
+#ravi-kpi-body{overflow-x:hidden;max-width:100%;flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 #ravi-kpi-body .ctlitem{min-width:0;max-width:100%;box-sizing:border-box}
 #ravi-kpi-body .big,#ravi-kpi-body .small{white-space:normal !important;overflow-wrap:break-word;min-width:0}
 #ravi-kpi-body .ge-det{max-width:100%}
