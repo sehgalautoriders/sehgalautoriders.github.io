@@ -82,7 +82,11 @@
   #log table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   #log td { padding: 4px 8px; border-top: 1px solid #eee; white-space: nowrap; }
   #log td.desc { white-space: normal; }
-  #log .m-exact, #log .m-key, #log .m-superseded { color: var(--ok); font-weight: 700; }
+  #log .m-exact, #log .m-key, #log .m-superseded, #log .m-suffix_s { color: var(--ok); font-weight: 700; }
+  /* A corrected match is a real identification, but it was reached by reasoning
+     rather than by reading, so it gets its own colour — someone auditing the
+     day's scans should be able to see which ones the catalogue had to fix. */
+  #log .m-corrected { color: #0369a1; font-weight: 700; }
   #log .m-visual { color: var(--info); font-weight: 700; }
   #log .m-none { color: var(--bad); font-weight: 700; }
   #log .m-manual { color: #333; font-weight: 700; }
@@ -296,6 +300,64 @@ async function matchNumbers(numbers) {
   return null
 }
 
+/* --------------------------------------------------------------------------
+   SELF-CORRECTION — the step this scanner was missing.
+
+   Ravi, 11-Aug-2026, describing what the scanner is FOR:
+
+     "if It caught IMDTY890 and actual part no is IMDTY8901 - and in the image
+      it is a spacer and written word in part description is also a spacer,
+      then it should automatically correct itself. It does in google directly
+      when we scan using lens."
+
+   Lens is not reading better than we are. Lens is checking its reading against
+   a catalogue. This scanner had the reader and it had the catalogue, and the
+   two were never joined: match_part() is an EXACT lookup — part_no, part_key or
+   superseded_by, character for character — so one misread character produced
+   "NUMBER READ — NOT IN MASTER" on a part that is sitting in the master.
+
+   Measured on the live database before this was written:
+       match_part('20K81OS')                    -> no rows
+       part_ocr_sb('… 20K81OS …','CHAIN SPRO…') -> 20K810S, CHAIN SPROCKET KIT
+                                                   (GLAMOUR), "camera-substitution
+                                                   corrected (O/0, I/1, S/5…)"
+       part_ocr_sb('CARBURETOR ASSY 16100KWH961')-> 16100KWH961S, 92%,
+                                                   "description agrees 100%"
+   The second is Ravi's IMDTY890 case exactly — a dropped trailing character.
+
+   part_ocr_sb is the R29 dictionary in SQL: it pulls number-shaped tokens out
+   of the label text, canonicalises the substitutions a camera actually makes
+   (O/0, I/1, S/5, B/8, Z/2, G/6) on BOTH sides, and scores the survivors on how
+   well the catalogue description agrees with the words on the label. The
+   description agreement is what makes a correction PROVABLE rather than a
+   guess — which is why the whole label text is sent, not just the number.
+
+   The raw reading is always kept and always shown. A correction the scanner
+   cannot see is a correction they cannot overrule.
+   -------------------------------------------------------------------------- */
+async function correctFromLabel(ai, candidates) {
+  const text = [
+    ...(candidates || []),
+    ai && ai.raw_text ? ai.raw_text : '',
+    ai && ai.part_name && ai.part_name !== 'unknown' ? ai.part_name : '',
+  ].filter(Boolean).join(' ')
+  if (!text.replace(/\s/g, '')) return null
+  try {
+    const { data, error } = await sb.rpc('part_ocr_sb', {
+      p_text: text,
+      p_desc: (ai && ai.part_name && ai.part_name !== 'unknown') ? ai.part_name : '',
+    })
+    if (error || !data || !data.found || !data.best) return null
+    return data                      // {found, best:{part:{part,desc},score,why}, candidates:[…]}
+  } catch { return null }
+}
+
+/** Full master row for a part number the corrector proposed. */
+async function masterRow(partNo) {
+  const { data, error } = await sb.rpc('match_part', { p_raw: partNo })
+  return (!error && data && data.length) ? data[0] : null
+}
+
 async function stockOf(partNo) {
   const { data } = await sb.from('part_stock')
     .select('curr_qty').eq('part_number', partNo).gt('curr_qty', 0)
@@ -310,6 +372,27 @@ async function avgFor(category) {
   const tot = data.reduce((s, r) => s + Number(r.priced_parts), 0)
   const avg = data.reduce((s, r) => s + Number(r.avg_mrp) * Number(r.priced_parts), 0) / (tot || 1)
   return Math.round(avg)
+}
+
+/* Which engine actually read this photo, and — the part that matters — WHY a
+   better one did not. Rule from the ten lost days of gate-entry photos: a
+   service failure must never be presented as a bad photograph. If Gemini is out
+   of quota the scanner says so, in those words, instead of letting the person
+   holding the box retake it six times against a call that cannot succeed. */
+const ENGINE = { gemini: 'Gemini', vision: 'Cloud Vision', docai: 'Document AI', barcode: 'Barcode' }
+function engineRows(body, provider) {
+  const d = body.diag || {}
+  const rows = [['Read by', ENGINE[provider] || provider || '—']]
+  if (typeof d.gemini === 'string' && d.gemini.startsWith('http-429')) {
+    rows.push(['⚠ Note',
+      '<small>Gemini is out of quota today — Cloud Vision and Document AI are '
+      + 'carrying the reads. Top up the AI Studio credits to get the part '
+      + 'NAMES back for unlabelled parts.</small>'])
+  }
+  if (d.unverified_numbers) {
+    rows.push(['Ignored', `<small>${d.unverified_numbers} — the AI claimed this but no OCR engine could see it on the label.</small>`])
+  }
+  return rows
 }
 
 async function buildResult(body, barcode) {
@@ -341,6 +424,7 @@ async function buildResult(body, barcode) {
         ['Category', [m.hit.category, m.hit.subcategory].filter(Boolean).join(' · ') || '—'],
         ['MRP', `<b class="big">${money(m.hit.mrp)}</b>`],
         ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+        ...engineRows(body, 'barcode'),
       ])
     } else {
       showUnreadable(body.photo_path,
@@ -367,12 +451,58 @@ async function buildResult(body, barcode) {
       ['MRP', `<b class="big">${money(mrp)}</b>` + (m.hit.mrp == null && ai.printed_mrp != null ? ' <small>(printed on label)</small>' : '')],
       ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
       ...(m.hit.superseded_by ? [['Superseded by', m.hit.superseded_by]] : []),
+      ...engineRows(body, ai.provider),
+    ])
+    return
+  }
+
+  /* Exact lookup missed. BEFORE calling it "not in master", correct the
+     reading against the catalogue — one misread character is the ordinary case
+     on a twenty-year-old Hero Honda label, not the exception. */
+  const fix = await correctFromLabel(ai, candidates)
+  if (fix) {
+    const partNo = fix.best.part.part
+    const hit = await masterRow(partNo)
+    const dms = await stockOf(partNo)
+    const mrp = hit && hit.mrp != null ? Number(hit.mrp) : ai.printed_mrp
+    const asRead = candidates.length ? candidates.join(', ') : '(no number read)'
+    pending = {
+      photo_path: body.photo_path, ocr_text: ai.raw_text, provider: ai.provider,
+      ai_name: ai.part_name, ai_category: ai.category, ai_brand: ai.brand,
+      part_no: partNo,
+      description: (hit && hit.description) || fix.best.part.desc,
+      category: hit ? hit.category : (ai.category !== 'Unknown' ? ai.category : null),
+      match_method: 'corrected',
+      match_confidence: Number(fix.best.score) / 100,
+      mrp,
+      price_source: (hit && hit.mrp != null) ? 'master' : (ai.printed_mrp != null ? 'printed' : null),
+      qty: ai.count_guess || 1,
+    }
+    /* Runners-up are listed so the scanner can see what else it was close to.
+       Two parts one character apart is exactly when a human eye is worth more
+       than a score. */
+    const others = (fix.candidates || [])
+      .filter((c) => c.part.part !== partNo).slice(0, 3)
+      .map((c) => `${c.part.part} — ${c.part.desc || ''} (${c.score}%)`).join('<br>')
+    renderCard('ok', '✔ CORRECTED FROM THE LABEL', [
+      ['Read as', `<s>${asRead}</s>`],
+      ['This part is', `<b class="big">${partNo}</b>`],
+      ['Description', `<b>${pending.description || '—'}</b>`],
+      ['Why', `${fix.best.why} · ${fix.best.score}% sure`],
+      ['Category', hit ? ([hit.category, hit.subcategory].filter(Boolean).join(' · ') || '—') : '—'],
+      ['MRP', `<b class="big">${money(mrp)}</b>`
+              + ((!hit || hit.mrp == null) && ai.printed_mrp != null ? ' <small>(printed on label)</small>' : '')],
+      ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+      ...(others ? [['Not this one?', `<small>${others}<br>Type the right number below and press Find.</small>`]] : []),
+      ...engineRows(body, ai.provider),
     ])
     return
   }
 
   if ((ai.part_numbers || []).length) {
-    // a number was read but the master doesn't know it — record it anyway
+    // A number was read, the master does not know it, and the corrector could
+    // not place it either. Record it anyway — a number nobody can place today
+    // is still the thing that promotes it into the master tomorrow.
     pending = {
       photo_path: body.photo_path, ocr_text: ai.raw_text, provider: ai.provider,
       ai_name: ai.part_name, ai_category: ai.category, ai_brand: ai.brand,
@@ -388,6 +518,7 @@ async function buildResult(body, barcode) {
       ['Brand', ai.brand || '—'],
       ['MRP on label', money(ai.printed_mrp)],
       ['Note', 'Saved for checking — maybe a newer part or another brand.'],
+      ...engineRows(body, ai.provider),
     ])
     return
   }
@@ -409,6 +540,7 @@ async function buildResult(body, barcode) {
     ['Category', ai.category || '—'],
     ['Brand', ai.brand || '—'],
     ['Avg price of this category', money(pending.mrp) + (pending.price_source === 'category_average' ? ' <small>(average — not exact)</small>' : '')],
+    ...engineRows(body, ai.provider),
   ])
 }
 
@@ -499,7 +631,34 @@ async function manualFind() {
       ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
     ])
   } else {
-    showUnreadable(null, `"${raw}" is not in the master.`)
+    /* Same courtesy as the camera path: a number typed off a worn box is as
+       likely to be one character out as a number read off one. */
+    const fix = await correctFromLabel({ raw_text: raw, part_name: '' }, [raw])
+    if (fix) {
+      const partNo = fix.best.part.part
+      const hit = await masterRow(partNo)
+      const dms = await stockOf(partNo)
+      pending = {
+        photo_path: null, ocr_text: 'manual: ' + raw, provider: 'none',
+        ai_name: null, ai_category: null, ai_brand: null,
+        part_no: partNo,
+        description: (hit && hit.description) || fix.best.part.desc,
+        category: hit ? hit.category : null,
+        match_method: 'corrected', match_confidence: Number(fix.best.score) / 100,
+        mrp: hit && hit.mrp != null ? Number(hit.mrp) : null,
+        price_source: hit && hit.mrp != null ? 'master' : null, qty: 1,
+      }
+      renderCard('ok', '✔ CORRECTED (typed)', [
+        ['Typed', `<s>${raw}</s>`],
+        ['This part is', `<b class="big">${partNo}</b>`],
+        ['Description', `<b>${pending.description || '—'}</b>`],
+        ['Why', `${fix.best.why} · ${fix.best.score}% sure`],
+        ['MRP', `<b class="big">${money(pending.mrp)}</b>`],
+        ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+      ])
+      return
+    }
+    showUnreadable(null, `"${raw}" is not in the master, and nothing close enough to it is either.`)
   }
 }
 

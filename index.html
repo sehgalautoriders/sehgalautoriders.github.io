@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 45;
-window.HERO_BUILD = 'R57-2026.08.12.2';
+window.HERO_RELEASE = 46;
+window.HERO_BUILD = 'R58-2026.08.12.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2570,6 +2570,47 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
         </div>
         <div class="card-b" id="md-tablearea">
           <div class="empty"><div class="cond">No table selected</div><p style="margin-top:8px">Pick a table on the left, or create a new one.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ GOOGLE ENGINES — a master like any other master ============
+         Ravi 12-Aug-2026: "We should be able to change the google engines
+         whenever required. That should be given in CEO master just like the
+         masters." So it lives here, beside the tables, and it is a TABLE — one
+         account per line, aligned columns, no cards.
+
+         Test does a REAL call to all three engines on that account. Use moves
+         the whole app onto it, and takes effect within seconds — nothing is
+         redeployed and no key is typed on this screen, because no key is ever
+         on this screen. Identifiers only; the credentials live in Supabase
+         secrets and never reach a phone. ==================================== -->
+    <div class="card" id="ge-engines-card" style="display:none;margin-top:12px">
+      <div class="card-h">Google Engines
+        <button class="navbtn" onclick="engBoot(true)" title="Re-read the registry and re-test every account">↻ Test all</button>
+      </div>
+      <div class="card-b">
+        <div id="eng-msg" class="hint" style="margin-bottom:8px">Loading…</div>
+        <div style="overflow-x:auto">
+          <table id="eng-table" style="width:100%;border-collapse:collapse;font-size:12.5px">
+            <thead><tr style="text-align:left;border-bottom:2px solid var(--line,#ddd)">
+              <th style="padding:6px 8px">Google account</th>
+              <th style="padding:6px 8px">Project</th>
+              <th style="padding:6px 8px">Gemini</th>
+              <th style="padding:6px 8px">Vision</th>
+              <th style="padding:6px 8px">Doc AI</th>
+              <th style="padding:6px 8px;text-align:right">Credit left</th>
+              <th style="padding:6px 8px"></th>
+            </tr></thead>
+            <tbody id="eng-rows"></tbody>
+          </table>
+        </div>
+        <div class="hint" style="margin-top:8px;font-size:11px">
+          Reading order is fixed: <b>Gemini → Cloud Vision → Document AI</b>. An engine
+          that is down costs accuracy, never availability — the next one carries it,
+          which is exactly why a dead account can sit unnoticed. Credit left is an
+          estimate: the last Billing-console reading, minus every paid call since.
+          Below the threshold, <b>rvp9192@gmail.com</b> is mailed every 2 hours.
         </div>
       </div>
     </div>
@@ -6968,7 +7009,122 @@ function mdLoginAdd(){
   }, 25000);
 }
 
-function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); }
+function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); engBoot(false); }
+
+/* ==========================================================================
+   GOOGLE ENGINES — the CEO master for "which Google account are we reading
+   with today". Ravi 12-Aug-2026.
+
+   Everything here is read from Supabase directly (the google_engines table and
+   the engine_credit view) and written through engine_use(). RLS does the
+   gating: only a profile with is_platform_admin, or role ceo/gm, can update a
+   row, so hiding the card is a courtesy and not the security.
+
+   NO KEY IS EVER SHOWN, TYPED OR STORED ON THIS SCREEN. The table carries
+   project ids and processor paths; the credentials live in Supabase secrets.
+   That is the same rule the manuals project prints under its own switcher —
+   "Identifiers only here — never a key" — and it is why this screen can be
+   opened in front of anybody.
+   ========================================================================== */
+let ENG_ROWS=[], ENG_PROBES={};
+
+const ENG_STATE_COLOUR={READY:'#065f46','NO CREDIT':'#991b1b',QUOTA:'#92400e',
+  'NO KEY':'#991b1b','NOT SET':'#6b7280','API OFF':'#991b1b','NO ACCESS':'#991b1b',
+  'NOT FOUND':'#991b1b','BAD KEY':'#991b1b','BAD JSON':'#991b1b',REFUSED:'#991b1b',FAILED:'#991b1b'};
+
+function engCell(p){
+  if(!p) return '<span style="color:#9ca3af">—</span>';
+  const c=ENG_STATE_COLOUR[p.state]||'#374151';
+  return '<span title="'+raviEsc(p.detail||'')+'" style="color:'+c+';font-weight:700">'+raviEsc(p.state)+'</span>';
+}
+function engMoney(n){
+  if(n===null||n===undefined||n==='') return '<span style="color:#9ca3af">not known</span>';
+  const v=Math.round(Number(n));
+  return '<b style="color:'+(v<500?'#991b1b':(v<2000?'#92400e':'#065f46'))+'">₹'+v.toLocaleString('en-IN')+'</b>';
+}
+
+function engSay(msg){ const el=document.getElementById('eng-msg'); if(el) el.innerHTML=msg; }
+
+async function engBoot(runTests){
+  const card=document.getElementById('ge-engines-card'); if(!card) return;
+  /* Visible to the people who can act on it. RLS refuses the write regardless. */
+  if(!(typeof isAdmin==='function' && isAdmin()) && !(typeof isTopMgmtUser==='function' && isTopMgmtUser())){
+    card.style.display='none'; return;
+  }
+  card.style.display='block';
+  if(!SB_ON){ engSay('Supabase is switched off in this build (SB_ON=false), so the engine registry cannot be read.'); return; }
+  try{
+    const res=await sbFetch('/rest/v1/engine_credit?select=*&order=id');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    ENG_ROWS=await res.json();
+    engRender();
+    engSay(ENG_ROWS.length+' Google account(s) configured. Press <b>Test all</b> to make a real call to each engine — it is the only check worth trusting.');
+    if(runTests) await engTestAll();
+  }catch(e){
+    engSay('<span style="color:#991b1b">Could not read the engine registry: '+raviEsc(String(e.message||e))+'</span>');
+  }
+}
+
+function engRender(){
+  const tb=document.getElementById('eng-rows'); if(!tb) return;
+  tb.innerHTML=ENG_ROWS.map(function(r){
+    const p=ENG_PROBES[r.id]||{};
+    const live=r.is_active;
+    const exp=(r.days_to_expiry!==null&&r.days_to_expiry!==undefined)
+      ? '<div style="font-size:10.5px;color:'+(r.days_to_expiry<=7?'#991b1b':'#6b7280')+'">expires in '+r.days_to_expiry+'d</div>' : '';
+    return '<tr style="border-bottom:1px solid #eee;'+(live?'background:#f0fdf4':'')+'">'
+      +'<td style="padding:6px 8px">'+(live?'<span title="in use now" style="color:#065f46">●</span> ':'<span style="color:#d1d5db">○</span> ')
+        +'<b>'+raviEsc(r.account_email||r.id)+'</b>'
+        +'<div style="font-size:10.5px;color:#6b7280">'+raviEsc(r.label||'')+'</div></td>'
+      +'<td style="padding:6px 8px;font-size:11px;color:#374151">'+raviEsc(r.id)+'</td>'
+      +'<td style="padding:6px 8px">'+engCell(p.gemini)+'</td>'
+      +'<td style="padding:6px 8px">'+engCell(p.vision)+'</td>'
+      +'<td style="padding:6px 8px">'+engCell(p.docai)+'</td>'
+      +'<td style="padding:6px 8px;text-align:right">'+engMoney(r.estimated_remaining)+exp+'</td>'
+      +'<td style="padding:6px 8px;white-space:nowrap">'
+        +'<button class="btn ghost sm" onclick="engTest(\''+r.id+'\')">Test</button> '
+        +(live?'<span class="badge done" style="font-size:11px">In use</span>'
+              :'<button class="btn sm" onclick="engUse(\''+r.id+'\')">Use</button>')
+      +'</td></tr>';
+  }).join('');
+}
+
+async function engTest(id){
+  engSay('Testing <b>'+raviEsc(id)+'</b> — making one real call to each of the three engines…');
+  try{
+    const res=await sbFetch('/functions/v1/engine-test',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:id})});
+    const j=await res.json();
+    if(j.error) throw new Error(j.error);
+    ENG_PROBES[id]=j.probes||{};
+    engRender();
+    engSay('<b>'+raviEsc(id)+'</b>: '+raviEsc(j.verdict||'')
+      +' <span style="font-size:11px;color:#6b7280">(hover a state to see exactly what Google said)</span>');
+  }catch(e){
+    engSay('<span style="color:#991b1b">Test failed: '+raviEsc(String(e.message||e))+'</span>');
+  }
+}
+
+async function engTestAll(){
+  for(const r of ENG_ROWS){ await engTest(r.id); }
+}
+
+async function engUse(id){
+  const row=ENG_ROWS.filter(function(r){ return r.id===id; })[0]||{};
+  if(!confirm('Switch every photo the app reads — gate entry, the parts scanner, requisitions — onto:\n\n'
+    +(row.account_email||id)+'\n\n'
+    +'It takes effect within seconds. Nothing is redeployed and nothing is lost;\n'
+    +'you can switch back the same way.')) return;
+  engSay('Switching…');
+  try{
+    await sbRpc('engine_use',{p_id:id, p_by:((USER&&USER.personName)||'')});
+    await engBoot(false);
+    engSay('✅ Now reading with <b>'+raviEsc(row.account_email||id)+'</b>. Press Test to prove it.');
+  }catch(e){
+    engSay('<span style="color:#991b1b">Switch refused: '+raviEsc(String(e.message||e))
+      +'<br>Only the CEO / GM / admin logins may move this.</span>');
+  }
+}
 function mdRenderTableList(){
   const box=document.getElementById('md-tablelist');
   if(!MD_TABLES.length){ box.innerHTML='<div class="hint">No tables yet. Create your first one below.</div>'; return; }
