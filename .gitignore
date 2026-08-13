@@ -26,6 +26,12 @@
 # there would still be ignored, so the structural guarantee holds.
 !assets/
 !assets/*.png
+# R63 (13-Aug-2026): Hero MotoCorp's own Inter type family + the tabular-numeral
+# face, self-hosted for the app-wide type stack (they ship inside Hero's own
+# consumer APK; OFL-licensed). Restricted to *.ttf inside assets/fonts/ — the
+# structural guarantee above holds.
+!assets/fonts/
+!assets/fonts/*.ttf
 # R22.2: digital asset links for the Android TWA package — without this file at
 # /.well-known/assetlinks.json the installed APK shows a browser URL bar.
 !.well-known/
