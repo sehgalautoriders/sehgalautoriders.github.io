@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 53;
-window.HERO_BUILD = 'R69-2026.08.17.3';
+window.HERO_RELEASE = 54;
+window.HERO_BUILD = 'R70-2026.08.17.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1211,8 +1211,21 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 #view-estimate .es-item-cell{min-width:0;padding-right:12px}
 #view-estimate .es-item-name{font-weight:650;line-height:1.42;overflow-wrap:break-word;word-break:normal}
 #view-estimate .es-item-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px}
-#view-estimate .es-item-amt{width:112px;min-width:96px}
-#view-estimate .es-item-actions{width:188px;min-width:188px;white-space:nowrap;text-align:right}
+#view-estimate .es-item-amt{width:112px;min-width:96px;text-align:right}
+/* R70 (Ravi, 17-Aug-2026): "Some UI is disturbed get it corrected."
+   This column was sized 188px for the three-button toolbar (Discount · Edit ·
+   Remove). R65 cut those three down to ONE ✕, but the width stayed — so every
+   line carried ~150px of empty column between its amount and its ✕, and the line
+   amounts no longer lined up under their own section total on the right edge.
+   That is the gap visible in the screenshot. Sized to the one button that is
+   actually there; the section total and the line amounts share an edge again. */
+#view-estimate .es-item-actions{width:46px;min-width:46px;white-space:nowrap;text-align:right}
+#view-estimate .es-item-actions .es-line-act{margin-left:0}
+/* The section total sits on the table's right edge; the line amounts stop one
+   action column short of it. Reserving the same 46px on the draft's section
+   header puts the two on the same vertical line. The generated estimate has no
+   action column at all, so it keeps the plain header. */
+#view-estimate .es-grp-h-edit{padding-right:46px}
 #view-estimate .es-stock-link{
   appearance:none;border:0;background:transparent;color:#087f8c;padding:0;
   font:800 10.5px Inter,sans-serif;cursor:pointer
@@ -1633,23 +1646,44 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
                  knows is SHOWN and LOCKED. "Nothing that has come from the
                  customer master table should be able to change by the Service
                  Advisor otherwise we are spoiling our database." The one field
-                 the SA adds is the additional mobile, and it is compulsory. -->
+                 the SA adds is the additional mobile.
+                 R70 (Ravi, 17-Aug-2026): that mobile is NO LONGER COMPULSORY, and
+                 the "Same as above" button is gone — "everyone is clicking that
+                 button only", so the field was filling itself with the number we
+                 already hold and the second contact was never actually collected.
+                 An empty box the advisor may fill is worth more than a copied one. -->
             <div class="sec">Customer <span class="es-locked-tag">from customer master · read only</span></div>
             <div class="fld"><label>Customer name</label><input id="es-name" readonly class="es-ro"></div>
             <div class="row2">
               <div class="fld"><label>Mobile number</label><input id="es-mob" readonly class="es-ro"></div>
               <div class="fld"><label>Reg. number</label><input id="es-reg" readonly class="es-ro" style="text-transform:uppercase"></div>
             </div>
-            <div class="row2">
-              <div class="fld"><label>Additional mobile *</label><input id="es-mob2" inputmode="numeric" placeholder="10-digit" maxlength="10" oninput="esUpdateLiveDebounced()"></div>
-              <div class="fld"><label>&nbsp;</label><button type="button" class="btn ghost sm" style="margin:0" onclick="esSameAsAbove()">Same as above</button></div>
+            <div class="fld"><label>Additional mobile <span style="font-weight:600;color:var(--steel)">— optional</span></label>
+              <input id="es-mob2" inputmode="numeric" placeholder="10-digit (leave blank if there is none)" maxlength="10" oninput="esUpdateLiveDebounced()">
+              <div class="hint">Write it only if the customer gives a second number. The estimate generates without it.</div>
             </div>
 
-            <div class="sec">Vehicle <span class="es-locked-tag">from gate entry &amp; customer master · read only</span></div>
+            <div class="sec">Vehicle <span class="es-locked-tag">model from gate entry &amp; customer master · read only</span></div>
             <div class="fld"><label>Model</label><select id="es-model" disabled class="es-ro"></select><div id="es-model-flag" style="display:none;font-size:11px;margin-top:3px"></div><div id="es-model-src" style="display:none;font-size:11px;margin-top:3px;font-weight:700"></div></div>
+            <!-- R70 (Ravi, 17-Aug-2026) — TWO FIELDS COME OUT OF THE READ-ONLY BLOCK.
+
+                 ODOMETER: "Odometer photo taken at the gate should not be visible to
+                 the service Advisor. Service advisor should scan the odometer
+                 photograph again to get the odometer reading. If it is not scanned
+                 and not captured he can enter by hand also."
+                 So the gate's odometer PHOTO is no longer shown on this screen
+                 (esRenderGatePhotos), the gate's KM no longer prefills this box, and
+                 the box is typeable. 📷 Scan reads a fresh photo through the same
+                 three engines the gate uses; the gate figure is kept only as the
+                 cross-check the hint prints after a scan.
+
+                 DATE OF SALE: "Dont lock the Date of sale. Many of the date of sale
+                 are not there and the estimate is coming blank." It is filled from
+                 the customer master when the master has it, typeable when it does
+                 not, and it no longer blocks Generate. -->
             <div class="row2">
-              <div class="fld"><label>Odometer (km) — read at the gate</label><input id="es-km" inputmode="numeric" readonly class="es-ro"></div>
-              <div class="fld"><label>Date of sale</label><input id="es-dos" class="date-dmy es-ro" type="text" readonly maxlength="10" autocomplete="off"></div>
+              <div class="fld"><label>Odometer (km) — scan it or type it</label><input id="es-km" inputmode="numeric" placeholder="scan the meter, or type the reading"></div>
+              <div class="fld"><label>Date of sale <span style="font-weight:600;color:var(--steel)">— optional</span></label><input id="es-dos" class="date-dmy" type="text" placeholder="dd-mm-yyyy" maxlength="10" autocomplete="off"><div class="hint">Blank for many vehicles. Type it if you know it — the estimate still generates without it.</div></div>
             </div>
             <!-- R69 (Ravi, 17-Aug-2026): "Service type can be changed during
                  preparing estimate. Wrongly made not editable now."
@@ -6341,8 +6375,14 @@ function esBuild(fam, dec, km, modelName){
   const C=ES_COMPOSED;
   if(C){
     (C.oil||[]).forEach(function(o){
+      /* R70: tagged 'oil' rather than passed through as compose's generic
+         'manual'. The oil comes from the model's own oil row, never from the
+         parts tree, so it can never carry a complaint code — and printing
+         "COMPLAINT NO: — not linked in the tree" in amber on a line that can
+         never have one turns a real warning into noise the advisor learns to
+         ignore. On a scheduled part that amber warning is the point. */
       L.oil.push({l:o.desc, p:+o.mrp||0, pn:o.pn||'', stk:o.stock, outlets:o.outlets,
-                  stock_as_of:o.stock_as_of, why:o.why, src:o.src});
+                  stock_as_of:o.stock_as_of, why:o.why, src:'oil'});
     });
     (C.parts||[]).forEach(function(x){
       L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', cc:x.cc||'', stk:x.stock,
@@ -6367,6 +6407,56 @@ function esBuild(fam, dec, km, modelName){
     L.parts=L.parts.filter(x=>!ES_REMOVED.has(x.l));
     L.labour=L.labour.filter(x=>!ES_REMOVED.has(x.l)||x.free);
   }
+  esFillComplaintCodes_(L);
+  esAddWashing_(L);
+  return L;
+}
+
+/* R70 — the complaint number on a FITMENT labour line.
+   estimate_compose returns complaint_code on the part (est_find_part_) but not on
+   the labour the part carries, because the labour is found by code, not by
+   complaint. The link is already in the row: for_part -> _fromPn. Copying it here
+   means the fitment line prints the same complaint number the part prints, which
+   is what DMS wants — one job card, one complaint, part and labour under it. */
+function esFillComplaintCodes_(L){
+  const byPn={};
+  L.parts.forEach(function(p){ if(p.pn && p.cc) byPn[String(p.pn)]=p.cc; });
+  L.labour.forEach(function(l){
+    if(l.cc) return;
+    if(l._fromPn && byPn[String(l._fromPn)]) l.cc=byPn[String(l._fromPn)];
+  });
+  return L;
+}
+
+/* =========================================================================
+   R70 — WASHING IS ON EVERY ESTIMATE  (Ravi, 17-Aug-2026)
+   "And compulsary - Washing 129 rs for each vehicle to be in each estimate to
+    be there."
+   Every vehicle that comes in is washed, so every estimate quotes it. It is
+   added here rather than left to the advisor because the whole point of the word
+   compulsory is that it does not depend on anybody remembering: it is added for
+   free services too — the wash is not part of the free-service coupon — and it
+   cannot be removed with ✕ (esRemoveItem's filter above runs before this).
+   THE CODE IS NOT INVENTED HERE. The line is pushed WITHOUT a code and
+   esAnnotateDmsCodes — the same pass every other labour line goes through — looks
+   it up in this model's own DMS labour master a moment later. Found: the line
+   bills straight through. Not found: it prints "LABOUR NO: — not in master",
+   which is the honest state and the prompt to put it in the master. Nothing here
+   fabricates a code that would be rejected at billing.
+   A washing line already returned by estimate_compose is left alone — this adds
+   one, it never doubles one.
+   ========================================================================= */
+var ES_WASH_AMT=129;
+function esIsWashLine_(x){
+  return /WASH/i.test(String((x&&x.l)||''));
+}
+function esAddWashing_(L){
+  if(L.labour.some(esIsWashLine_)) return L;
+  L.labour.push({
+    l:'Washing', p:ES_WASH_AMT,
+    why:'Compulsory on every vehicle — every estimate carries the wash.',
+    src:'washing', _locked:true, _mandatory:true
+  });
   return L;
 }
 function esBuildLegacy_UNUSED(fam, dec, km, modelName){
@@ -6703,7 +6793,11 @@ function esLabourForEveryPart_(items){
     const label='Fitting / Replacement — '+pt.l;
     if(haveLabel.has(key(label))) return;
     haveLabel.add(key(label));
-    items.labour.push({l:label, p:amt, code:'', cc:'',
+    /* R70: _noCode marks it as a line the DMS labour master does not hold, so it
+       prints "LABOUR NO: — not in master" instead of printing nothing. This IS
+       the banded fallback charge — there is no Hero code behind it, and the
+       billing clerk needs to see that before he goes looking for one. */
+    items.labour.push({l:label, p:amt, code:'', cc:'', _noCode:true,
                        _fromPart:pt.l, _fromPn:pt.pn||'', _auto:true, _unmapped:true});
     added.push(label);
   });
@@ -7049,13 +7143,13 @@ function esRenderManual(){
   }
 }
 
-/* "and if it is the same as above, then a same as above button" */
-function esSameAsAbove(){
-  const a=document.getElementById('es-mob'), b=document.getElementById('es-mob2');
-  if(!a||!b) return;
-  b.value=String(a.value||'').replace(/[^0-9]/g,'').slice(-10);
-  esUpdateLive();
-}
+/* REMOVED R70 (Ravi, 17-Aug-2026) — "Remove the Same as Above button since
+   everyone is clicking that button only."
+   The button copied the primary mobile into the additional-mobile box in one tap,
+   and because the field was compulsory that tap was the fastest way past the
+   check. The result was a database full of duplicate numbers presented as second
+   contacts. The field is optional now and there is nothing to copy from. */
+function esSameAsAbove(){ /* removed — kept as a no-op so no old cached button can throw */ }
 
 /* Odometer, free-stage or SERVICE TYPE changed on screen -> the manual is read
    again. R69: es-type joined this list the day the SA got the picker back — a
@@ -7074,7 +7168,13 @@ function esComputeCurrent(){
   const dec=esDecide(fam,ftype,freeStage); if(!dec) return null;
   /* esEnforceLinkedLabour_ runs BEFORE anything is summed, so no total, no
      printed line and no saved record can ever contain labour whose part is gone. */
-  const items=esEnforceLinkedLabour_(esLabourForEveryPart_(esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName)));
+  /* R70: the complaint-code fill is run again at the END of the chain, not only
+     inside esBuild. esLabourForEveryPart_ adds fitment lines AFTER esBuild has
+     finished — those lines carry _fromPn but were born after the first fill, so
+     they printed no complaint number at all. Running it here catches every
+     labour line whatever added it. It is idempotent: it only ever fills a cc
+     that is empty. */
+  const items=esFillComplaintCodes_(esEnforceLinkedLabour_(esLabourForEveryPart_(esAnnotateDmsCodes(esApplyPriceOverrides(esBuild(fam,dec,km,modelName)),dec,freeStage,modelName))));
   if(!items.protection) items.protection=[];
   const sumGross=a=>a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0);
   const sumNet=a=>a.reduce((x,y)=>x+(y.netP!==undefined?+y.netP:(+y.p||0)),0);
@@ -7310,16 +7410,27 @@ function esGenerate(){
   }
   const msg=document.getElementById('es-msg'); msg.style.color='var(--steel)'; msg.textContent='';
   // v11.4 compulsory fields — block + popup listing only what's missing
-  const missing=reqCheck([
+  /* R70 (Ravi, 17-Aug-2026) — TWO FIELDS LEAVE THIS LIST.
+     Date of sale: "Many of the date of sale are not there and the estimate is
+     coming blank." The customer master simply does not hold it for a large part
+     of the book, so a compulsory check on it stopped real vehicles from getting
+     an estimate at all. It is used where it is known (free-stage suggestion and
+     the months-since figure sent to estimate_compose) and skipped where it is not.
+     Additional mobile: "Let Service Advisor write that and dont make it
+     compulsary." A second number nobody has is not worth a blocked estimate.
+     What stays compulsory is what the vehicle cannot be quoted without:
+     registration, the customer's own mobile, name, model, odometer, service type.
+     An additional mobile that IS typed is still validated as 10 digits. */
+  const req=[
     {v:val('es-reg'), label:'Reg No'},
     {v:val('es-mob'), label:'Mobile No', mobile:true},
-    {v:val('es-mob2'), label:'Additional mobile', mobile:true},
     {v:val('es-name'), label:'Customer Name'},
     {v:val('es-model'), label:'Model'},
     {v:val('es-km'), label:'Odometer (km)'},
-    {v:val('es-type'), label:'Service Type'},
-    {v:val('es-dos'), label:'Date of sale'}
-  ]);
+    {v:val('es-type'), label:'Service Type'}
+  ];
+  if(String(val('es-mob2')||'').trim()) req.push({v:val('es-mob2'), label:'Additional mobile', mobile:true});
+  const missing=reqCheck(req);
   if(missing.length){ reqShowMissing(missing); return; }
   const c=esComputeCurrent();
   if(!c){ msg.textContent='Select a model and a service type.'; return; }
@@ -7329,15 +7440,41 @@ function esGenerate(){
     anchorBase:c.anchorBase||0,anchorCap:c.anchorCap||0,anchorSrc:c.custLast?'customer':(c.modelMed?'model':'')};
   esRender(ES.current); esLockForm(true); esPushSheet(ES.current);
 }
+/* R70 (Ravi, 17-Aug-2026) — EVERY LINE CARRIES THE THREE NUMBERS DMS ASKS FOR.
+   "Ensure when the estimate is prepared each labour and part has a labour no and
+    part no and complaint no to enter in system."
+   R22 already printed ONE code per line and stopped at the first match — a part
+   showed its part number and its complaint code never appeared, so the billing
+   clerk had the number that identifies the item but not the one DMS opens the job
+   card against, and went hunting for it. All three are printed now, side by side,
+   and a number the masters do not hold says so rather than staying blank: a gap
+   that is visible gets fixed in the master, a gap that is silent gets discovered
+   at billing with the customer standing there. */
+function esCodeChip_(label,value,colour){
+  /* Escaped locally rather than through raviEsc: these numbers come from the DMS
+     masters and go straight into innerHTML, and this function must not depend on
+     a helper defined 3,000 lines further down having been assigned first. */
+  var v=String(value==null?'':value).replace(/[&<>"']/g,function(m){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
+  return '<span style="font-size:10.5px;color:'+colour+";font-family:'Roboto Mono';font-weight:800\">"
+        +label+': '+v+'</span>';
+}
 function esCodeHtml(x){
-  if(x.pn) return `<div style="font-size:11px;color:#0f766e;font-family:'Roboto Mono';font-weight:800;margin-top:2px">PART NO: ${x.pn}</div>`;
-  if(x.code) return `<div style="font-size:11px;color:#1d4ed8;font-family:'Roboto Mono';font-weight:800;margin-top:2px">LABOUR CODE: ${x.code}</div>`;
-  /* R22 (Ravi 03-Aug-2026): every line must SHOW its DMS code for bill generation.
-     A line whose code is missing from the masters now says so instead of staying
-     silent, so the gap is seen and fixed in the sheet — not discovered at billing. */
-  if(x._noPn)   return `<div style="font-size:10.5px;color:#b45309;font-family:'Roboto Mono';font-weight:800;margin-top:2px">PART NO: — not in master</div>`;
-  if(x._noCode) return `<div style="font-size:10.5px;color:#b45309;font-family:'Roboto Mono';font-weight:800;margin-top:2px">LABOUR CODE: — not in master</div>`;
-  return '';
+  const chips=[];
+  if(x.pn)          chips.push(esCodeChip_('PART NO', x.pn, '#0f766e'));
+  else if(x._noPn)  chips.push(esCodeChip_('PART NO', '— not in master', '#b45309'));
+  if(x.code)        chips.push(esCodeChip_('LABOUR NO', x.code, '#1d4ed8'));
+  else if(x._noCode)chips.push(esCodeChip_('LABOUR NO', '— not in master', '#b45309'));
+  /* The complaint number is only claimed where the tree actually links one.
+     A service-labour line has no complaint behind it — the visit is the reason —
+     so it says so instead of borrowing a code that would be wrong in DMS. */
+  if(x.cc) chips.push(esCodeChip_('COMPLAINT NO', x.cc, '#7c3aed'));
+  else if(x.src==='service' || x.src==='washing' || x.src==='consumable' || x.src==='oil')
+    chips.push(esCodeChip_('COMPLAINT NO', '— scheduled work, no complaint', '#94a3b8'));
+  else if(x.pn||x.code||x._noPn||x._noCode)
+    chips.push(esCodeChip_('COMPLAINT NO', '— not linked in the tree', '#b45309'));
+  if(!chips.length) return '';
+  return '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:3px">'+chips.join('')+'</div>';
 }
 function esAmountHtml(x){
   if(x.free) return 'No charge';
@@ -7367,12 +7504,17 @@ function esRowsEditable(a,kind){ return a.map(x=>{
   const safe=String(x.l).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const src=(x.fromModel && x.fromModel!==val('es-model')) ? (' \u00b7 part listed under '+x.fromModel) : '';
   const why=x.why?('<div class="es-item-why">'+String(x.why).replace(/</g,'&lt;')+src+'</div>'):'';
-  const del=x._fromPart
+  /* R70: a compulsory line shows the same lock the fitment lines show, rather than
+     a cross that would silently do nothing — esBuild re-adds the wash after the
+     removal filter runs, so offering the button would misrepresent the tap. */
+  const del=x._mandatory
+    ? '<span class="es-line-act es-line-lock" title="Compulsory on every estimate — cannot be removed">🔒</span>'
+    : x._fromPart
     ? '<span class="es-line-act es-line-lock" title="Remove the part to remove its fitting labour">🔒</span>'
     : '<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem(\''+safe+'\')" title="Remove this item"><span aria-hidden="true">\u2715</span></button>';
   return '<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">'+x.l+esStockHtml(x)+'</div>'+why+esCodeHtml(x)+'</td><td class="amt es-item-amt">'+esAmountHtml(x)+'</td><td class="es-item-actions">'+del+'</td></tr>';
 }).join(''); }
-function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li es-edit-table">${esRowsEditable(a,kind)}</table></div>`; }
+function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h es-grp-h-edit"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li es-edit-table">${esRowsEditable(a,kind)}</table></div>`; }
 function esRender(d){
   const dt=new Date(d.ts).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('es-out').innerHTML=`
@@ -7473,7 +7615,10 @@ function esBuildPDF(source){
   [['Date & time',dt,'Service',d.service],['Customer',d.name||'-','Mobile',d.mob||'-'],['Model',d.model,'Reg. No',d.reg||'-'],['Odometer',d.km.toLocaleString('en-IN')+' km','Advisor',USER.personName]].forEach(r=>{
     doc.setFont('helvetica','normal'); doc.setTextColor(91,100,112); doc.text(r[0].toUpperCase(),40,y); doc.text(r[2].toUpperCase(),320,y);
     doc.setFont('helvetica','bold'); doc.setTextColor(21,24,28); doc.text(String(r[1]),130,y); doc.text(String(r[3]),400,y); y+=18; });
-  const body=[]; const add=(t,a)=>{ if(!a.length) return; body.push([{content:t,colSpan:2,styles:{fontStyle:'bold',fillColor:[241,238,232],textColor:[21,24,28]}}]); a.forEach(x=>body.push([x.l+(x.pn?'  PN '+x.pn:'')+(x.code?'  ['+x.code+']':''),x.free?'No charge':num(x.p)])); };
+  const body=[]; const add=(t,a)=>{ if(!a.length) return; body.push([{content:t,colSpan:2,styles:{fontStyle:'bold',fillColor:[241,238,232],textColor:[21,24,28]}}]); /* R70: the complaint number joins the part and labour numbers on the printed
+     sheet too — the clerk keys all three into DMS off this page, and having two
+     of the three printed is what sent him back to the advisor. */
+    a.forEach(x=>body.push([x.l+(x.pn?'  PN '+x.pn:'')+(x.code?'  LAB '+x.code:'')+(x.cc?'  CC '+x.cc:''),x.free?'No charge':num(x.p)])); };
   if(d.demanded&&d.demanded.length){ body.push([{content:'DEMANDED REPAIRS: '+d.demanded.map(x=>x.name+' ['+(x.cc||'-')+']').join(' | '),colSpan:2,styles:{fontStyle:'bold',fillColor:[239,246,255],textColor:[30,64,175]}}]); }
   add('ENGINE OIL',d.items.oil); add('PARTS',d.items.parts); add('LABOUR',d.items.labour); add('ESTIMATE PROTECTION',d.items.protection||[]); add('EXPRESS DELIVERY',d.items.express||[]);
   doc.autoTable({startY:y+6,head:[['Description','Amount (Rs.)']],body,theme:'grid',headStyles:{fillColor:[21,24,28],halign:'left'},columnStyles:{1:{halign:'right',font:'courier',cellWidth:95}},styles:{fontSize:10,cellPadding:5},margin:{left:40,right:40}});
@@ -7623,17 +7768,18 @@ function esOnGatePick(g){
     document.getElementById('es-out').innerHTML='<div class="empty"><div class="cond">No estimate yet</div><p style="margin-top:8px">Enter the vehicle details and press <b>Generate estimate</b>.</p></div>';
     document.getElementById('es-msg').textContent='';
   }
-  /* ODOMETER COMES FROM THE GATE (Ravi 03-Aug-2026). The guard already
-     photographs and reads the meter at the gate; this screen was clearing it and
-     making the SA type it again, which is why it still felt manual. Prefilled
-     here, still editable, and 📷 Scan re-reads the meter and warns if the new
-     reading disagrees with what the gate recorded. */
+  /* R70 (Ravi, 17-Aug-2026) — THE ADVISOR TAKES THE READING, NOT THE GATE.
+     R63 prefilled this box with the gate's km so the SA would not retype it.
+     Ravi has reversed that: "Service advisor should scan the odometer photograph
+     again to get the odometer reading. If it is not scanned and not captured he
+     can enter by hand also." The box therefore starts EMPTY — a prefilled number
+     is a number nobody looks at, and the odometer decides which service is due.
+     The gate figure is still read into ES_GATE_KM, because that is what makes the
+     scan hint able to say "lower than the gate reading" or "1,400 km more than
+     the gate recorded". It is a check, never the answer. */
   ES_GATE_KM = +String(g.km||'').replace(/[^0-9]/g,'') || 0;
-  if(ES_GATE_KM){
-    const kmEl2=document.getElementById('es-km');
-    if(kmEl2 && !kmEl2.value.trim()){ kmEl2.value=ES_GATE_KM; }
-    try{ esKmHint('Odometer '+ES_GATE_KM.toLocaleString('en-IN')+' km taken from the gate entry. Tap 📷 Scan to re-read it.',''); }catch(e){}
-  }
+  try{ esKmHint('Take the reading here: tap 📷 Scan to photograph the meter, or type it. '
+               +'Three engines read the photo; if none of them can, type the reading by hand.',''); }catch(e){}
   document.getElementById('es-name').value=g.name||'';
   document.getElementById('es-mob').value=g.mob||'';
   document.getElementById('es-reg').value=(typeof raviNormalizeReg==='function'?raviNormalizeReg(g.reg||''):(g.reg||''));
@@ -7852,11 +7998,19 @@ function esModelConfirm(){
 function esRenderGatePhotos(g){
   const box=document.getElementById('es-gate-photos'); if(!box) return;
   const ph=(g&&g.photos)||{};
-  /* R65 (Ravi, 14-Aug-2026): "Odometer photo is not seen while making estimate."
-     It is captured at the gate, it is compulsory there, it was in the payload
-     the whole time (Photo Odo URL -> photos.odo) and this array simply did not
-     list it. The SA quotes against that reading, so it comes first. */
-  const order=[['odo','Odometer'],['front','Front'],['back','Back'],['right','Right'],['left','Left'],['dicky','Dicky']];
+  /* R70 (Ravi, 17-Aug-2026) — THE ODOMETER PHOTO IS DELIBERATELY NOT HERE.
+     "Odometer photo taken at the gate should not be visible to the service
+      Advisor. Service advisor should scan the odometer photograph again to get
+      the odometer reading."
+     R65 had added it (that day the complaint was the opposite — it was missing).
+     Showing it turned the reading into something copied off a picture taken at
+     the barrier, sometimes an hour earlier, by an advisor who never walked to the
+     vehicle. The reading is now taken on THIS screen: 📷 Scan beside the KM box
+     photographs the meter and reads it through the same three engines the gate
+     uses, and the box is typeable when the read fails. The gate's own figure is
+     still held (ES_GATE_KM) purely as the cross-check the scan hint prints.
+     The condition photos stay — they are what the advisor quotes damage against. */
+  const order=[['front','Front'],['back','Back'],['right','Right'],['left','Left'],['dicky','Dicky']];
   const pics=order.filter(([k])=>ph[k]&&String(ph[k]).indexOf('http')===0);
   box.style.display='block';
   if(!pics.length){
@@ -7866,7 +8020,7 @@ function esRenderGatePhotos(g){
     box.innerHTML='<div style="font-size:11px;color:var(--steel);margin:8px 0 4px">📷 Gate photos: none received from server for this vehicle'+(g&&g.photo?'':' (backend update pending)')+'</div>';
     return;
   }
-  box.innerHTML=`<div style="font-size:11px;font-weight:800;color:var(--steel);margin:8px 0 4px">📷 GATE PHOTOS — vehicle as received${g.aiPlate?(' · plate read: '+g.aiPlate):''} <span style="font-weight:400">· tap any photo to zoom</span></div>
+  box.innerHTML=`<div style="font-size:11px;font-weight:800;color:var(--steel);margin:8px 0 4px">📷 GATE PHOTOS — vehicle as received${g.aiPlate?(' · plate read: '+g.aiPlate):''} <span style="font-weight:400">· tap any photo to zoom · the odometer is read again here, not copied from the gate</span></div>
     <div class="hero-photostrip">${pics.map(([k,l])=>
       `<div onclick="heroPhotoView('${String(ph[k]).replace(/'/g,'')}','${l} — as received at gate')" style="flex:0 0 auto;text-align:center;cursor:pointer">
         <img src="${huDrivePhotoSrc?huDrivePhotoSrc(ph[k]):ph[k]}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:150px;height:112px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
@@ -14332,9 +14486,12 @@ function rtEnsurePanel(){
    +'<div id="rt-body"></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click', function(e){ if(e.target===d) rtClose(); });
-  document.getElementById('rt-search').addEventListener('input', function(){
-    RT_VIEW.q=this.value.trim(); rtDraw();
-  });
+  /* R70: the search box no longer carries a permanent complaint-tree listener.
+     Every opener of this panel (rtOpen, esOpenLabPicker, rtOpenParts) assigns its
+     own s.oninput, and this listener fired IN ADDITION to that one — so opening
+     the labour picker and typing ran a complaint-tree search first, including its
+     all-India network call, and then had its result immediately overwritten by
+     the picker's own render. One panel, one owner, one handler at a time. */
 }
 /* rtOpen: this earlier copy was dead — a later top-level definition of the same
    name overwrote it. Removed 14-Aug-2026; the live one is further down. */
@@ -14854,8 +15011,23 @@ function rtRenderStrip(){
   if(!rtEnsureStrip()) return;
   var strip=document.getElementById('rt-strip');
   var c=null; try{ c=esComputeCurrent(); }catch(e){}
-  if(!c){ strip.style.display='none'; return; }
+  /* R70 (Ravi, 17-Aug-2026): the whole strip used to disappear whenever the
+     estimate could not yet be computed — and the strip is the ONLY way into the
+     Hero tree. So "Variables for that vehicle as per the Hero Tree, Parts for
+     that vehicle as per category, Subcategory Hero Tree should be visible to be
+     selected" was, on screen, not visible at all until a service type had been
+     picked. The four buttons stay up from the moment the form is drawn; only the
+     ratio numbers wait for something to measure. */
   strip.style.display='block';
+  var act=document.getElementById('rt-actions'); if(act) act.style.display='flex';
+  if(!c){
+    var pl0=document.getElementById('rt-pl');
+    if(pl0) pl0.innerHTML='Pick the vehicle and the service type — then the parts:labour ratio is measured here.';
+    var rv0=document.getElementById('rt-rv'); if(rv0) rv0.innerHTML='';
+    var f0=document.getElementById('rt-fill'); if(f0) f0.style.width='0%';
+    var nx0=document.getElementById('rt-next'); if(nx0) nx0.innerHTML='';
+    return;
+  }
   var parts=(+c.parts||0)+(+c.oil||0), lab=(+c.labour||0);
   var ratio = lab>0 ? parts/lab : Infinity;
   var col = ratio<=1 ? '#16a34a' : (ratio<=1.5 ? '#65a30d' : (ratio<=2 ? '#d97706' : '#dc2626'));
@@ -14891,8 +15063,18 @@ function rtEnsureStrip(){
     +'<div class="rt-mk" style="left:33.3%"></div><div class="rt-mk" style="left:66.6%"></div></div>'
     +'<div id="rt-ticks"><span>2:1</span><span>1.5:1</span><span>1:1</span></div>'
     +'<div id="rt-next"></div>'
+    /* R70 (Ravi, 17-Aug-2026): "Variables for that vehicle as per the Hero Tree,
+       Parts for that vehicle as per category, Subcategory Hero Tree should be
+       visible to be selected."
+       Three of these already existed and reached the complaint tree and the
+       model's own labour master — the variable work for THIS vehicle. What had no
+       door at all was the parts tree by category and sub-category: R65 stripped
+       the old category/part dropdowns out of the form and nothing replaced them,
+       so a part the advisor could see in the Parts Finder could not be put on an
+       estimate. "Parts by category" is that door. */
     +'<div id="rt-actions">'
     +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'cat\')">Add by complaint</button>'
+    +'<button type="button" class="rt-btn" onclick="rtOpenParts()">Parts by category</button>'
     +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')">Suggested labour</button>'
     +'<button type="button" class="rt-btn" onclick="esOpenLabPicker()">Search labour</button>'
     +'</div>';
@@ -14960,6 +15142,228 @@ function esPickLab(code, btn){
   if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
   try{ esDrawChips(); }catch(e){}
   try{ rtRenderStrip(); }catch(e){}
+}
+
+/* =========================================================================
+   R70 \u2014 PARTS BY CATEGORY AND SUB-CATEGORY, ON THE ESTIMATE  (Ravi 17-Aug-2026)
+
+   "Parts for that vehicle as per category, Subcategory Hero Tree should be
+    visible to be selected."
+
+   The routes are the ones the Parts Finder already uses, so there is one
+   catalogue and one set of counts in the whole app, not a second copy that
+   drifts:
+     mp_tree / mp_in     \u2014 scoped to the SELECTED MODEL. Categories, then
+                           sub-categories, then the parts this workshop has
+                           actually fitted to that model, with our own stock.
+     parts_tree/parts_in \u2014 the whole 55,681-row all-India catalogue, used only
+                           when no model is set, or when the advisor deliberately
+                           steps outside the model with "whole catalogue".
+   Defaulting to the model is the point of the words "for that vehicle": the
+   advisor should not have to know that a Splendor front brake shoe and an Xpulse
+   front brake shoe sit in the same category name.
+
+   Adding a part here goes through rtAddPartRow_, which pushes the SAME shape
+   ES_ADDPART already holds, so pricing, the parts:labour strip, the chips, the
+   printed estimate and the saved record need no special case for it. An unpriced
+   part asks for its price rather than quoting zero \u2014 the rule the rest of this
+   module already follows.
+   ========================================================================= */
+var RTP={model:'', cat:'', sub:'', q:'', page:1, pages:1, total:0, rows:[], busy:false, qt:null, all:false};
+
+function rtpModelOn(){ return !RTP.all && !!RTP.model; }
+function rtpRoute(kind){
+  /* kind 'tree' -> the category/sub-category counts; 'in' -> the parts */
+  if(kind==='tree') return rtpModelOn() ? 'mp_tree' : 'parts_tree';
+  return rtpModelOn() ? 'mp_in' : 'parts_in';
+}
+function rtOpenParts(){
+  if(typeof rtEnsurePanel==='function') rtEnsurePanel();
+  var p=document.getElementById('rt-panel');
+  if(!p){ alert('Picker unavailable in this build.'); return; }
+  p.style.display='flex';
+  RTP.model=String((typeof esCurrentModelUP==='function'?esCurrentModelUP():val('es-model'))||'').trim();
+  RTP.cat=''; RTP.sub=''; RTP.q=''; RTP.page=1; RTP.rows=[]; RTP.all=false;
+  var s=document.getElementById('rt-search');
+  if(s){ s.value=''; s.placeholder='Search this category by part number or description\u2026';
+         s.oninput=function(){ rtpSearchDebounced(this.value.trim()); }; }
+  rtpCrumb();
+  rtpLoadCats();
+}
+function rtpCrumb(){
+  var el=document.getElementById('rt-crumb'); if(!el) return;
+  var b=['<b>'+rtEsc(rtpModelOn()?RTP.model:'Whole Hero catalogue')+'</b>'];
+  if(RTP.cat) b.push(rtEsc(RTP.cat));
+  if(RTP.sub) b.push(rtEsc(RTP.sub));
+  el.innerHTML=b.join(' &nbsp;\u203a&nbsp; ');
+}
+function rtpBody(html){ var b=document.getElementById('rt-body'); if(b) b.innerHTML=html; }
+
+/* The one chip that switches between "this vehicle" and "everything Hero makes".
+   Named, not hidden behind a toggle: an advisor who steps outside the model
+   should know he has, because a part that fits nothing on the ramp is the one
+   mistake this screen can make. */
+function rtpScopeChips(){
+  var m=String(RTP.model||'');
+  var h='<div class="rt-chips">';
+  if(RTP.cat) h+='<span class="rt-chip" onclick="rtpGo(\'\',\'\')">\u2039 All categories</span>';
+  if(m){
+    h+='<span class="rt-chip'+(rtpModelOn()?' on':'')+'" onclick="rtpScope(false)">'+rtEsc(m)+'</span>'
+      +'<span class="rt-chip'+(RTP.all?' on':'')+'" onclick="rtpScope(true)">Whole catalogue</span>';
+  }
+  return h+'</div>';
+}
+function rtpScope(all){
+  RTP.all=!!all; RTP.cat=''; RTP.sub=''; RTP.q=''; RTP.page=1; RTP.rows=[];
+  var s=document.getElementById('rt-search'); if(s) s.value='';
+  rtpCrumb(); rtpLoadCats();
+}
+function rtpGo(cat,sub){
+  RTP.cat=cat||''; RTP.sub=sub||''; RTP.q=''; RTP.page=1;
+  var s=document.getElementById('rt-search'); if(s) s.value='';
+  rtpCrumb();
+  if(!RTP.cat){ rtpLoadCats(); return; }
+  if(!RTP.sub){ rtpLoadSubs(); return; }
+  rtpLoadParts();
+}
+function rtpLoadCats(){
+  rtpBody(rtpScopeChips()+'<div class="rt-empty">Loading categories\u2026</div>');
+  var args=rtpModelOn()?{model:RTP.model}:{};
+  jgetRaw(rtpRoute('tree'), args, function(res){
+    if(!res||res.ok===false||!res.items||!res.items.length){
+      /* A model this workshop has never billed a part for has no model tree \u2014
+         that is a real answer, not a failure, and the way out is named. */
+      rtpBody(rtpScopeChips()+'<div class="rt-empty">'
+        +(rtpModelOn()
+          ? 'No parts have been fitted to '+rtEsc(RTP.model)+' here yet. Tap <b>Whole catalogue</b> to search everything Hero makes.'
+          : 'The parts catalogue did not load'+(res&&res.error?(' \u2014 '+rtEsc(res.error)):'')+'.')
+        +'</div>');
+      return;
+    }
+    var n=0; for(var i=0;i<res.items.length;i++) n+=res.items[i].count;
+    rtpBody(rtpScopeChips()
+      +'<div class="rt-sec">'+(rtpModelOn()
+          ? n.toLocaleString('en-IN')+' parts fitted to '+rtEsc(RTP.model)+' here, in '+res.items.length+' categories'
+          : (res.rows||n).toLocaleString('en-IN')+' parts in '+res.items.length+' categories')+'</div>'
+      +res.items.map(function(it){
+          return '<div class="rt-row" onclick="rtpGo('+JSON.stringify(it.name).replace(/"/g,'&quot;')+')">'
+            +'<div class="rt-main"><div class="rt-name">'+rtEsc(it.name)+'</div>'
+            +'<div class="rt-meta">'+it.count+' part'+(it.count===1?'':'s')+'</div></div>'
+            +'<div class="rt-meta">\u203a</div></div>';
+        }).join(''));
+  },25000);
+}
+function rtpLoadSubs(){
+  rtpBody(rtpScopeChips()+'<div class="rt-empty">Loading sub-categories\u2026</div>');
+  var args=rtpModelOn()?{model:RTP.model,cat:RTP.cat}:{cat:RTP.cat};
+  jgetRaw(rtpRoute('tree'), args, function(res){
+    if(!res||res.ok===false||!res.items){
+      rtpBody(rtpScopeChips()+'<div class="rt-empty">Could not load sub-categories.</div>'); return;
+    }
+    /* "All of <category>" is a real choice, not a placeholder \u2014 some categories
+       genuinely hold one bucket, and forcing a sub-category pick there is what
+       made the old dropdowns feel like a wall. */
+    var h=rtpScopeChips()+'<div class="rt-sec">'+rtEsc(RTP.cat)+'</div>'
+      +'<div class="rt-row" onclick="rtpOpenAll()"><div class="rt-main">'
+      +'<div class="rt-name">All of '+rtEsc(RTP.cat)+'</div>'
+      +'<div class="rt-meta">'+(res.count||0)+' parts</div></div><div class="rt-meta">\u203a</div></div>'
+      +res.items.map(function(it){
+          return '<div class="rt-row" onclick="rtpGo('+JSON.stringify(RTP.cat).replace(/"/g,'&quot;')+','
+            +JSON.stringify(it.name).replace(/"/g,'&quot;')+')">'
+            +'<div class="rt-main"><div class="rt-name">'+rtEsc(it.name)+'</div>'
+            +'<div class="rt-meta">'+it.count+' part'+(it.count===1?'':'s')+'</div></div>'
+            +'<div class="rt-meta">\u203a</div></div>';
+        }).join('');
+    rtpBody(h);
+  },25000);
+}
+function rtpOpenAll(){ RTP.sub=''; RTP.page=1; rtpCrumb(); rtpLoadParts(); }
+function rtpSearchDebounced(q){
+  clearTimeout(RTP.qt);
+  RTP.qt=setTimeout(function(){ RTP.q=q; RTP.page=1; if(RTP.cat) rtpLoadParts(); },350);
+}
+function rtpPage(n){ RTP.page=n; rtpLoadParts(); }
+function rtpLoadParts(){
+  if(!RTP.cat || RTP.busy) return;
+  RTP.busy=true;
+  rtpBody(rtpScopeChips()+'<div class="rt-empty">Loading parts\u2026</div>');
+  var args={cat:RTP.cat, sub:RTP.sub, q:RTP.q, page:String(RTP.page)};
+  if(rtpModelOn()) args.model=RTP.model;
+  jgetRaw(rtpRoute('in'), args, function(res){
+    RTP.busy=false;
+    if(!res||res.ok===false){
+      rtpBody(rtpScopeChips()+'<div class="rt-empty">Could not load parts'
+        +(res&&res.error?(' \u2014 '+rtEsc(res.error)):'')+'.</div>');
+      return;
+    }
+    RTP.rows=res.rows||[]; RTP.total=res.total||0; RTP.pages=res.pages||1;
+    rtpRenderParts();
+  },30000);
+}
+function rtpRenderParts(){
+  var back='<div class="rt-chips">'
+    +'<span class="rt-chip" onclick="rtpGo('+JSON.stringify(RTP.cat).replace(/"/g,'&quot;')+')">\u2039 '+rtEsc(RTP.cat)+'</span>'
+    +'<span class="rt-chip" onclick="rtpGo(\'\',\'\')">\u2039 All categories</span></div>';
+  if(!RTP.rows.length){
+    rtpBody(back+'<div class="rt-empty">'
+      +(RTP.q?('No part here matches \u201c'+rtEsc(RTP.q)+'\u201d.'):'No parts in this sub-category.')+'</div>');
+    return;
+  }
+  RTP._byPn={};
+  var h=back+'<div class="rt-sec">'+RTP.rows.length+' of '+RTP.total.toLocaleString('en-IN')+' part'
+        +(RTP.total===1?'':'s')+(RTP.pages>1?(' \u00b7 page '+RTP.page+' of '+RTP.pages):'')+'</div>';
+  h+=RTP.rows.map(function(r){
+    RTP._byPn[String(r.part)]=r;
+    var on=(ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===String(r.part); });
+    var meta=[];
+    if(r.stock!=null && rtpModelOn()) meta.push(r.stock>0?(r.stock+' in stock'):'0 here');
+    if(r.supersededBy) meta.push('\u26a0 superseded by '+r.supersededBy);
+    if(r.inTree||r.labour) meta.push('labour linked');
+    if(r.timesUsed) meta.push('used '+r.timesUsed+'\u00d7');
+    return '<div class="rt-row">'
+      +'<i class="rt-dot '+((r.mrp&&r.mrp>0)?'rt-g':'rt-a')+'"></i>'
+      +'<div class="rt-main"><div class="rt-name">'+rtEsc(r.desc||r.part)+'</div>'
+      +'<div class="rt-meta"><span class="rt-code">'+rtEsc(r.part)+'</span>'
+      +(meta.length?(' \u00b7 '+rtEsc(meta.join(' \u00b7 '))):'')+'</div></div>'
+      /* An unknown price shows a dash, never Rs 0 \u2014 the same rule the Parts
+         Finder follows. 36,642 rows carry no price the dealer has ever seen. */
+      +'<div class="rt-amt">'+((r.mrp&&r.mrp>0)?rtMoney(r.mrp):'\u2014')+'</div>'
+      +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="rtpAdd('
+      +JSON.stringify(String(r.part)).replace(/"/g,'&quot;')+',this)">'+(on?'\u2713':'\uff0b')+'</button></div>';
+  }).join('');
+  if(RTP.pages>1){
+    h+='<div style="display:flex;gap:8px;justify-content:center;align-items:center;padding:12px 0">'
+      +'<button type="button" class="rt-chip"'+(RTP.page<=1?' disabled':'')+' onclick="rtpPage('+(RTP.page-1)+')">\u2039 Prev</button>'
+      +'<span class="rt-meta">'+RTP.page+' / '+RTP.pages+'</span>'
+      +'<button type="button" class="rt-chip"'+(RTP.page>=RTP.pages?' disabled':'')+' onclick="rtpPage('+(RTP.page+1)+')">Next \u203a</button></div>';
+  }
+  rtpBody(h);
+}
+function rtpAdd(pn, btn){
+  var r=RTP._byPn && RTP._byPn[String(pn)]; if(!r) return;
+  if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===String(pn); })){ alert('Already on this estimate.'); return; }
+  if(r.supersededBy && !confirm(r.part+' is superseded by '+r.supersededBy+'.\n\nAdd it anyway?')) return;
+  var price=Number(r.mrp)||0;
+  if(!(price>0)){
+    var t=prompt('No MRP on record for '+(r.desc||r.part)+'. Type the price:','');
+    price=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(price>0)) return;
+  }
+  ES_ADDPART.push({l:r.desc||r.part, p:price, pn:String(r.part), cc:r.cc||r.complaint||'',
+                   stk:(r.stock!=null?r.stock:undefined), _fromTree:true, _fromCatBrowse:true});
+  if(btn){ btn.className='rt-add done'; btn.textContent='\u2713'; }
+  try{ esDrawChips(); }catch(e){}
+  try{ rtRenderStrip(); }catch(e){}
+  try{ esUpdateLive(); }catch(e){}
+  /* The parts->labour rule is not weakened by this door: a part picked out of the
+     catalogue carries no fitment labour unless the tree links one, and the advisor
+     is told so rather than left to discover a 3:1 ratio at the ratio strip. */
+  var m=document.getElementById('es-msg');
+  if(m && !(r.inTree||r.labour)){
+    m.style.color='var(--warn)';
+    m.textContent='\u2139 '+r.part+' added. No fitment labour is linked to it \u2014 add the labour with "Add by complaint" or "Search labour".';
+    setTimeout(function(){ if(m.textContent.indexOf('No fitment labour')>-1) m.textContent=''; },9000);
+  }
 }
 
 /* =========================================================================
@@ -15675,21 +16079,15 @@ function huDiag(){
   return txt;
 }
 
-/* CEO/superadmin gets a small button next to Update now. */
+/* REMOVED R70 (Ravi, 17-Aug-2026) \u2014 "There is a small holdup check button created
+   which does nothing, remove that in the estimate."
+   It was a CEO-only diagnostic floated over EVERY screen by a 4-second interval,
+   so on the estimate it sat on top of the line items and read as a control the
+   advisor was meant to press. huDiag() itself is kept \u2014 it is still callable from
+   the console when a holdup filter needs explaining \u2014 but nothing paints it on the
+   page any more, and the interval that re-created it every 4 seconds is gone. */
 (function(){
-  setInterval(function(){
-    try{
-      if (typeof heroIsCeo!=='function' || !heroIsCeo()) return;
-      if (document.getElementById('hero-diag-btn')) return;
-      var b = document.createElement('button');
-      b.id='hero-diag-btn'; b.type='button'; b.textContent='\u2691 Holdup check';
-      b.style.cssText='position:fixed;right:12px;bottom:62px;z-index:9400;border:0;border-radius:11px;'
-        +'background:#334155;color:#fff;font:750 12px Inter,sans-serif;padding:10px 13px;'
-        +'box-shadow:0 10px 26px rgba(0,0,0,.25);cursor:pointer';
-      b.onclick=huDiag;
-      document.body.appendChild(b);
-    }catch(e){}
-  }, 4000);
+  try{ var old=document.getElementById('hero-diag-btn'); if(old&&old.parentNode) old.parentNode.removeChild(old); }catch(e){}
 })();
 </script>
 <!-- ============== END HOLDUP FILTER FIX + DIAGNOSTIC (s40) ================= -->
