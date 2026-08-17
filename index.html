@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 54;
-window.HERO_BUILD = 'R70-2026.08.17.4';
+window.HERO_RELEASE = 55;
+window.HERO_BUILD = 'R71-2026.08.17.5';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1682,7 +1682,7 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
                  the customer master when the master has it, typeable when it does
                  not, and it no longer blocks Generate. -->
             <div class="row2">
-              <div class="fld"><label>Odometer (km) — scan it or type it</label><input id="es-km" inputmode="numeric" placeholder="scan the meter, or type the reading"></div>
+              <div class="fld"><label>Odometer (km) — scan the meter</label><input id="es-km" inputmode="numeric" placeholder="tap 📷 Scan"></div>
               <div class="fld"><label>Date of sale <span style="font-weight:600;color:var(--steel)">— optional</span></label><input id="es-dos" class="date-dmy" type="text" placeholder="dd-mm-yyyy" maxlength="10" autocomplete="off"><div class="hint">Blank for many vehicles. Type it if you know it — the estimate still generates without it.</div></div>
             </div>
             <!-- R69 (Ravi, 17-Aug-2026): "Service type can be changed during
@@ -1733,11 +1733,23 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
               <div id="es-unmapped-list"></div>
             </div>
 
-            <div class="sec">Express service</div>
+            <!-- R71 (Ravi, 17-Aug-2026): "Give express service labour as editable."
+                 The Rs 150 was hardcoded in esComputeCurrent and the label simply
+                 printed it, so a job where priority was worth more (or was given as
+                 a goodwill Rs 0) could not be quoted honestly. The amount is typed
+                 here now. It is ONE place: DMS code 101017 was taken out of the
+                 suggested-labour list the same day, because the same charge
+                 appearing there as well was quoting express twice. -->
+            <div class="sec">Express service <span class="es-locked-tag">DMS 101017 · one line, this box sets it</span></div>
             <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:13px;font-weight:600">
-              <input type="checkbox" id="es-express" onchange="esUpdateLive()" style="width:18px;height:18px">
-              <span>⚡ Same-day express delivery <b style="color:var(--signal-d)">(+₹150)</b></span>
+              <input type="checkbox" id="es-express" onchange="esExpressToggle()" style="width:18px;height:18px">
+              <span>⚡ Same-day express delivery</span>
             </label>
+            <div id="es-express-wrap" style="display:none;margin-top:7px">
+              <label style="font-size:11px;color:var(--steel);font-weight:700">Express charge (₹) — change it if this job is worth more or less</label>
+              <input id="es-express-amt" inputmode="numeric" value="150" placeholder="150" oninput="esUpdateLiveDebounced()" style="width:110px">
+              <div class="hint">Standard is ₹150. Type 0 to give priority free — the line then shows as no charge.</div>
+            </div>
 
             <div class="sec">Discount (optional)</div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -6012,7 +6024,11 @@ function esBoot(){
   setTimeout(function(){
     try{ rtEnsureStrip(); rtRenderStrip(); }catch(e){}
     try{ esEnsureKmScan(); }catch(e){}
-    try{ if(!RT.ready && !RT.tried) rtLoad(function(){}); }catch(e){}   // warm, silent
+    /* Warm, silent — and R71: when the tree lands, redraw. The complaint numbers
+       on every line are resolved FROM this tree (esFillComplaintCodes_), so an
+       estimate composed before it arrived shows "not linked in the tree" on lines
+       that are in fact linked. One redraw when the data is actually there. */
+    try{ if(!RT.ready && !RT.tried) rtLoad(function(ok){ if(ok){ try{ esUpdateLive(); }catch(e){} } }); }catch(e){}
   }, 400);
   if(window.ES_BOOTED){
     // Already loaded this session — masters, price/oil maps and dropdowns are in memory.
@@ -6407,6 +6423,7 @@ function esBuild(fam, dec, km, modelName){
     L.parts=L.parts.filter(x=>!ES_REMOVED.has(x.l));
     L.labour=L.labour.filter(x=>!ES_REMOVED.has(x.l)||x.free);
   }
+  esDropOwnedDuplicates_(L);
   esFillComplaintCodes_(L);
   esAddWashing_(L);
   return L;
@@ -6425,6 +6442,50 @@ function esFillComplaintCodes_(L){
     if(l.cc) return;
     if(l._fromPn && byPn[String(l._fromPn)]) l.cc=byPn[String(l._fromPn)];
   });
+  /* R71 (Ravi, 17-Aug-2026) — "Ensure parts and labour are coming as per the tree
+     only complaint code also. It should be billable in the Hero DMS System also."
+     R70 only inherited a complaint code down the part -> fitment-labour link, so
+     anything that arrived without one printed "COMPLAINT NO: — not linked in the
+     tree" and could not be keyed into DMS. The tree itself holds the answer for
+     most of them and was simply never asked:
+       RT.byCode[code][3] — the labour code's own primary complaint code
+       RT.parts row [5]   — the part's complaint code
+     Asked here, once, after everything else has been assembled. It reads the
+     tree ONLY: no keyword guessing, no borrowed code from a similar line. A line
+     the tree genuinely does not link still says so — that gap is real and
+     belongs in the master, not papered over on screen. */
+  const cc3=function(code){
+    try{
+      var c=String(code||'').replace(/\.0+$/,'');
+      var row=(typeof RT!=='undefined'&&RT.byCode)?RT.byCode[c]:null;
+      if(!row) return '';
+      /* Both columns can hold a PIPE-JOINED SET, not a single code — 101002 comes
+         back as "FU004|OT014" and 410007 as "EL015|SS005". Printing that string
+         as one complaint number would put something into DMS that DMS will
+         reject. One link is a fact and is used; several are shown as the choice
+         they are, so the clerk picks the one matching the job rather than being
+         told nothing is linked. */
+      var all=String(row[3]||'').split('|').concat(String(row[4]||'').split('|'))
+                .map(function(x){ return String(x).trim(); }).filter(Boolean);
+      var uniq=all.filter(function(x,i){ return all.indexOf(x)===i; });
+      if(!uniq.length) return '';
+      if(uniq.length===1) return uniq[0];
+      return uniq.slice(0,3).join(' / ')+(uniq.length>3?' …':'')+' (pick one)';
+    }catch(e){ return ''; }
+  };
+  const ccPn=function(pn){
+    try{
+      var p=String(pn||'');
+      if(!p || typeof RT==='undefined' || !RT.parts) return '';
+      var row=RT.parts.filter(function(x){ return String(x[0])===p; })[0];
+      return row&&row[5] ? String(row[5]) : '';
+    }catch(e){ return ''; }
+  };
+  L.labour.forEach(function(l){ if(!l.cc && l.code) l.cc=cc3(l.code); });
+  L.parts.forEach(function(p){ if(!p.cc && p.pn) p.cc=ccPn(p.pn); });
+  /* And the last resort for a labour line still without a code of its own: the
+     part it was born from carries one in the tree even when the labour does not. */
+  L.labour.forEach(function(l){ if(!l.cc && l._fromPn) l.cc=ccPn(l._fromPn); });
   return L;
 }
 
@@ -6448,16 +6509,85 @@ function esFillComplaintCodes_(L){
    ========================================================================= */
 var ES_WASH_AMT=129;
 function esIsWashLine_(x){
-  return /WASH/i.test(String((x&&x.l)||''));
+  if(!x) return false;
+  if(String(x.code||'').replace(/\.0+$/,'')===ES_WASH_CODE) return true;
+  return /\bWASH(ING|ED)?\b|WATER\s*WASH/i.test(String(x.l||''));
+}
+function esIsExpressLine_(x){
+  if(!x) return false;
+  if(String(x.code||'').replace(/\.0+$/,'')===ES_EXPRESS_CODE) return true;
+  return /EXPRESS/i.test(String(x.l||''));
+}
+/* R71 (Ravi, 17-Aug-2026) — "Check if Express service is not added 2 times.
+   Also washing should be added 2 times." (read as: nor washing.)
+   Both charges are now OWNED by the form — the wash by esAddWashing_, express by
+   the checkbox — so any second copy arriving from a picker, from the composed
+   payload, or from a saved estimate being re-opened is a duplicate by
+   definition. It is dropped HERE, at the one point every line passes through,
+   rather than guarded at each of the five places a line can be added. The
+   pickers refuse these codes too (esRejectOwnedCode_); this is the backstop that
+   holds even when a route is added later and nobody remembers to guard it. */
+function esDropOwnedDuplicates_(L){
+  var seenWash=false;
+  L.labour=L.labour.filter(function(x){
+    if(esIsExpressLine_(x)) return false;          /* express is the checkbox's line, never a labour line */
+    if(esIsWashLine_(x)){
+      if(seenWash) return false;
+      seenWash=true;
+      /* The wash is COMPULSORY AT Rs 129 — Ravi's price, not the model master's.
+         A wash arriving from the composed payload at the model's own rate would
+         otherwise quote a different figure on different bikes for the same fixed
+         charge. The line is normalised to the compulsory price and to the
+         compulsory status, whichever route it came in by. */
+      x.p=ES_WASH_AMT; x.baseP=ES_WASH_AMT; x.netP=ES_WASH_AMT; x.lineDiscount=0;
+      x.code=x.code||ES_WASH_CODE; x.src='washing'; x._mandatory=true; x._locked=true; x.free=false;
+      x.why='Compulsory on every vehicle — every estimate carries the wash.';
+    }
+    return true;
+  });
+  return L;
 }
 function esAddWashing_(L){
   if(L.labour.some(esIsWashLine_)) return L;
+  /* R71: the wash carries Hero's own WATER WASH code so it is billable in DMS.
+     R70 left this blank and the line printed "LABOUR NO: — not in master",
+     which Ravi read on screen. The number was in this file the whole time, in
+     the pitch engine's curated list, where it was doing nothing but offering a
+     second wash. */
   L.labour.push({
-    l:'Washing', p:ES_WASH_AMT,
+    l:'Washing', p:ES_WASH_AMT, code:ES_WASH_CODE,
     why:'Compulsory on every vehicle — every estimate carries the wash.',
     src:'washing', _locked:true, _mandatory:true
   });
   return L;
+}
+/* Express fee, from the box. Empty -> the Rs 150 standard; a typed 0 is kept. */
+function esExpressFee_(){
+  var el=document.getElementById('es-express-amt');
+  var raw=el?String(el.value||'').trim():'';
+  if(raw==='') return 150;
+  var n=Math.round(Number(raw.replace(/[^0-9.]/g,''))||0);
+  return Math.max(0,n);
+}
+function esExpressToggle(){
+  var on=document.getElementById('es-express');
+  var wrap=document.getElementById('es-express-wrap');
+  if(wrap) wrap.style.display=(on&&on.checked)?'block':'none';
+  esUpdateLive();
+}
+/* The two codes the form owns. A picker offering either of them is offering a
+   duplicate, so it is refused with the reason rather than silently ignored. */
+function esRejectOwnedCode_(code){
+  var c=String(code||'').replace(/\.0+$/,'');
+  if(c===ES_WASH_CODE){
+    alert('Washing is already on every estimate at ₹'+ES_WASH_AMT+' — it is compulsory and cannot be added twice.');
+    return true;
+  }
+  if(c===ES_EXPRESS_CODE){
+    alert('Express service is set with the ⚡ Same-day express delivery tick box, where the amount is editable.\n\nAdding it here as well would charge the customer for priority twice.');
+    return true;
+  }
+  return false;
 }
 function esBuildLegacy_UNUSED(fam, dec, km, modelName){
   /* REMOVED R65 (Ravi, 14-Aug-2026) — the hardcoded VAR / WEARTEAR / PRESET / kit composition it held. */
@@ -6598,10 +6728,68 @@ function esWarnBeforeRemove(label, onProceed){
   }catch(e){ onProceed(); }
 }
 
+/* ==========================================================================
+   R71 — HOW MUCH LINKED LABOUR MAY BE DELETED      (Ravi, 17-Aug-2026)
+
+   "Deletion of those labours allowed till highest labour only. If parts is
+    100 rs and corresponding labour is 1000 rs, then deletion of labours
+    allowed upto 900 rs only 1:1 ratio."
+
+   Read straight off his worked example, PER PART: a part's own linked labour may
+   be trimmed, but never below what that part costs. Part Rs 100 carrying Rs 1,000
+   of labour -> Rs 900 may come off, Rs 100 must stay. 1 : 1, part by part.
+
+   Per part and not across the whole estimate deliberately: "corresponding
+   labour" is his phrase, and a whole-estimate floor would let an advisor strip
+   every rupee of labour off a brake job as long as an unrelated engine job was
+   carrying the ratio. The strip above still shows the whole-estimate ratio,
+   which is the target; this is the floor under one part.
+
+   NOTE this REPLACES the old behaviour, it does not extend it: until today
+   linked labour could not be removed at all — it showed a padlock and the only
+   way to shift it was to remove the part. That was never the 1:1 rule; the 1:1
+   rule was the strip's target and had no enforcement anywhere. Ravi asked
+   whether we had decided something different — we had, and this is the change.
+   What is unchanged: removing the PART still removes all of its labour
+   (esEnforceLinkedLabour_), because labour with no part behind it is the line a
+   DMS audit catches.
+   ========================================================================== */
+function esLinkedLabourFloor_(items, label){
+  const key=v=>String(v==null?'':v).trim().toUpperCase();
+  const lb=(items.labour||[]).find(x=>x.l===label && (x._fromPart||x._fromPn));
+  if(!lb) return null;
+  const pt=(items.parts||[]).find(function(p){
+    return (lb._fromPn && key(p.pn)===key(lb._fromPn)) || (lb._fromPart && key(p.l)===key(lb._fromPart));
+  }) || (items.oil||[]).find(function(o){ return lb._fromPart && key(o.l)===key(lb._fromPart); });
+  if(!pt) return null;                       /* orphan — esEnforceLinkedLabour_ owns it */
+  const partVal=Math.round(+pt.baseP||+pt.p||0);
+  const siblings=(items.labour||[]).filter(function(x){
+    return (lb._fromPn && key(x._fromPn)===key(lb._fromPn)) || (lb._fromPart && key(x._fromPart)===key(lb._fromPart));
+  });
+  const linkedTotal=siblings.reduce(function(s,x){ return s+Math.round(+x.baseP||+x.p||0); },0);
+  const thisVal=Math.round(+lb.baseP||+lb.p||0);
+  return {partName:(pt.l||''), partVal:partVal, linkedTotal:linkedTotal, thisVal:thisVal,
+          afterRemoval:linkedTotal-thisVal, deletableNow:Math.max(0,linkedTotal-partVal)};
+}
 function esRemoveItem(label){
   const c=esComputeCurrent();
-  const linked=c&&c.items.labour.find(x=>x.l===label&&x._fromPart);
-  if(linked){ alert('This labour is linked to a selected part. Remove the part to remove its labour.'); return; }
+  /* R71: nothing comes off a GENERATED estimate. See esLockForm — the estimate
+     is frozen the moment it is generated, and this is the last gate before the
+     item list is touched, so it holds even if a stale button survives a redraw. */
+  if(ES.locked){
+    alert('This estimate has been generated and is frozen. Press New estimate to start a fresh one.');
+    return;
+  }
+  const f=c?esLinkedLabourFloor_(c.items,label):null;
+  if(f && f.afterRemoval < f.partVal){
+    alert('Cannot remove this labour.\n\n'
+      +f.partName+' costs '+inr(f.partVal)+' and carries '+inr(f.linkedTotal)+' of labour.\n'
+      +'Labour on a part may be trimmed down to the part\'s own value — 1 : 1 — but not below it.\n\n'
+      +'Removable from this part right now: '+inr(f.deletableNow)+'.\n'
+      +'This line is '+inr(f.thisVal)+', which would leave '+inr(f.afterRemoval)+'.\n\n'
+      +'To take all of it off, remove the part itself — its labour goes with it.');
+    return;
+  }
   /* If this is a part the manual recommends, say so first. The removal still
      happens if the advisor confirms - esRemoveItemNow does the work. */
   const isPart=c&&c.items.parts.some(x=>x.l===label);
@@ -7182,8 +7370,12 @@ function esComputeCurrent(){
   let parts=sumGross(items.parts), oil=sumGross(items.oil), labour=sumGross(items.labour);
   const netService=sumNet(items.parts)+sumNet(items.oil)+sumNet(items.labour);
   const lineDisc=sumLine(items.parts)+sumLine(items.oil)+sumLine(items.labour);
+  /* R71: the express amount is typed, not hardcoded. Rs 150 stays the default in
+     the markup; this reads whatever is in the box. An empty box falls back to
+     150 so clearing it can never silently make priority free, but a typed 0 is
+     respected — that is the goodwill case and it must be quotable. */
   const express=document.getElementById('es-express')&&document.getElementById('es-express').checked;
-  const expressFee=express?150:0;   /* Ravi 14-Aug-2026: "Express service is 150 rs." */
+  const expressFee=express?esExpressFee_():0;
   const inc=(dec.type==='paid')?heroIncrementalPrice(modelName,dec.type):null;
   /* R65 (Ravi, 14-Aug-2026): "Make the realistic estimates not 4000-5000 rs."
      PAID_FLOOR_BY_FAM forced every paid quote to Rs 4,000-6,500 against a
@@ -7199,7 +7391,13 @@ function esComputeCurrent(){
   const rawPre=parts+oil+labour;
   const belowFloor=netService>0?(netService<floor):true;
   const protectionTotal=0, protectionLabel='';
-  items.express=expressFee>0?[{l:'Express Delivery (priority same-day)',p:expressFee,baseP:expressFee,netP:expressFee,lineDiscount:0,locked:true}]:[];
+  /* R71: the express line carries its Hero DMS labour number so it bills like
+     every other line, and it is the ONLY express line that can exist — 101017 is
+     refused by every picker (esRejectOwnedCode_). `free` is set when the advisor
+     typed 0, so the line prints "No charge" instead of Rs 0. */
+  items.express=express?[{l:'Express Delivery (priority same-day)',p:expressFee,baseP:expressFee,netP:expressFee,
+                          lineDiscount:0,locked:true,code:ES_EXPRESS_CODE,src:'express',
+                          free:!(expressFee>0),_mandatory:true}]:[];
   const pre=rawPre+expressFee;
   let discLab=+val('es-disc-lab')||0, discParts=+val('es-disc-parts')||0;
   let requestedDisc=discLab+discParts; if(!requestedDisc) requestedDisc=+val('es-disc')||0;
@@ -7211,7 +7409,7 @@ function esComputeCurrent(){
   }
   const disc=lineDisc+otherDisc;
   const afterDisc=Math.max(0,pre-disc), tax=afterDisc*GST, total=afterDisc+tax;
-  const count=items.oil.length+items.parts.length+items.labour.length+(expressFee>0?1:0);
+  const count=items.oil.length+items.parts.length+items.labour.length+items.express.length;
   /* R63 — the anchor replaces the floor as the Generate gate (Ravi 12-Aug-2026).
      belowFloor is still computed and stored on the record, but it no longer
      disables anything: the floors were forcing paid quotes to Rs 3,068+ against
@@ -7343,7 +7541,7 @@ function esRenderDraft(c){
         <div><div class="k">Advisor</div><div class="v">${USER.personName}</div></div>
       </div>
     </div>
-    <div class="e-body">${ES_DEMANDED.length?`<div style="font-size:12px;font-weight:700;color:#1e40af;background:#eff6ff;border-radius:6px;padding:6px 10px;margin-bottom:8px">🗣 Demanded repairs: ${ES_DEMANDED.map(x=>`${x.name} <span class=\"mono\" style=\"font-size:10.5px\">[${x.cc||'—'}]</span>`).join(' · ')}</div>`:''}${esGrpEditable('Engine Oil',c.items.oil,'oil')}${esGrpEditable('Parts',c.items.parts,'parts')}${esGrpEditable('Labour',c.items.labour,'labour')}${esGrp('Estimate Protection',c.items.protection||[])}${esGrp('Express Delivery',c.items.express||[])}</div>
+    <div class="e-body">${ES_DEMANDED.length?`<div style="font-size:12px;font-weight:700;color:#1e40af;background:#eff6ff;border-radius:6px;padding:6px 10px;margin-bottom:8px">🗣 Demanded repairs: ${ES_DEMANDED.map(x=>`${x.name} <span class=\"mono\" style=\"font-size:10.5px\">[${x.cc||'—'}]</span>`).join(' · ')}</div>`:''}${esGrpEditable('Engine Oil',c.items.oil,'oil',c.items)}${esGrpEditable('Parts',c.items.parts,'parts',c.items)}${esGrpEditable('Labour',c.items.labour,'labour',c.items)}${esGrp('Estimate Protection',c.items.protection||[])}${esGrp('Express Delivery',c.items.express||[])}</div>
     <div class="totals"><div class="trow"><span>Sub-total</span><span class="mono">${inr(c.pre)}</span></div>
       ${c.disc>0?`<div class="trow disc"><span>Discount</span><span class="mono">−${inr(c.disc)}</span></div>`:''}
       <div class="trow"><span>GST @ 18%</span><span class="mono">${inr(c.tax)}</span></div></div>
@@ -7500,21 +7698,35 @@ function esStockHtml(x){
    "No need of 3 things - discount, edit and remove. No need to keep discount on
     individual parts and individual labour. I was wrong. just give a small
     remove the item. that much is ok." */
-function esRowsEditable(a,kind){ return a.map(x=>{
+function esRowsEditable(a,kind,ctx){ return a.map(x=>{
   const safe=String(x.l).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const src=(x.fromModel && x.fromModel!==val('es-model')) ? (' \u00b7 part listed under '+x.fromModel) : '';
   const why=x.why?('<div class="es-item-why">'+String(x.why).replace(/</g,'&lt;')+src+'</div>'):'';
-  /* R70: a compulsory line shows the same lock the fitment lines show, rather than
-     a cross that would silently do nothing — esBuild re-adds the wash after the
-     removal filter runs, so offering the button would misrepresent the tap. */
+  /* R70: a compulsory line (the wash, express) shows a padlock rather than a
+     cross that would silently do nothing — esBuild re-adds it after the removal
+     filter runs, so offering the button would misrepresent the tap.
+     R71: part-linked labour is NO LONGER padlocked by default. It carries a real
+     ✕ and the 1 : 1 floor decides (esLinkedLabourFloor_). A line already AT the
+     floor keeps the padlock, with the arithmetic in its tooltip, because at that
+     point the button genuinely cannot act. */
+  var _lf=(ctx && (x._fromPart||x._fromPn) && !x._mandatory) ? esLinkedLabourFloor_(ctx,x.l) : null;
+  var _atFloor=!!(_lf && (_lf.afterRemoval < _lf.partVal));
+  var _lockTitle=_atFloor
+    ? (String(_lf.partName).replace(/"/g,'&quot;')+' costs '+inr(_lf.partVal)+' and carries '+inr(_lf.linkedTotal)
+       +' of labour. Labour on a part may be trimmed to 1 : 1 with the part, not below — '
+       +inr(_lf.deletableNow)+' is removable and this line is '+inr(_lf.thisVal)
+       +'. Remove the part to take all of it off.')
+    : 'Remove the part to remove its fitting labour';
   const del=x._mandatory
     ? '<span class="es-line-act es-line-lock" title="Compulsory on every estimate — cannot be removed">🔒</span>'
-    : x._fromPart
-    ? '<span class="es-line-act es-line-lock" title="Remove the part to remove its fitting labour">🔒</span>'
+    : _atFloor
+    ? '<span class="es-line-act es-line-lock" title="'+_lockTitle+'">🔒</span>'
     : '<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem(\''+safe+'\')" title="Remove this item"><span aria-hidden="true">\u2715</span></button>';
   return '<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">'+x.l+esStockHtml(x)+'</div>'+why+esCodeHtml(x)+'</td><td class="amt es-item-amt">'+esAmountHtml(x)+'</td><td class="es-item-actions">'+del+'</td></tr>';
 }).join(''); }
-function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h es-grp-h-edit"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li es-edit-table">${esRowsEditable(a,kind)}</table></div>`; }
+/* ctx = the whole composed item set, so a row can see the part its labour hangs
+   off and work out whether the 1 : 1 floor has been reached (R71). */
+function esGrpEditable(t,a,kind,ctx){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h es-grp-h-edit"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li es-edit-table">${esRowsEditable(a,kind,ctx)}</table></div>`; }
 function esRender(d){
   const dt=new Date(d.ts).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('es-out').innerHTML=`
@@ -7543,9 +7755,57 @@ function esRender(d){
     <div class="e-note">Estimate prepared on the basis of the vehicle's service schedule, odometer reading and date of sale. Final amount may vary depending on the vehicle's condition at the time of service.</div>
   </div>`;
 }
+/* ==========================================================================
+   R71 — A GENERATED ESTIMATE IS FROZEN            (Ravi, 17-Aug-2026)
+
+   "And main important point - nothing should be removable after the estimate
+    generation. Then it is freezed."
+
+   What was already true: the generated estimate re-renders through esGrp/esRows,
+   which draw no ✕ at all, esUpdateLive returns early on ES.locked, and the form
+   inputs are disabled here.
+
+   What was NOT true, and is the hole Ravi is pointing at: the Hero-tree buttons
+   under the ratio strip — Add by complaint, Parts by category, Suggested labour,
+   Search labour — stayed live. A tap after generation pushed a line into
+   ES_ADDLAB / ES_ADDPART, so the saved record and the printed estimate no longer
+   matched what the app was holding, silently. The additional mobile box was open
+   for the same reason (it is not in the list below).
+
+   Freezing is now done in three places that cannot disagree:
+     1. here — every input, and the whole tree-picker strip, goes inactive
+     2. esRemoveItem  — refuses while locked
+     3. esGuardLocked_ — the single gate every add path calls first
+   Belt and braces on purpose: one of these is the UI, two are the data. The UI
+   can be defeated by a stale render; the data gates cannot.
+   ========================================================================== */
+function esGuardLocked_(what){
+  if(!ES.locked) return false;
+  alert('This estimate has been generated and is frozen.\n\n'
+       +(what?(what+' cannot be changed now. '):'')
+       +'Press New estimate to start a fresh one for the next vehicle.');
+  return true;
+}
 function esLockForm(on){ ES.locked=on;
-  ['es-name','es-mob','es-reg','es-model','es-km','es-dos','es-type','es-freestage','es-add-lab','es-add-pcat','es-add-pname','es-add-pamt','es-add-dem','es-disc','es-disc-lab','es-disc-parts','es-express'].forEach(i=>{const el=document.getElementById(i); if(el) el.disabled=on;});
+  ['es-name','es-mob','es-mob2','es-reg','es-model','es-km','es-dos','es-type','es-freestage','es-add-lab','es-add-pcat','es-add-pname','es-add-pamt','es-add-dem','es-disc','es-disc-lab','es-disc-parts','es-express','es-express-amt'].forEach(i=>{const el=document.getElementById(i); if(el) el.disabled=on;});
   document.querySelectorAll('#es-varbox input').forEach(c=>c.disabled=on);
+  /* The odometer scan button and the four Hero-tree buttons are the ways work
+     gets ONTO an estimate. After generation there is no more work to add. */
+  const km=document.getElementById('es-km-scan'); if(km) km.disabled=on;
+  document.querySelectorAll('#rt-actions .rt-btn').forEach(function(b){
+    b.disabled=on; b.style.opacity=on?'.45':''; b.style.pointerEvents=on?'none':'';
+  });
+  const act=document.getElementById('rt-actions');
+  let note=document.getElementById('rt-frozen-note');
+  if(act && !note){
+    note=document.createElement('div'); note.id='rt-frozen-note';
+    note.style.cssText='font-size:11.5px;color:#b45309;background:#fff7ed;border:1px solid #fdba74;'
+                      +'border-radius:8px;padding:7px 9px;margin-top:9px;display:none';
+    note.textContent='Estimate generated — frozen. Nothing can be added or removed. Press New estimate for the next vehicle.';
+    act.parentNode.insertBefore(note, act.nextSibling);
+  }
+  if(note) note.style.display=on?'block':'none';
+  if(on){ try{ rtClose(); }catch(e){} }   /* a picker left open is a live door */
   document.getElementById('es-genbtn').disabled=on||!ONLINE;
   ['es-watxt','es-pdfbtn','es-wapdf','es-newbtn'].forEach(i=>document.getElementById(i).disabled=!on);
   document.getElementById('es-lockban').style.display=on?'block':'none';
@@ -7778,8 +8038,9 @@ function esOnGatePick(g){
      scan hint able to say "lower than the gate reading" or "1,400 km more than
      the gate recorded". It is a check, never the answer. */
   ES_GATE_KM = +String(g.km||'').replace(/[^0-9]/g,'') || 0;
-  try{ esKmHint('Take the reading here: tap 📷 Scan to photograph the meter, or type it. '
-               +'Three engines read the photo; if none of them can, type the reading by hand.',''); }catch(e){}
+  try{ esKmHint('Tap 📷 Scan and photograph the meter. Gemini, Cloud Vision and Document AI read it; '
+               +'the reading fills this box by itself only when it comes back above 90% confidence. '
+               +'Below that, or if none of them can read it, you are asked to confirm or type it.',''); }catch(e){}
   document.getElementById('es-name').value=g.name||'';
   document.getElementById('es-mob').value=g.mob||'';
   document.getElementById('es-reg').value=(typeof raviNormalizeReg==='function'?raviNormalizeReg(g.reg||''):(g.reg||''));
@@ -13566,29 +13827,38 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   /* Read text from a photo, trying three orientations. `accept` decides when we
      have what we came for, so we stop as soon as a valid VIN or plate appears.
      `task` names the job for the server cascade — 'plate' | 'vin' | 'odometer'. */
+  /* R71: the reading now carries HOW SURE the engine was, and WHICH engines were
+     tried, straight through to the caller. read-text has always returned
+     `confidence` and `tried` (Gemini reports a flat 0.9 stand-in, Vision reports
+     its real per-page score, 0.7 when it states none) and geOcrRead was dropping
+     both on the floor. The odometer read gates on them — see esOnKmPhoto. Purely
+     additive: gate entry reads .text and .engine and is unaffected. */
   window.geOcrRead = async function(src, accept, task){
     const base=await loadUpright(src, 1600);
     const tries=[base, rotateCanvas(base,90), rotateCanvas(base,270)];
-    let best='', bestEngine='';
+    let best='', bestEngine='', bestConf=0, bestTried=[], bestValid=false;
     for(let i=0;i<tries.length;i++){
       /* 1. Gemini  2. Cloud Vision  3. Document AI — all three, server-side. */
       const s=await srvRead(tries[i], task);
       if(s){
         const clean=String(s.validated ? s.text : (s.raw || s.text || ''));
-        if(clean && !best){ best=clean; bestEngine=s.provider||'server'; }
-        if(clean && accept && accept(clean)) return {text:clean, engine:s.provider, rotated:i>0, validated:!!s.validated};
-        if(clean && !accept) return {text:clean, engine:s.provider, rotated:i>0, validated:!!s.validated};
+        const conf=Number(s.confidence);
+        const tried=Array.isArray(s.tried)?s.tried:[];
+        if(clean && !best){ best=clean; bestEngine=s.provider||'server'; bestConf=isFinite(conf)?conf:0; bestTried=tried; bestValid=!!s.validated; }
+        if(clean && (!accept || accept(clean))) return {text:clean, engine:s.provider, rotated:i>0, validated:!!s.validated, confidence:isFinite(conf)?conf:0, tried:tried};
         continue;
       }
       /* Server unreachable (signed out, offline, function down). The old
          direct-from-browser Vision path is left exactly as it was so a backend
          outage costs accuracy, never the ability to log a vehicle in. */
       const t=await visionText(tries[i]);
-      if(t && !best){ best=t; bestEngine='vision'; }
-      if(t && accept && accept(t)) return {text:t, engine:'vision', rotated:i>0, validated:false};
-      if(t && !accept) return {text:t, engine:'vision', rotated:i>0, validated:false};
+      if(t && !best){ best=t; bestEngine='vision'; bestConf=0; bestTried=['vision-browser']; }
+      /* The browser-side Vision fallback reports no confidence at all. It is
+         handed back as 0, never as a number that would pass a confidence gate:
+         an unstated confidence is not certainty. */
+      if(t && (!accept || accept(t))) return {text:t, engine:'vision', rotated:i>0, validated:false, confidence:0, tried:['vision-browser']};
     }
-    return {text:best, engine:bestEngine, rotated:false, validated:false};
+    return {text:best, engine:bestEngine, rotated:false, validated:bestValid, confidence:bestConf, tried:bestTried};
   };
 
   /* ---------------------------------------------------------------- one call,
@@ -14670,6 +14940,7 @@ function rtAllIndia(q){
   },20000);
 }
 function rtAddAiPart(key, btn){
+  if(esGuardLocked_('Parts')) return;
   var p=RT_AI[key]; if(!p) return;
   if(p.supersededBy && !confirm(p.part+' is superseded by '+p.supersededBy+'.\n\nAdd it anyway?')) return;
   if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===p.part; })){ alert('Already on this estimate.'); return; }
@@ -14695,7 +14966,9 @@ function rtAddAiPart(key, btn){
    7.  ADD  —  writes into the existing estimate state, nothing bespoke
    --------------------------------------------------------------------------- */
 function rtAddLab(code, cc, btn){
+  if(esGuardLocked_('Labour')) return;
   code=rtCode(code);
+  if(esRejectOwnedCode_(code)) return;
   var L=RT.byCode[code]; if(!L){ alert('Code not found in the labour master.'); return; }
   var r=rtResolve(L, rtModelRates());
   if(r.ev==='R'){ alert(r.reason+'.'); return; }
@@ -14708,6 +14981,7 @@ function rtAddLab(code, cc, btn){
   if(RT_VIEW.mode==='suggest' && !RT_VIEW.q) document.getElementById('rt-body').innerHTML=rtSuggestHtml();
 }
 function rtAddPart(pn, btn){
+  if(esGuardLocked_('Parts')) return;
   var p=RT.parts.filter(function(x){ return x[0]===pn; })[0]; if(!p) return;
   if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===pn; })){ alert('Already on this estimate.'); return; }
   var price=+p[4]||0;
@@ -14830,8 +15104,14 @@ function esKmCandidates(text){
     if(/[:]/.test(tok)) return;
     var t=tok.replace(/[^0-9.]/g,'');
     if(!t || t.indexOf('.')>-1) return;          /* trip meters carry a decimal */
-    if(/^0/.test(t)) return;                     /* clocks and codes, not odometers */
     if(!/^\d{4,7}$/.test(t)) return;             /* odometers are 4-7 digits    */
+    /* R71: a LEADING ZERO no longer throws the reading away. Digital clusters
+       pad to six digits — a bike that has done 14,260 km displays "014260" — and
+       the old rule rejected every one of them, so the scan came back "could not
+       read the meter" on exactly the vehicles it should have read. Its stated
+       purpose was to reject clocks, and the range test below already does that:
+       "06:45" is stripped to "0645" = 645, under the 1,000 km floor, so it is
+       rejected on being implausibly small rather than on how it was padded. */
     var n=+t;
     if(n<1000 || n>999999) return;
     out.push(n);
@@ -14869,43 +15149,115 @@ function esScanKm(){
   }
   var f=document.getElementById('es-km-file'); if(f){ f.value=''; f.click(); }
 }
+/* =========================================================================
+   R71 \u2014 THE SCAN DECIDES, NOT THE ADVISOR      (Ravi, 17-Aug-2026)
+
+   "It is not scan or type. It is scan the odometer reading. If the no is not
+    coming above 90% confidence by using all the 3 engines then only ask SA to
+    enter manually."
+
+   So the box is filled BY THE SCAN. Typing is the exception the advisor is
+   pushed to only when the engines have not earned the reading.
+
+   WHAT "ABOVE 90%" MEANS HERE, precisely, because a number on screen must not
+   overstate what was measured. Three things must all hold:
+
+     1. VALIDATED \u2014 read-text's odometer validator accepted the shape. An engine
+        that returned text which is not an odometer has not answered.
+     2. CONFIDENCE >= 0.90 as reported by the engine that answered. Gemini
+        reports a flat 0.90 stand-in (it gives no real score); Cloud Vision
+        reports its true per-page figure and 0.70 when it states none; the
+        browser-side Vision fallback reports nothing and is handed back as 0, so
+        it can never pass this gate on its own.
+     3. ONE unambiguous number. If the photo yields two plausible odometer
+        readings, the engine's confidence is about characters, not about which
+        of them is the odometer \u2014 so it is not a 90% answer to our question.
+
+   Fail any of the three and the reading is NOT written into the box. It is
+   offered as something the advisor confirms or overrides, which is Ravi's
+   "then only ask SA to enter manually".
+
+   The gate's own reading is used as corroboration where it exists: it came from
+   a different photo taken at the barrier by the same cascade, so agreement
+   between the two is genuinely independent evidence, and a fresh reading BELOW
+   the gate's cannot be right on the same visit.
+   ========================================================================= */
+var ES_KM_MIN_CONF = 0.90;
+var ES_KM_PENDING  = 0;    /* a read that did not earn the box, awaiting the SA */
+
+function esKmGateCheck_(km){
+  if(!ES_GATE_KM) return {txt:'', bad:false};
+  if(km < ES_GATE_KM)
+    return {txt:' \u26a0\ufe0f <b>Lower than the gate reading ('+ES_GATE_KM.toLocaleString('en-IN')+' km)</b> \u2014 check the meter.', bad:true};
+  if(km - ES_GATE_KM > 50)
+    return {txt:' \u26a0\ufe0f Gate recorded '+ES_GATE_KM.toLocaleString('en-IN')+' km \u2014 a '+(km-ES_GATE_KM).toLocaleString('en-IN')+' km difference.', bad:true};
+  return {txt:' \u2713 Agrees with the gate reading.', bad:false};
+}
+function esKmAcceptPending(){
+  if(!ES_KM_PENDING) return;
+  var el=document.getElementById('es-km'); if(!el) return;
+  el.value=ES_KM_PENDING;
+  var g=esKmGateCheck_(ES_KM_PENDING);
+  esKmHint('\u2705 <b>'+ES_KM_PENDING.toLocaleString('en-IN')+' km</b> confirmed by you.'+g.txt, g.bad?'warn':'ok');
+  ES_KM_PENDING=0;
+  try{ esUpdateLive(); }catch(e){}
+  try{ esCompose(); }catch(e){}
+}
 function esOnKmPhoto(e){
   var file=e.target.files && e.target.files[0]; if(!file) return;
-  esKmHint('\u23F3 Reading the odometer\u2026','');
+  ES_KM_PENDING=0;
+  esKmHint('\u23F3 Reading the meter through Gemini, Cloud Vision and Document AI\u2026','');
   var fr=new FileReader();
   fr.onload=function(){
     window.geOcrRead(fr.result, function(t){ return esKmCandidates(t).length>0; }, 'odometer')
       .then(function(r){
         var cands=esKmCandidates(r && r.text);
+        var tried=(r&&r.tried&&r.tried.length)?r.tried.join(', '):'all engines';
         if(!cands.length){
-          esKmHint('Could not read the meter \u2014 type the reading. '
-                  +(r&&r.text?('Photo showed: '+String(r.text).replace(/\s+/g,' ').slice(0,60)):''),'warn');
+          esKmHint('\u274c No engine could read the meter ('+tried+'). '
+                  +'<b>Type the odometer reading by hand.</b>'
+                  +(r&&r.text?(' Photo showed: '+String(r.text).replace(/\s+/g,' ').slice(0,60)):''),'warn');
           return;
         }
         /* Highest plausible number is the odometer; trip meters read lower. */
         var km=Math.max.apply(null,cands);
+        var conf=Number(r&&r.confidence)||0;
+        var pct=Math.round(conf*100);
         var el=document.getElementById('es-km');
         var prev=+String(el.value||'').replace(/[^0-9]/g,'')||0;
-        el.value=km;
-        try{ esUpdateLive(); }catch(err){}
-        var extra = (cands.length>1) ? (' Other numbers seen: '+cands.filter(function(x){return x!==km;}).join(', ')+'.') : '';
-        /* Compare against what the gate recorded (Ravi 03-Aug-2026). A reading
-           BELOW the gate figure cannot be right on the same visit, and a wild
-           jump usually means a trip meter or a misread digit. Warn, never block \u2014
-           the SA is standing at the vehicle and is the final judge. */
-        var gateWarn='';
-        if(ES_GATE_KM){
-          if(km < ES_GATE_KM) gateWarn=' \u26a0\ufe0f <b>Lower than the gate reading ('+ES_GATE_KM.toLocaleString('en-IN')+' km)</b> \u2014 check the meter.';
-          else if(km - ES_GATE_KM > 50) gateWarn=' \u26a0\ufe0f Gate recorded '+ES_GATE_KM.toLocaleString('en-IN')+' km \u2014 that is a '+(km-ES_GATE_KM).toLocaleString('en-IN')+' km difference.';
-          else gateWarn=' \u2713 Matches the gate reading.';
+        var g=esKmGateCheck_(km);
+
+        var sure = !!(r&&r.validated) && conf>=ES_KM_MIN_CONF && cands.length===1;
+
+        if(sure){
+          /* The engines earned it. The box is filled and the advisor is not
+             asked to do anything except glance at the meter. */
+          el.value=km;
+          try{ esUpdateLive(); }catch(err){}
+          try{ esCompose(); }catch(err){}
+          esKmHint('\u2705 <b>'+km.toLocaleString('en-IN')+' km</b> read by '+(r.engine||'the engines')
+                  +' at '+pct+'% confidence.'+g.txt
+                  +(prev&&prev!==km?(' <b>Replaced '+prev.toLocaleString('en-IN')+'.</b>'):''),
+                  g.bad?'warn':'ok');
+          return;
         }
-        esKmHint('\u2705 Read <b>'+km.toLocaleString('en-IN')+' km</b>'
-                +(r.engine==='vision'?' by scan':' by AI')
-                +'.'+gateWarn+' Confirm against the meter before generating.'+extra
-                +(prev&&prev!==km?(' <b>Replaced '+prev.toLocaleString('en-IN')+'.</b>'):''),
-                gateWarn.indexOf('\u26a0')>-1 ? 'warn' : 'ok');
+
+        /* Below the bar. NOTHING is written into the box \u2014 an unearned number
+           sitting in the field is exactly what gets accepted without looking.
+           The reading is offered, and typing is the other way out. */
+        var why=[];
+        if(!(r&&r.validated))          why.push('the reading did not validate as an odometer');
+        if(conf<ES_KM_MIN_CONF)        why.push(pct+'% confidence, below the '+Math.round(ES_KM_MIN_CONF*100)+'% we accept');
+        if(cands.length>1)             why.push('the photo shows more than one possible reading ('+cands.join(', ')+')');
+        ES_KM_PENDING=km;
+        esKmHint('\u26a0\ufe0f Not accepted automatically \u2014 '+why.join('; ')+' ('+tried+').<br>'
+                +'Best reading: <b>'+km.toLocaleString('en-IN')+' km</b>.'+g.txt+'<br>'
+                +'<button type="button" onclick="esKmAcceptPending()" style="margin-top:5px;border:1px solid #16a34a;'
+                +'background:#f0fdf4;color:#15803d;border-radius:7px;padding:5px 10px;font:800 11.5px Inter,sans-serif;'
+                +'cursor:pointer">Use '+km.toLocaleString('en-IN')+' km</button> '
+                +'<span style="font-size:11px">\u2014 or scan again, or type the reading in the box.</span>','warn');
       })
-      .catch(function(){ esKmHint('Reading failed \u2014 type the odometer.','warn'); });
+      .catch(function(){ esKmHint('\u274c The read failed \u2014 <b>type the odometer reading by hand.</b>','warn'); });
   };
   fr.readAsDataURL(file);
 }
@@ -15084,6 +15436,7 @@ function rtEnsureStrip(){
 
 /* --- searchable labour picker over THIS model's own rate list --------------- */
 function esOpenLabPicker(){
+  if(esGuardLocked_('The labour list')) return;
   if(typeof rtEnsurePanel==='function') rtEnsurePanel();
   var p=document.getElementById('rt-panel');
   if(!p){ alert('Picker unavailable in this build.'); return; }
@@ -15128,6 +15481,8 @@ function esDrawLabPicker(q){
   body.innerHTML=h;
 }
 function esPickLab(code, btn){
+  if(esGuardLocked_('Labour')) return;
+  if(esRejectOwnedCode_(code)) return;
   var opts=esPriceLabourOptions();
   var v=opts.filter(function(x){ return String(x.code)===String(code); })[0];
   if(!v) return;
@@ -15178,6 +15533,7 @@ function rtpRoute(kind){
   return rtpModelOn() ? 'mp_in' : 'parts_in';
 }
 function rtOpenParts(){
+  if(esGuardLocked_('The parts list')) return;
   if(typeof rtEnsurePanel==='function') rtEnsurePanel();
   var p=document.getElementById('rt-panel');
   if(!p){ alert('Picker unavailable in this build.'); return; }
@@ -15340,6 +15696,7 @@ function rtpRenderParts(){
   rtpBody(h);
 }
 function rtpAdd(pn, btn){
+  if(esGuardLocked_('Parts')) return;
   var r=RTP._byPn && RTP._byPn[String(pn)]; if(!r) return;
   if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===String(pn); })){ alert('Already on this estimate.'); return; }
   if(r.supersededBy && !confirm(r.part+' is superseded by '+r.supersededBy+'.\n\nAdd it anyway?')) return;
@@ -15563,6 +15920,7 @@ setInterval(heroMountUpdBtn, 8000);   /* appears as soon as the CEO logs in */
    a success with no data. Now the panel says exactly that.
    ========================================================================= */
 function rtOpen(mode){
+  if(esGuardLocked_('The repair tree')) return;
   rtEnsurePanel();
   RT_VIEW={mode:(mode==='suggest'?'suggest':'cat'), cat:'', cc:'', q:''};
   var s=document.getElementById('rt-search');
@@ -15626,8 +15984,26 @@ function rtOpen(mode){
 /* Curated by code, not by keyword guessing. Every one of these is work that
    is physically performed on a vehicle already in the bay, is visible to the
    customer, and needs no part. Rate comes from the model's own master. */
+/* R71 (Ravi, 17-Aug-2026) — TWO CODES LEFT THIS LIST, BOTH FOR THE SAME REASON:
+   they are no longer things the advisor CHOOSES, so offering them here could only
+   ever put them on the estimate a second time.
+
+   101002 WATER WASH — R70 made washing compulsory at Rs 129 on every estimate.
+   Leaving it pitchable meant one tap added a second wash line at the model's own
+   rate, and the customer was quoted for two washes of one vehicle. The code
+   itself is not lost: ES_WASH_CODE below uses 101002 as the wash line's DMS
+   number, which is where it belongs.
+
+   101017 EXPRESS SERVICE — "Express service again coming as 50 rs in suggested
+   labour which is not right." Express is the Rs 150 same-day charge driven by
+   the checkbox on the form, not a labour line an advisor pitches. Both on one
+   estimate is Rs 200 for one priority job, and the two figures disagreed on
+   screen, which is worse than either being wrong on its own. The checkbox now
+   carries an editable amount instead (esExpressFee_), so the advisor sets what
+   priority is actually worth on this job in ONE place. */
+var ES_WASH_CODE   = '101002';   /* Hero DMS: WATER WASH */
+var ES_EXPRESS_CODE= '101017';   /* Hero DMS: EXPRESS SERVICE — the checkbox owns it */
 var PT_SERVICE = {
-  '101002':{n:'Water wash',            why:'Vehicle goes back clean. Customer sees it first.'},
   '302014':{n:'Rear brake cleaning',   why:'Drum dust removal. Explains a soft pedal.'},
   '304002':{n:'Drive chain clean & lube', why:'Visible chain, audible difference on the test ride.'},
   '310023':{n:'Front wheel bearing greasing', why:'Preventive. Cheap now, bearing later.'},
@@ -15638,8 +16014,7 @@ var PT_SERVICE = {
   '407007':{n:'Spark plug clean & regap', why:'Show the electrode. Cheaper than replacing.'},
   '101012':{n:'Nitrogen filling',      why:'Tyre pressure holds longer. Easy yes.'},
   '101016':{n:'Nitrogen top-up',       why:'Small add-on at delivery.'},
-  '301031':{n:'Seat cover staple',     why:'Only if the seat is actually loose.'},
-  '101017':{n:'Express service',       why:'Charge for priority only when it is genuinely given.'}
+  '301031':{n:'Seat cover staple',     why:'Only if the seat is actually loose.'}
 };
 function ptIsFitment(desc){
   return /\(R\s*\/\s*R|DISMANTLE|ASSEMBLE/i.test(String(desc||''));
