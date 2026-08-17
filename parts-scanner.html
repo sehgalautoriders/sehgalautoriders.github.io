@@ -170,6 +170,7 @@ const $ = (id) => document.getElementById(id)
 
 let profile = null
 let pending = null          // the scan awaiting SAVE
+let scanPreviewUrl = ''
 
 // ---------------------------------------------------------------- helpers
 function toast(msg) {
@@ -180,16 +181,16 @@ const money = (n) => n == null ? '—' : '₹' + Math.round(Number(n)).toLocaleS
 
 /** Phone photos are 3–8 MB; the label is readable at 1280px for a fraction
  *  of the data. Downscale on-device before anything leaves the phone. */
-function shrink(file) {
+function shrink(file, maxPx = 2048) {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
-      const MAX = 1280
+      const MAX = maxPx
       let { width: w, height: h } = img
       if (Math.max(w, h) > MAX) { const k = MAX / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) }
       const c = document.createElement('canvas'); c.width = w; c.height = h
       c.getContext('2d').drawImage(img, 0, 0, w, h)
-      c.toBlob((b) => resolve(b || file), 'image/jpeg', 0.85)
+      c.toBlob((b) => { c.width = 1; c.height = 1; resolve(b || file) }, 'image/jpeg', 0.90)
       URL.revokeObjectURL(img.src)
     }
     img.onerror = () => resolve(file)
@@ -235,8 +236,9 @@ async function enter() {
 
 // ---------------------------------------------------------------- scanning
 /** Try to decode a barcode (Code-128 etc.) straight off the photo. Tries the
- *  photo as-is, rotated 90° (labels on shelved boxes), and upscaled 2× (thin
- *  stripes). Returns the decoded text or null — never throws, never blocks
+ *  photo as-is and rotated 90° (labels on shelved boxes). Input is capped at
+ *  2048px; the former 2× retry could allocate ~192 MB on a 12MP phone photo.
+ *  Returns the decoded text or null — never throws, never blocks
  *  the AI path. */
 async function readBarcode(file) {
   try {
@@ -258,7 +260,6 @@ async function readBarcode(file) {
     const W = img.naturalWidth, H = img.naturalHeight
     return attempt(W, H, (x) => x.drawImage(img, 0, 0))
         || attempt(H, W, (x) => { x.translate(H, 0); x.rotate(Math.PI / 2); x.drawImage(img, 0, 0) })
-        || attempt(W * 2, H * 2, (x) => { x.scale(2, 2); x.drawImage(img, 0, 0) })
   } catch { return null }
 }
 
@@ -267,26 +268,32 @@ async function onPhoto(file) {
   $('result').classList.add('hidden')
   const busy = $('busy')
   busy.classList.remove('hidden')
-  busy.innerHTML = `<img src="${URL.createObjectURL(file)}"><span class="spin"></span>Reading the part…`
+  if (scanPreviewUrl) URL.revokeObjectURL(scanPreviewUrl)
+  scanPreviewUrl = URL.createObjectURL(file)
+  busy.innerHTML = `<img src="${scanPreviewUrl}"><span class="spin"></span>Reading the part…`
 
   try {
-    // Barcode decode runs on the full-resolution photo, in parallel with the
-    // AI read — on faded old-stock labels the stripe outlives the print.
-    const barcodePromise = readBarcode(file)
-    const small = await shrink(file)
+    // One phone-safe image feeds preview, barcode and the server.
+    const small = await shrink(file, 2048)
+    const barcodePromise = readBarcode(small)
     const { data: { session } } = await sb.auth.getSession()
     const form = new FormData()
     form.append('image', small, 'scan.jpg')
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 55000)
     const res = await fetch(`${SUPABASE_URL}/functions/v1/identify-part`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY },
       body: form,
+      signal: ctl.signal,
     })
+    clearTimeout(timer)
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`)
     await buildResult(body, await barcodePromise)
   } catch (e) {
     busy.classList.add('hidden')
+    if (scanPreviewUrl) { URL.revokeObjectURL(scanPreviewUrl); scanPreviewUrl = '' }
     showUnreadable(null, 'Reading failed: ' + e.message)
   }
 }
@@ -295,9 +302,33 @@ async function onPhoto(file) {
 async function matchNumbers(numbers) {
   for (const raw of numbers) {
     const { data, error } = await sb.rpc('match_part', { p_raw: raw })
-    if (!error && data && data.length) return { raw, hit: data[0] }
+    if (!error && data && data.length) {
+      const tier = data[0].match_method
+      const seen = new Set()
+      const top = data.filter((x) => x.match_method === tier && !seen.has(x.part_no) && seen.add(x.part_no))
+      if (top.length === 1) return { raw, hit: top[0] }
+      if (top.length > 1) return { ambiguous: true, raw, hits: top.map((hit) => ({ raw, hit })) }
+    }
   }
   return null
+}
+
+let AMB_SEQ = 0
+function chooseMatch(m, title = 'Choose the number printed on this part') {
+  const seq = ++AMB_SEQ
+  return new Promise((resolve) => {
+    renderCard('warn', '⚠ MORE THAN ONE MASTER MATCH', [
+      ['Action', '<b>The scanner will not guess. Compare the label and tap the correct row.</b>'],
+      ['Matches', (m.hits || []).map((x, i) =>
+        `<button class="btn btn-grey" id="amb-${seq}-${i}" style="display:block;width:100%;margin:5px 0;text-align:left">`
+        + `<b>${x.hit.part_no}</b> · ${x.hit.description || ''}</button>`).join('')],
+      ['Why', title],
+    ], true)
+    ;(m.hits || []).forEach((x, i) => {
+      const b = $(`amb-${seq}-${i}`)
+      if (b) b.onclick = () => resolve(x)
+    })
+  })
 }
 
 /* --------------------------------------------------------------------------
@@ -348,8 +379,22 @@ async function correctFromLabel(ai, candidates) {
       p_desc: (ai && ai.part_name && ai.part_name !== 'unknown') ? ai.part_name : '',
     })
     if (error || !data || !data.found || !data.best) return null
+    const score = Number(data.best.score || 0), seen = new Set()
+    const choices = [data.best, ...(data.candidates || [])]
+      .filter((x) => x && x.part && Number(x.score || 0) === score)
+      .filter((x) => { const k = x.part.part; if (!k || seen.has(k)) return false; seen.add(k); return true })
+    if (choices.length > 1) return { ...data, ambiguous: true, choices }
     return data                      // {found, best:{part:{part,desc},score,why}, candidates:[…]}
   } catch { return null }
+}
+
+async function settleCorrection(fix) {
+  if (!fix || !fix.ambiguous) return fix
+  const chosen = await chooseMatch({ hits: fix.choices.map((c) => ({
+    raw: 'catalogue correction', hit: { part_no: c.part.part, description: c.part.desc || '' },
+  })) }, 'Equal catalogue scores require an operator choice.')
+  const best = fix.choices.find((c) => c.part.part === chosen.hit.part_no)
+  return { ...fix, ambiguous: false, best }
 }
 
 /** Full master row for a part number the corrector proposed. */
@@ -398,13 +443,15 @@ function engineRows(body, provider) {
 async function buildResult(body, barcode) {
   const ai = body.result
   $('busy').classList.add('hidden')
+  if (scanPreviewUrl) { URL.revokeObjectURL(scanPreviewUrl); scanPreviewUrl = '' }
 
   if (!ai && !barcode) { showUnreadable(body.photo_path, 'Could not read anything on the photo.'); return }
 
   // Barcode first — it IS the part number on Hero MRP labels, decoded
   // exactly; the AI's readings follow as fallbacks.
   const candidates = [...(barcode ? [barcode] : []), ...((ai && ai.part_numbers) || [])]
-  const m = await matchNumbers(candidates)
+  let m = await matchNumbers(candidates)
+  if (m && m.ambiguous) m = await chooseMatch(m)
 
   if (!ai) {
     // Barcode alone (AI unreadable): still a solid identification if it matched.
@@ -459,7 +506,8 @@ async function buildResult(body, barcode) {
   /* Exact lookup missed. BEFORE calling it "not in master", correct the
      reading against the catalogue — one misread character is the ordinary case
      on a twenty-year-old Hero Honda label, not the exception. */
-  const fix = await correctFromLabel(ai, candidates)
+  let fix = await correctFromLabel(ai, candidates)
+  fix = await settleCorrection(fix)
   if (fix) {
     const partNo = fix.best.part.part
     const hit = await masterRow(partNo)
@@ -613,7 +661,13 @@ async function manualFind() {
   const { data, error } = await sb.rpc('match_part', { p_raw: raw })
   if (error) { toast(error.message); return }
   if (data && data.length) {
-    const hit = data[0]
+    const tier = data[0].match_method, seen = new Set()
+    const top = data.filter((x) => x.match_method === tier)
+      .filter((x) => { if (seen.has(x.part_no)) return false; seen.add(x.part_no); return true })
+    const chosen = top.length > 1
+      ? await chooseMatch({ ambiguous: true, raw, hits: top.map((hit) => ({ raw, hit })) })
+      : { raw, hit: top[0] }
+    const hit = chosen.hit
     const dms = await stockOf(hit.part_no)
     pending = {
       photo_path: null, ocr_text: 'manual: ' + raw, provider: 'none',
@@ -633,7 +687,8 @@ async function manualFind() {
   } else {
     /* Same courtesy as the camera path: a number typed off a worn box is as
        likely to be one character out as a number read off one. */
-    const fix = await correctFromLabel({ raw_text: raw, part_name: '' }, [raw])
+    let fix = await correctFromLabel({ raw_text: raw, part_name: '' }, [raw])
+    fix = await settleCorrection(fix)
     if (fix) {
       const partNo = fix.best.part.part
       const hit = await masterRow(partNo)

@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 52;
-window.HERO_BUILD = 'R68-2026.08.17.1';
+window.HERO_RELEASE = 53;
+window.HERO_BUILD = 'R69-2026.08.17.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -294,9 +294,10 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
    browser had to download and parse ALL of them before it would even paint the
    login screen. A security guard, who never exports anything in his life, was
    paying that 2.2 MB every single time he opened the app.
-   Now: nothing is fetched at startup. They are pulled in the first time something
-   actually needs them (Upload, Download, PDF), and pre-warmed quietly a few
-   seconds after the app is idle so the first Export tap still feels instant.
+   Now: nothing is fetched at startup. A library is pulled only when a signed-in
+   user actually starts the Upload, Download or PDF feature that needs it. Do not
+   pre-warm on idle: idle fires during sign-in on workshop phones and previously
+   downloaded the whole 2.2 MB bundle before the user requested an export.
    heroEnsureLibs(group, cb) is the single entry point — see the call sites in
    huDownload, huHandleFile, esBuildPDF, blHandleJcFile, blHandleBillFile,
    pfDownload, pfHandleStockFile and pfLiveFetch. */
@@ -343,13 +344,6 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
     return p;
   };
 
-  /* Quiet pre-warm once the app has settled, so the first Export still feels instant.
-     requestIdleCallback where available; a plain timer otherwise. */
-  window.addEventListener('load', function(){
-    var warm = function(){ window.heroEnsureLibs('all'); };
-    if (window.requestIdleCallback) requestIdleCallback(warm, { timeout: 6000 });
-    else setTimeout(warm, 4000);
-  });
 })();
 /* Small non-blocking "Preparing…" chip, used only if a library is genuinely slow. */
 (function(){
@@ -1657,16 +1651,24 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
               <div class="fld"><label>Odometer (km) — read at the gate</label><input id="es-km" inputmode="numeric" readonly class="es-ro"></div>
               <div class="fld"><label>Date of sale</label><input id="es-dos" class="date-dmy es-ro" type="text" readonly maxlength="10" autocomplete="off"></div>
             </div>
-            <div class="fld"><label>Service type — decided at the gate</label>
-              <input id="es-type-txt" readonly class="es-ro" value="—">
-              <!-- The select stays in the DOM because forty code paths read its
-                   value; it is filled from the gate entry and never shown. -->
-              <select id="es-type" style="display:none">
+            <!-- R69 (Ravi, 17-Aug-2026): "Service type can be changed during
+                 preparing estimate. Wrongly made not editable now."
+                 R65 hid this select behind a read-only box. The gate still
+                 DECIDES it and it still arrives prefilled, but the gate screen
+                 itself promises "(SA can change later)" — the SA has the vehicle
+                 in front of them and overrules the barrier. Editable again.
+                 It also leaves the Vehicle block, whose header says "read only"
+                 — the one field on this screen the SA may overrule does not
+                 belong under that tag. -->
+            <div class="sec">Service <span class="es-locked-tag">prefilled from the gate · the SA decides</span></div>
+            <div class="fld"><label>Service type — from the gate, change it if the vehicle says otherwise</label>
+              <select id="es-type">
                 <option value="">Select service type…</option>
                 <option value="free">Free service</option><option value="paid">Paid service</option>
                 <option value="joyride">Joyride</option><option value="general">General repair</option>
                 <option value="accidental">Accidental</option>
               </select>
+              <div id="es-type-src" style="font-size:11px;margin-top:3px;font-weight:700;color:var(--steel)"></div>
             </div>
             <div class="fld" id="es-freestage-wrap" style="display:none">
               <label>Free service no.</label>
@@ -1998,8 +2000,14 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   .ps2-crumb{font:700 11px Inter,sans-serif;text-transform:uppercase;letter-spacing:.09em;color:#737983}
   .ps2-crumb i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#d92d20;margin-right:7px}
   .ps2-ai-tag{margin-left:auto;display:inline-flex;align-items:center;gap:7px;color:#166534;background:#f0fdf4;
-    border:1px solid #bbf7d0;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:800}
+    border:1px solid #bbf7d0;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800}
   .ps2-ai-tag:before{content:'';width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 4px #dcfce7}
+  .ps2-ai-tag[data-state="idle"]{color:#4b5563;background:#f5f5f4;border-color:#d6d3d1}
+  .ps2-ai-tag[data-state="idle"]:before{background:#a8a29e;box-shadow:0 0 0 4px #e7e5e4}
+  .ps2-ai-tag[data-state="busy"]{color:#9a3412;background:#fff7ed;border-color:#fed7aa}
+  .ps2-ai-tag[data-state="busy"]:before{background:#f97316;box-shadow:0 0 0 4px #ffedd5}
+  .ps2-ai-tag[data-state="error"]{color:#991b1b;background:#fef2f2;border-color:#fecaca}
+  .ps2-ai-tag[data-state="error"]:before{background:#dc2626;box-shadow:0 0 0 4px #fee2e2}
 
   .ps2-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) 330px;
     min-height:210px;background:#11151b;color:#fff;border-radius:18px;padding:32px 36px;
@@ -2020,9 +2028,9 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
     padding:6px 10px;color:#e5e7eb;font-size:10.5px;font-weight:750}
   .ps2-mascot{position:relative;display:flex;align-items:flex-end;justify-content:center;min-width:0}
   .ps2-mascot:before{content:'';position:absolute;width:260px;height:260px;border-radius:50%;bottom:-118px;
-    background:#fff;box-shadow:0 0 0 18px rgba(255,255,255,.045)}
-  .ps2-mascot img{position:relative;width:285px;height:184px;object-fit:cover;object-position:center top;
-    border-radius:48% 48% 0 0;mix-blend-mode:screen;filter:contrast(1.03);transform:translateY(32px)}
+    background:rgba(255,255,255,.055);box-shadow:0 0 0 18px rgba(255,255,255,.025)}
+  .ps2-mascot img{position:relative;width:285px;height:210px;object-fit:contain;object-position:center bottom;
+    filter:drop-shadow(0 14px 18px rgba(0,0,0,.28));transform:translateY(23px)}
 
   .ps2-workspace{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(360px,.75fr);gap:16px;
     align-items:start;margin-top:16px}
@@ -2033,7 +2041,7 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
     letter-spacing:.025em;margin:0 0 5px}
   .ps2-section-head p{font-size:12px;color:#69707b;margin:0}
   .ps2-step{flex:0 0 auto;border:1px solid #e6e2dc;background:#f8f7f4;border-radius:999px;padding:6px 10px;
-    color:#6b7280;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    color:#6b7280;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
   .ps2-actions{display:grid;grid-template-columns:1.12fr .88fr;gap:12px}
   .ps2-action{position:relative;min-height:118px;border-radius:14px;padding:22px 52px 20px 86px;text-align:left;
     border:1px solid #ddd9d2;background:#fff;color:#16191e;cursor:pointer;overflow:hidden;transition:.16s ease;
@@ -2053,13 +2061,13 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   .ps2-action-arrow{position:absolute;right:18px;top:50%;transform:translateY(-50%);font-size:24px;line-height:1;opacity:.72}
   .ps2-tips{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#e7e3dc;border:1px solid #e7e3dc;
     border-radius:11px;overflow:hidden;margin-top:12px}
-  .ps2-tip{background:#faf9f7;padding:11px 12px;color:#4b525c;font-size:10.5px;line-height:1.35}
-  .ps2-tip b{display:block;color:#1f242a;font-size:11px;margin-bottom:2px}
+  .ps2-tip{background:#faf9f7;padding:11px 12px;color:#4b525c;font-size:12px;line-height:1.35}
+  .ps2-tip b{display:block;color:#1f242a;font-size:12px;margin-bottom:2px}
 
   .ps2-preview{position:relative;margin-top:18px;border-top:1px solid #ebe8e2;padding-top:18px}
-  .ps2-preview-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;font-size:10px;
+  .ps2-preview-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;font-size:12px;
     font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280}
-  .ps2-clear{border:0;background:#f5f3ef;color:#6b7280;border-radius:7px;padding:6px 9px;font:750 10px Inter,sans-serif;cursor:pointer}
+  .ps2-clear{border:0;background:#f5f3ef;color:#6b7280;border-radius:7px;padding:6px 9px;font:750 12px Inter,sans-serif;cursor:pointer}
   .ps2-clear:hover{background:#fee2e2;color:#b91c1c}
   .ps2-preview-frame{display:grid;place-items:center;background:#181c22;border-radius:12px;min-height:190px;overflow:hidden}
   .ps2-preview-frame img{display:block;max-width:100%;width:auto;max-height:300px;object-fit:contain}
@@ -2078,11 +2086,11 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   .ps2-result-head h3{font-family:'Barlow Condensed',sans-serif;font-size:22px;text-transform:uppercase;line-height:1;margin:0 0 4px}
   .ps2-result-head p{font-size:11px;color:#6b7280;margin:0}
   .ps2-result-badge{border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:6px 9px;
-    font-size:9.5px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+    font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
   .ps2-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
   .ps2-result .fld{margin-bottom:12px}
   .ps2-result .fld.full{grid-column:1/-1}
-  .ps2-result label{font-size:10px;color:#5f6670;margin-bottom:5px}
+  .ps2-result label{font-size:12px;color:#5f6670;margin-bottom:5px}
   .ps2-result input{border-color:#d9d6d0;background:#fff;border-radius:9px;padding:10px 11px;font-size:14px}
   .ps2-result input:focus{border-color:#c0392b;box-shadow:0 0 0 3px rgba(192,57,43,.08)}
   #ps-extra-wrap{grid-column:1/-1}
@@ -2096,14 +2104,14 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   .ps2-recent-head{display:flex;align-items:center;gap:10px;padding:17px 18px 13px;border-bottom:1px solid #e5e2dc}
   .ps2-recent-head h2{font-family:'Barlow Condensed',sans-serif;font-size:22px;text-transform:uppercase;line-height:1;margin:0}
   .ps2-count{display:none;min-width:23px;height:23px;border-radius:999px;background:#f2f0ec;color:#4b5563;
-    align-items:center;justify-content:center;font:800 10px 'Roboto Mono',monospace}
-  .ps2-refresh{margin-left:auto;border:0;background:transparent;color:#b42318;padding:6px;font:800 10px Inter,sans-serif;
+    align-items:center;justify-content:center;font:800 12px 'Roboto Mono',monospace}
+  .ps2-refresh{margin-left:auto;border:0;background:transparent;color:#b42318;padding:6px;font:800 12px Inter,sans-serif;
     text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
   /* R53: Excel export sits beside Refresh. Outlined, not solid — Refresh is the
      everyday button and the export is the occasional one; the outline keeps the
      hierarchy without adding a second red block to the header. */
   .ps2-export{border:1px solid #d6d3cd;background:#fff;color:#15803d;border-radius:7px;padding:5px 9px;
-    font:800 10px Inter,sans-serif;text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
+    font:800 12px Inter,sans-serif;text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
   .ps2-export:hover:not(:disabled){background:#f0fdf4;border-color:#86efac}
   .ps2-export:disabled{opacity:.6;cursor:default}
   .ps2-recent{max-height:438px;overflow:auto;scrollbar-width:thin}
@@ -2116,9 +2124,9 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   .ps2-scan-main{min-width:0}
   .ps2-scan-title{font:800 12px 'Roboto Mono',monospace;color:#171a1f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ps2-scan-desc{font-size:11px;color:#4f5660;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-  .ps2-scan-meta{font-size:9.5px;color:#777e88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+  .ps2-scan-meta{font-size:12px;color:#777e88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
   .ps2-confidence{min-width:44px;text-align:center;border-radius:999px;background:#ecfdf3;color:#15803d;
-    border:1px solid #bbf7d0;padding:5px 7px;font:800 10px 'Roboto Mono',monospace}
+    border:1px solid #bbf7d0;padding:5px 7px;font:800 12px 'Roboto Mono',monospace}
   .ps2-confidence.na{background:#f6f5f2;border-color:#e5e2dc;color:#7b8189}
   .ps2-recent-state{padding:24px 18px;text-align:center;color:#6b7280;font-size:11.5px}
   .ps2-recent-state img{display:block;width:82px;height:82px;object-fit:contain;margin:0 auto 7px}
@@ -2127,23 +2135,23 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   .ps2-guide-row{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;padding:9px 0;border-top:1px solid #ece9e3}
   .ps2-guide-row:first-of-type{border-top:0;padding-top:0}
   .ps2-guide-n{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#15181c;color:#fff;
-    font:800 10px 'Roboto Mono',monospace}
-  .ps2-guide-row b{display:block;font-size:11.5px;margin-bottom:2px}.ps2-guide-row span{display:block;font-size:10.5px;color:#6b7280;line-height:1.4}
+    font:800 12px 'Roboto Mono',monospace}
+  .ps2-guide-row b{display:block;font-size:12px;margin-bottom:2px}.ps2-guide-row span{display:block;font-size:12px;color:#6b7280;line-height:1.4}
 
   @media(max-width:1050px){
     .ps2-workspace{grid-template-columns:1fr}.ps2-side{grid-template-columns:1.2fr .8fr}.ps2-recent{max-height:315px}
   }
   @media(max-width:760px){
     #view-partscan{min-height:calc(100vh - 160px)}
-    .ps2-shell{padding:12px 10px 22px}.ps2-pagebar{margin-bottom:10px}.ps2-ai-tag{font-size:9.5px}
+    .ps2-shell{padding:12px 10px 22px}.ps2-pagebar{margin-bottom:10px}.ps2-ai-tag{font-size:12px}
     .ps2-hero{grid-template-columns:1fr;min-height:0;padding:25px 22px;border-radius:15px}
     .ps2-hero-copy{position:relative;z-index:2}.ps2-hero h1{font-size:39px;max-width:82%}.ps2-hero p{max-width:86%;font-size:12px}
     .ps2-mascot{position:absolute;right:-38px;bottom:-2px;width:185px;opacity:.44;z-index:1}
     .ps2-mascot:before{width:180px;height:180px;bottom:-95px}.ps2-mascot img{width:180px;height:145px;transform:translateY(22px)}
-    .ps2-captures{max-width:80%;gap:5px}.ps2-captures span{font-size:9px;padding:5px 8px}
+    .ps2-captures{max-width:80%;gap:5px}.ps2-captures span{font-size:12px;padding:5px 8px}
     .ps2-stage{padding:16px}.ps2-section-head h2{font-size:22px}.ps2-actions{grid-template-columns:1fr 1fr;gap:9px}
     .ps2-action{min-height:124px;padding:18px 34px 15px 14px}.ps2-action-icon{position:static;width:44px;height:44px;margin-bottom:13px;font-size:21px}
-    .ps2-action strong{font-size:20px}.ps2-action small{font-size:10.5px}.ps2-action-arrow{right:12px;font-size:20px}
+    .ps2-action strong{font-size:20px}.ps2-action small{font-size:12px}.ps2-action-arrow{right:12px;font-size:20px}
     .ps2-tips{grid-template-columns:1fr}.ps2-tip{display:flex;gap:7px;align-items:baseline}.ps2-tip b{display:inline;white-space:nowrap}
     .ps2-side{grid-template-columns:1fr}.ps2-form-grid{grid-template-columns:1fr}.ps2-result .fld.full{grid-column:auto}
     .ps2-preview-frame{min-height:150px}.ps2-preview-frame img{max-height:240px}
@@ -2159,7 +2167,7 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
     <div class="ps2-pagebar">
       <button class="ps2-back" onclick="showView('home')" aria-label="Return to Home">← <span>Home</span></button>
       <div class="ps2-crumb"><i></i>Parts operations</div>
-      <div class="ps2-ai-tag">Scanner ready</div>
+      <div class="ps2-ai-tag" id="ps-engine-status" data-state="idle">Engine checked on scan</div>
     </div>
 
     <section class="ps2-hero" aria-labelledby="ps2-title">
@@ -2241,15 +2249,15 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
   </div>
 </div>
 
-<!-- ============ R63: INSURANCE RENEWAL WORKBENCH (rebuilt 12-Aug-2026) ==========
+<!-- ============ R69: INSURANCE RENEWAL WORKBENCH (rebuilt 17-Aug-2026) ==========
      The reconstruction Ravi ordered: built to the six mockups in
      Common\Design Mockups\Insurance\ (3/6 = dense workbench table + docked
      Customer 360; 5 = KPI header strip + interaction controls) and to
      APK-TEARDOWN-DESIGN-BRIEF §3. Data comes from Supabase RPCs
-     (ins4_worklist / ins4_counts / ins4_log, migration 0033) with the caller
-     authenticated — the full-book Apps Script scan feed is retired for this
-     screen. The R22 and R23 generations that used to stack here are DELETED;
-     ins3 (R28-R47) remains as the one fallback until ins4 has run a week.
+     (insurance_my_queue / insurance_my_counts / insurance_log_outcome,
+     migration 0049) with the caller authenticated. The database owns a stable,
+     unique maximum-150 daily queue for each Insurance SMRE in the exact expiry
+     priority. Customer 360 is fetched only after selection, never for all rows.
      ========================================================================= -->
 <div id="view-insurance" style="display:none">
   <!-- ins3 (the previous Hub) — fallback only; ins4Boot hides it. -->
@@ -2296,18 +2304,18 @@ body{background:var(--page);font-family:var(--font-ui)}
 </style>
 
 <style id="r63-ins4-css">
-/* ============ R63 INSURANCE RENEWAL WORKBENCH — all scoped .ins4 ============ */
-.ins4{max-width:1240px;margin:0 auto;padding:8px 10px 14px;font-family:var(--font-ui);color:var(--ink)}
+/* ============ R69 INSURANCE RENEWAL WORKBENCH — all scoped .ins4 ============ */
+.ins4{max-width:1600px;margin:0 auto;padding:8px 10px 14px;font-family:var(--font-ui);color:var(--ink)}
 .ins4-head{display:flex;align-items:center;gap:10px;margin:2px 0 8px}
 .ins4-title{font-size:18px;font-weight:700}
-.ins4-title small{display:block;font-size:11px;font-weight:600;color:var(--ink-3);text-transform:none}
+.ins4-title small{display:block;font-size:12px;font-weight:600;color:var(--ink-3);text-transform:none}
 .ins4-back{flex:0 0 auto;width:34px;height:34px;border:1px solid var(--rule-strong);border-radius:8px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:800;cursor:pointer}
-.ins4-classic{margin-left:auto;font:600 11px var(--font-ui);color:var(--ink-3);background:none;border:none;cursor:pointer;text-decoration:underline}
+.ins4-classic{margin-left:auto;font:600 12px var(--font-ui);color:var(--ink-3);background:none;border:none;cursor:pointer;text-decoration:underline}
 /* KPI strip — mockup 5's header numbers as dashboard furniture */
 .ins4-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px}
 .ins4-kpi{border:1px solid var(--rule-strong);border-radius:6px;padding:7px 9px;background:var(--surface)}
 .ins4-kpi b{display:block;font-size:21px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
-.ins4-kpi span{font-size:10px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em}
+.ins4-kpi span{font-size:11px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em}
 .ins4-kpi.k-info{background:var(--info-fill)} .ins4-kpi.k-warn{background:var(--warn-fill)}
 .ins4-kpi.k-ok{background:var(--ok-fill)} .ins4-kpi.k-th{background:var(--th)}
 /* scope pills + search */
@@ -2319,10 +2327,10 @@ body{background:var(--page);font-family:var(--font-ui)}
 .ins4-q input{border:none;outline:none;flex:1;min-width:0;font:500 13px var(--font-ui);background:transparent;color:var(--ink)}
 /* layout: table + docked rail on wide screens (mockup 3), stacked on phone */
 .ins4-body{display:block}
-@media(min-width:1100px){ .ins4-body{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:10px;align-items:start} }
+@media(min-width:1024px){ .ins4-body{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:10px;align-items:start} }
 .ins4-listwrap{border:1px solid var(--rule-strong);border-radius:6px;overflow:auto;background:var(--surface);max-height:calc(100vh - 250px)}
 .ins4-rail{display:none}
-@media(min-width:1100px){ .ins4-rail{display:block;position:sticky;top:8px} }
+@media(min-width:1024px){ .ins4-rail{display:block;position:sticky;top:8px} }
 .ins4-railbox{border:1px solid var(--rule-strong);border-radius:6px;background:var(--surface);padding:10px;max-height:calc(100vh - 250px);overflow:auto}
 /* severity cell (days-to-expiry) */
 .d-sev1{background:var(--sev1-fill)!important;color:var(--sev1)!important;font-weight:700}
@@ -2354,25 +2362,34 @@ body{background:var(--page);font-family:var(--font-ui)}
 .ins4-save:disabled{opacity:.5}
 .ins4-save .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:ins4rot .7s infinite linear;vertical-align:-2px;margin-right:6px}
 @keyframes ins4rot{to{transform:rotate(360deg)}}
-.ins4-note{font-size:11px;color:var(--ink-3);margin-top:6px}
+.ins4-note{font-size:12px;color:var(--ink-3);margin-top:6px}
+.ins4-source{border:1px solid var(--rule2);border-radius:5px;background:var(--zebra-label);padding:7px 8px;font-size:12px;color:var(--ink-2);margin-bottom:8px}
+.ins4-source.stale{background:var(--warn-fill);color:var(--warn2);border-color:#D9B66F}
+.ins4-providers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:7px 0 10px}
+.ins4-provider{border:1px solid var(--rule-strong);border-radius:6px;background:var(--surface);color:var(--ink-2);padding:8px 5px;font:700 11px var(--font-ui);cursor:pointer;text-align:center}
+.ins4-provider:hover{border-color:var(--ink);color:var(--ink)}
+.ins4-history{border-left:2px solid var(--rule-strong);padding-left:8px;margin:6px 0 10px}
+.ins4-history>div{font-size:12px;line-height:1.35;margin:5px 0;color:var(--ink-2)}
 .ins4-queuebar{display:none;background:var(--warn-fill);color:var(--warn2);border:1px solid var(--rule-strong);border-radius:6px;padding:7px 10px;font:600 12px var(--font-ui);margin-bottom:8px}
 .ins4-queuebar button{float:right;border:1px solid var(--warn2);background:none;color:var(--warn2);border-radius:5px;font:700 11px var(--font-ui);padding:3px 10px;cursor:pointer}
 .ins4-toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--ink);color:#fff;font:600 13px var(--font-ui);padding:10px 16px;border-radius:8px;z-index:8000;opacity:0;transition:opacity .2s}
 .ins4-toast.show{opacity:1}
 @media(max-width:640px){
+  .ins4{padding:6px 5px 12px}
   .ins4-kpis{grid-template-columns:repeat(5,minmax(58px,1fr));gap:4px}
-  .ins4-kpi b{font-size:17px} .ins4-kpi span{font-size:8.5px}
-  .ins4 .c-exp,.ins4 .c-last{display:none}   /* phone keeps CUSTOMER · REG · D · NEXT */
+  .ins4-kpi{padding:6px 4px}.ins4-kpi b{font-size:17px}.ins4-kpi span{font-size:10px}
+  .ins4 .c-exp,.ins4 .c-last{display:none}
+  .ins4-provider,.ins4-oc{font-size:12px}.ins4-oc small{font-size:10px}
 }
 </style>
 
 <script>
-/* ============ R63 ins4 — the Insurance Renewal Workbench ============
-   One day's work, hard-scoped in SQL. No loading spinner (skeleton + last-good
-   cache). Dense table, in-place detail, fixed 7-outcome vocabulary. Saves are
-   optimistic: Supabase RPC is the record; the legacy inscrm2_save GET keeps
-   the sheet trail + manager board fed until Phase 5 turns sheets off. */
-let INS4={scope:'today',rows:[],counts:null,sel:-1,q:'',outcome:'',built:false,saving:false};
+/* ============ R69 ins4 — server-owned Insurance daily workbench ============
+   Supabase assigns at most 150 unique callable customers to this signed-in
+   SMRE: today, tomorrow, 2-7 days, then 8-15 days. Customer 360 is lazy and an
+   idempotency key makes an offline retry safe. */
+let INS4={scope:'queue',rows:[],counts:null,sel:-1,q:'',outcome:'',built:false,
+  saving:false,details:Object.create(null),countsAt:0,loadSeq:0};
 const INS4_OC=[
   {c:'CB',code:'IP_CALLBACK', l:'Call back'},
   {c:'NR',code:'NR_RINGING',  l:'No reply'},
@@ -2394,7 +2411,20 @@ function ins4CodeShort(status){
 }
 function ins4Me(){ return (typeof USER!=='undefined'&&USER)?(USER.empno||''):''; }
 function ins4MyName(){ return (typeof USER!=='undefined'&&USER)?(USER.personName||''):''; }
-function ins4Wide(){ return window.matchMedia && matchMedia('(min-width:1100px)').matches; }
+function ins4Wide(){ return window.matchMedia && matchMedia('(min-width:1024px)').matches; }
+function ins4QueueKey(){ return 'ins4_queue:'+(ins4Me()||'signed-out'); }
+function ins4Uuid(){
+  if(window.crypto&&crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    const r=Math.random()*16|0,v=c==='x'?r:(r&3|8); return v.toString(16);
+  });
+}
+function ins4IstDatePlus(days){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const v={}; parts.forEach(p=>{ if(p.type!=='literal') v[p.type]=p.value; });
+  const d=new Date(Date.UTC(Number(v.year),Number(v.month)-1,Number(v.day)+Number(days||0)));
+  return d.toISOString().slice(0,10);
+}
 function ins4Toast(msg){
   let t=document.getElementById('ins4-toast');
   if(!t){ t=document.createElement('div'); t.id='ins4-toast'; t.className='ins4-toast'; document.body.appendChild(t); }
@@ -2420,7 +2450,7 @@ function ins4BuildShell(root){
   root.innerHTML=
    '<div class="ins4-head">'
    +'<button class="ins4-back" onclick="showView(\'home\')">‹</button>'
-   +'<div class="ins4-title">Renewal Workbench<small id="ins4-sub">'+raviEsc(ins4MyName())+' · one day’s work, nothing else</small></div>'
+   +'<div class="ins4-title">Insurance Renewal CRM<small id="ins4-sub">'+raviEsc(ins4MyName())+' · your unique daily queue · maximum 150</small></div>'
    +'<button class="ins4-classic" onclick="ins4Classic()">classic view</button>'
    +'</div>'
    +'<div class="ins4-queuebar" id="ins4-queuebar"></div>'
@@ -2454,8 +2484,8 @@ function ins4PaintKpis(){
   const k=INS4.counts||{}; const el=document.getElementById('ins4-kpis'); if(!el) return;
   const f=(n)=>(n==null?'—':Number(n).toLocaleString('en-IN'));
   el.innerHTML=
-    '<div class="ins4-kpi k-info"><b>'+f(k.today)+'</b><span>Due today</span></div>'
-   +'<div class="ins4-kpi k-warn"><b>'+f(k.overdue)+'</b><span>Overdue</span></div>'
+    '<div class="ins4-kpi k-info"><b>'+f(k.total)+'</b><span>Assigned</span></div>'
+   +'<div class="ins4-kpi k-warn"><b>'+f(k.remaining)+'</b><span>Remaining</span></div>'
    +'<div class="ins4-kpi k-th"><b>'+f(k.calls)+'</b><span>Calls today</span></div>'
    +'<div class="ins4-kpi k-th"><b>'+f(k.quotes)+'</b><span>Quotes</span></div>'
    +'<div class="ins4-kpi k-ok"><b>'+f(k.won)+'</b><span>Closed today</span></div>';
@@ -2464,11 +2494,11 @@ function ins4PaintPills(){
   const k=INS4.counts||{}; const el=document.getElementById('ins4-pills'); if(!el) return;
   const p=(id,lbl,n)=>'<button class="ins4-pill'+(INS4.scope===id?' on':'')+'" onclick="ins4Scope(\''+id+'\')">'+lbl+(n!=null?' <b>'+n+'</b>':'')+'</button>';
   el.innerHTML=
-    p('today','TODAY',k.today)
-   +p('overdue','Overdue (till yesterday)',k.overdue)
-   +p('week','Next 7 days',k.week)
-   +p('never','Never called',null)
-   +p('hot','🔥 Hot',k.hot)
+    p('queue','MY 150',k.remaining)
+   +p('today','Today',k.today)
+   +p('tomorrow','Tomorrow',k.tomorrow)
+   +p('week','2–7 days',k.week)
+   +p('fortnight','8–15 days',k.fortnight)
    +'<div class="ins4-q"><span>🔎</span><input id="ins4-qin" placeholder="Name / reg / mobile / chassis…" value="'+raviEsc(INS4.q)+'" oninput="ins4QSearch(this.value)"></div>';
 }
 function ins4Scope(s){ INS4.scope=s; INS4.q=''; INS4.sel=-1; ins4PaintPills(); ins4PaintCachedThenLoad(); }
@@ -2476,11 +2506,14 @@ let INS4_QT=null;
 function ins4QSearch(v){
   INS4.q=String(v||'');
   clearTimeout(INS4_QT);
-  if(INS4.q.trim().length<3){ return; }
+  if(INS4.q.trim().length<3){
+    if(INS4.scope==='search'){ INS4.scope='queue'; INS4.sel=-1; ins4PaintPills(); ins4PaintCachedThenLoad(); }
+    return;
+  }
   INS4_QT=setTimeout(function(){ INS4.scope='search'; ins4Load(); },350);
 }
 
-function ins4CacheKey(){ return 'ins4:'+ins4Me()+':'+INS4.scope; }
+function ins4CacheKey(){ return 'ins4:r69:'+ins4Me()+':'+INS4.scope+':'+(INS4.scope==='search'?INS4.q.trim().toUpperCase():''); }
 function ins4PaintCachedThenLoad(){
   try{
     const raw=localStorage.getItem(ins4CacheKey());
@@ -2491,14 +2524,22 @@ function ins4PaintCachedThenLoad(){
 }
 async function ins4Load(){
   if(typeof sbRpc!=='function'){ ins4Classic(); return; }
+  const seq=++INS4.loadSeq;
   try{
+    const needCounts=!INS4.counts||(Date.now()-INS4.countsAt>30000);
     const [rows,counts]=await Promise.all([
-      sbRpc('ins4_worklist',{p_scope:INS4.scope,p_q:INS4.q.trim(),p_limit:60}),
-      sbRpc('ins4_counts',{})
+      sbRpc('insurance_my_queue',{p_scope:INS4.scope,p_q:INS4.q.trim()}),
+      needCounts?sbRpc('insurance_my_counts',{}):Promise.resolve(INS4.counts)
     ]);
+    if(seq!==INS4.loadSeq) return;
     INS4.rows=Array.isArray(rows)?rows:[];
-    INS4.counts=counts||INS4.counts;
+    if(counts){ INS4.counts=counts; INS4.countsAt=Date.now(); }
     try{ localStorage.setItem(ins4CacheKey(), JSON.stringify({rows:INS4.rows,at:Date.now()})); }catch(e){}
+    const sub=document.getElementById('ins4-sub');
+    if(sub){
+      const src=INS4.counts&&INS4.counts.source_date;
+      sub.textContent=ins4MyName()+' · '+(INS4.counts&&INS4.counts.remaining!=null?INS4.counts.remaining:'—')+' remaining · source '+(src||'not reported');
+    }
     ins4PaintKpis(); ins4PaintPills(); ins4Render(false);
   }catch(e){
     const msg=String(e&&e.message||e);
@@ -2530,15 +2571,16 @@ function ins4Render(stale){
   }
   tb.innerHTML=INS4.rows.map(function(r,i){
     const d=(r.days_left==null)?'—':r.days_left;
-    const exp=r.expiry?String(r.expiry).split('-').reverse().join('-').slice(0,6)+String(r.expiry).slice(2,4):'—';
+    const ep=String(r.expiry||'').split('-');
+    const exp=ep.length===3?(ep[2]+'-'+ep[1]+'-'+ep[0]):'—';
     const last=ins4CodeShort(r.last_status);
     return '<tr id="ins4r-'+i+'" class="'+(INS4.sel===i?'sel':'')+'" onclick="ins4Pick('+i+')" style="cursor:pointer">'
-      +'<td><b>'+raviEsc(r.customer||'—')+'</b><div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+raviEsc(r.model||'')+'</div></td>'
+      +'<td><b>'+raviEsc(r.customer||'—')+'</b><div style="font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+raviEsc(r.model||'')+'</div></td>'
       +'<td class="mono">'+raviEsc(r.reg_no||(r.chassis?('…'+String(r.chassis).slice(-6)):'—'))+'</td>'
       +'<td class="c-exp">'+raviEsc(exp)+'</td>'
       +'<td class="num '+ins4Sev(r.days_left)+'">'+d+'</td>'
       +'<td class="c-last">'+(last?'<span class="chip4" style="background:var(--th);color:var(--ink-2)">'+raviEsc(last)+'</span>':'')+'</td>'
-      +'<td style="font-size:11px;color:var(--ink-2)">'+raviEsc(r.why||'')+'</td>'
+      +'<td style="font-size:12px;color:var(--ink-2)">'+raviEsc(r.why||'')+'</td>'
       +'</tr>'
       +(!ins4Wide()&&INS4.sel===i?'<tr class="sel"><td colspan="6" style="white-space:normal;background:var(--zebra-label)"><div class="ins4-det">'+ins4DetailHtml(r)+'</div></td></tr>':'');
   }).join('');
@@ -2552,24 +2594,67 @@ function ins4Render(stale){
 function ins4Pick(i){
   INS4.sel=(INS4.sel===i)?-1:i; INS4.outcome='';
   ins4Render(false);
+  if(INS4.sel===i&&INS4.rows[i]) ins4Load360(INS4.rows[i]);
   if(ins4Wide()){
     const row=document.getElementById('ins4r-'+i);
     if(row&&row.scrollIntoView) row.scrollIntoView({block:'nearest'});
   }
 }
 
+async function ins4Load360(r){
+  const key=String(r&&r.book_id||''); if(!key||INS4.details[key]) return;
+  INS4.details[key]={loading:true}; ins4Render(false);
+  try{
+    const d=await sbRpc('insurance_customer_360',{p_book_id:key});
+    INS4.details[key]=d&&d.ok?d:{error:'No history returned'};
+  }catch(e){ INS4.details[key]={error:String(e&&e.message||e).slice(0,100)}; }
+  const cur=INS4.rows[INS4.sel]; if(cur&&String(cur.book_id||'')===key) ins4Render(false);
+}
+const INS4_AGG={
+  'PolicyBazaar':'https://www.policybazaar.com/motor-insurance/two-wheeler-insurance/',
+  'Go Digit':'https://www.godigit.com/bike-insurance',
+  'InsuranceDekho':'https://www.insurancedekho.com/bike-insurance',
+  'Coverfox':'https://www.coverfox.com/two-wheeler-insurance/'
+};
+function ins4Agg(name,i){
+  const r=INS4.rows[Number(i)]; if(!r) return;
+  const reg=String(r.reg_no||'').trim();
+  if(reg&&navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(reg).catch(function(){});
+  const url=name==='Direct renewal'&&r.renewal_link?r.renewal_link:INS4_AGG[name];
+  if(url){ window.open(url,'hero-insurance-quote'); ins4Toast(reg?'Registration copied · opening '+name:'Opening '+name); }
+}
+function ins4HistoryHtml(r){
+  const d=INS4.details[String(r.book_id||'')];
+  if(!d) return '<div class="ins4-note">Select once to load this customer’s policy and call history.</div>';
+  if(d.loading) return '<div class="ins4-note">Loading this customer’s history…</div>';
+  if(d.error) return '<div class="ins4-note" style="color:var(--danger2)">'+raviEsc(d.error)+'</div>';
+  const policies=Array.isArray(d.policies)?d.policies:[];
+  const activity=Array.isArray(d.activity)?d.activity:[];
+  let h='<div class="ins4-history">';
+  h+=policies.slice(0,3).map(function(p){ return '<div><b>'+raviEsc(p.insurer||'Policy')+'</b> · '+raviEsc(p.policy_no||'number unavailable')+' · '+raviEsc(p.expiry||'expiry unavailable')+'</div>'; }).join('');
+  h+=activity.slice(0,6).map(function(a){ return '<div><b>'+raviEsc(ins4CodeShort(a.status)||a.status||'Call')+'</b> · '+raviEsc(String(a.at||'').slice(0,10))+(a.reason?' · '+raviEsc(a.reason):'')+'</div>'; }).join('');
+  if(!policies.length&&!activity.length) h+='<div>No previous policy/call history found on the server.</div>';
+  return h+'</div>';
+}
+
 function ins4WaText(r){
   const nm=(r.customer||'').split(' ')[0]||'';
   const when=(r.days_left==null)?'soon':(r.days_left<0?('expired '+Math.abs(r.days_left)+' days ago'):(r.days_left===0?'expiring TODAY':('expiring in '+r.days_left+' days')));
-  return 'Namaste '+nm+' ji! 🙏 This is '+ins4MyName().split(' ')[0]+' from Sehgal Autoriders (Hero), Chinchwad. '
+  const outlet=(typeof USER!=='undefined'&&USER&&(USER.workshop||USER.ws||USER.workshopName))||(r.city||'Sehgal Autoriders');
+  return 'Namaste '+nm+' ji! 🙏 This is '+ins4MyName().split(' ')[0]+' from Sehgal Autoriders (Hero), '+outlet+'. '
     +'The insurance of your '+(r.model||'two-wheeler')+' ('+(r.reg_no||'')+') is '+when+'. '
     +'We renew it the same day at the best price, with full claim support. Shall I WhatsApp you the quote?';
 }
 function ins4DetailHtml(r){
   const oc=INS4_OC.map(o=>'<div class="ins4-oc'+(INS4.outcome===o.c?' on':'')+'" onclick="ins4Outcome(\''+o.c+'\')">'+o.c+'<small>'+o.l+'</small></div>').join('');
-  const tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  const tomorrow=ins4IstDatePlus(1);
   const mob=String(r.mobile||'').replace(/\D/g,'').slice(-10);
   const lastBill=(r.last_bill&&Number(r.last_bill)>0)?('₹'+Number(r.last_bill).toLocaleString('en-IN')):'—';
+  const idx=INS4.rows.indexOf(r);
+  const source=String(r.source_imported_at||'').slice(0,10);
+  const sourceAge=source?Math.floor((Date.parse(ins4IstDatePlus(0)+'T00:00:00Z')-Date.parse(source+'T00:00:00Z'))/86400000):null;
+  const providerBtns=Object.keys(INS4_AGG).map(n=>'<button class="ins4-provider" onclick="ins4Agg(\''+n+'\','+idx+')">'+n+'</button>').join('')
+    +(r.renewal_link?'<button class="ins4-provider" onclick="ins4Agg(\'Direct renewal\','+idx+')">Direct renewal</button>':'');
   return ''
    +'<div style="display:flex;align-items:baseline;gap:8px"><b style="font-size:15px">'+raviEsc(r.customer||'—')+'</b>'
    +(String(r.temp||'').toUpperCase().indexOf('HOT')===0?'<span class="chip4" style="background:var(--danger-fill);color:var(--danger2)">HOT</span>':'')
@@ -2578,6 +2663,7 @@ function ins4DetailHtml(r){
    +(mob?'<a class="ins4-act call" href="tel:+91'+mob+'">📞 Call</a>':'<span class="ins4-act call" style="opacity:.4">📞 No number</span>')
    +(mob?'<a class="ins4-act wa" target="_blank" rel="noopener" href="https://wa.me/91'+mob+'?text='+encodeURIComponent(ins4WaText(r))+'">💬 WhatsApp</a>':'<span class="ins4-act wa" style="opacity:.4">💬 —</span>')
    +'</div>'
+   +'<div class="ins4-source'+(sourceAge!=null&&sourceAge>1?' stale':'')+'">Server source: '+raviEsc(source||'date unavailable')+(sourceAge!=null?' · '+sourceAge+' day'+(sourceAge===1?'':'s')+' old':'')+'</div>'
    +'<h4>Vehicle &amp; policy</h4>'
    +'<div class="kv"><div>Reg no</div><div class="mono">'+raviEsc(r.reg_no||'—')+'</div></div>'
    +'<div class="kv"><div>Model</div><div>'+raviEsc(r.model||'—')+'</div></div>'
@@ -2585,12 +2671,16 @@ function ins4DetailHtml(r){
    +'<div class="kv"><div>Expiry</div><div>'+raviEsc(r.expiry||'—')+' ('+(r.days_left==null?'—':r.days_left+'d')+')</div></div>'
    +'<div class="kv"><div>Insurer</div><div>'+raviEsc(r.insurer||'—')+'</div></div>'
    +'<div class="kv"><div>Policy no</div><div class="mono">'+raviEsc(r.policy_no||'—')+'</div></div>'
+   +'<div class="kv"><div>Policy type</div><div>'+raviEsc(r.policy_type||'—')+'</div></div>'
    +'<div class="kv"><div>Last bill (service)</div><div>'+lastBill+'</div></div>'
    +'<div class="kv"><div>City</div><div>'+raviEsc(r.city||'—')+'</div></div>'
+   +'<h4>Get / compare quote</h4>'
+   +'<div class="ins4-providers">'+providerBtns+'</div>'
    +'<h4>Calls so far</h4>'
    +'<div class="kv"><div>Calls</div><div>'+(r.calls||0)+(r.owner_name?' · '+raviEsc(r.owner_name):'')+'</div></div>'
    +'<div class="kv"><div>Last outcome</div><div>'+raviEsc(ins4CodeShort(r.last_status)||'—')+(r.premium_quoted?' · quoted ₹'+Number(r.premium_quoted).toLocaleString('en-IN'):'')+'</div></div>'
    +'<div class="kv"><div>Next follow-up</div><div>'+raviEsc(r.next_follow_up||'—')+'</div></div>'
+   +'<h4>Customer 360 history</h4>'+ins4HistoryHtml(r)
    +'<h4>Log this call</h4>'
    +'<div class="ins4-out">'+oc+'</div>'
    +'<div class="ins4-follow" id="ins4-follow"><input type="date" id="ins4-fdate" value="'+tomorrow+'"><input type="time" id="ins4-ftime" value="11:00"></div>'
@@ -2619,7 +2709,9 @@ function ins4Save(){
   const follow=(INS4.outcome==='CB')?(g('ins4-fdate')||null):null;
   const prem=(INS4.outcome==='QT'||INS4.outcome==='RN')?(Number(g('ins4-pamt'))||null):null;
   const reason=(INS4.outcome==='NI'||INS4.outcome==='LT')?String(g('ins4-rtext')||'').slice(0,140):'';
-  const payload={p_reg_no:(r.reg_no||r.chassis||''), p_outcome:oc.code, p_reason:reason, p_premium:prem, p_follow:follow};
+  const payload={p_book_id:r.book_id, p_outcome:oc.code, p_reason:reason,
+    p_premium:prem, p_follow:follow, p_idempotency_key:ins4Uuid()};
+  if(!payload.p_book_id){ ins4Toast('This row has no server identity — refresh the queue'); return; }
   INS4.saving=true;
   const sb=det&&det.querySelector('#ins4-savebtn');
   if(sb){ sb.innerHTML='<span class="spin"></span>Saving'; sb.disabled=true; }
@@ -2627,25 +2719,26 @@ function ins4Save(){
   /* Optimistic: the state on screen moves NOW; a failed write queues + rolls on retry. */
   r.last_status=oc.code; r.calls=(r.calls||0)+1;
   r.next_follow_up=follow||r.next_follow_up; if(prem) r.premium_quoted=prem;
-  const terminal=(INS4.outcome==='RN'||INS4.outcome==='NI'||INS4.outcome==='WN'||INS4.outcome==='LT');
   const k=INS4.counts||{};
   k.calls=(k.calls||0)+1; if(INS4.outcome==='QT') k.quotes=(k.quotes||0)+1;
   if(INS4.outcome==='RN'){ k.won=(k.won||0)+1; }
+  k.remaining=Math.max(0,(k.remaining||0)-1);
   ins4PaintKpis();
 
   const finish=function(){
     INS4.saving=false; INS4.outcome='';
-    if(terminal){ INS4.rows.splice(i,1); INS4.sel=-1; }
+    INS4.rows.splice(i,1); INS4.sel=-1;
     ins4Render(false);
   };
   const legacyTrail=function(){
+    if(!r.reg_no) return;
     try{
       jgetRaw('inscrm2_save',{reg:(r.reg_no||''), customer:(r.customer||''), mobile:(r.mobile||''),
         expiry:'', by:ins4Me(), byName:ins4MyName(), status:oc.code,
         remarks:reason, premium:prem||'', called:'1'}, function(){}, 30000);
     }catch(e){}
   };
-  sbRpc('ins4_log', payload).then(function(res){
+  sbRpc('insurance_log_outcome', payload).then(function(res){
     if(!(res&&res.ok)) throw new Error((res&&res.error)||'save failed');
     legacyTrail();
     ins4Toast('Saved — '+oc.l);
@@ -2653,9 +2746,9 @@ function ins4Save(){
   }).catch(function(e){
     /* Keep the work: queue it, keep the optimistic state, drain later. */
     try{
-      const q=JSON.parse(localStorage.getItem('ins4_queue')||'[]');
+      const q=JSON.parse(localStorage.getItem(ins4QueueKey())||'[]');
       q.push({payload:payload, legacy:{reg:r.reg_no||'',customer:r.customer||'',mobile:r.mobile||''}, at:Date.now()});
-      localStorage.setItem('ins4_queue', JSON.stringify(q));
+      localStorage.setItem(ins4QueueKey(), JSON.stringify(q));
     }catch(_){}
     ins4Toast('Saved on this phone — will sync');
     ins4QueueBar();
@@ -2664,25 +2757,25 @@ function ins4Save(){
 }
 function ins4QueueBar(){
   const el=document.getElementById('ins4-queuebar'); if(!el) return;
-  let q=[]; try{ q=JSON.parse(localStorage.getItem('ins4_queue')||'[]'); }catch(e){}
+  let q=[]; try{ q=JSON.parse(localStorage.getItem(ins4QueueKey())||'[]'); }catch(e){}
   if(!q.length){ el.style.display='none'; return; }
   el.style.display='block';
   el.innerHTML='⏳ '+q.length+' outcome'+(q.length===1?'':'s')+' waiting to sync <button onclick="ins4DrainQueue(true)">Retry now</button>';
 }
 async function ins4DrainQueue(manual){
-  let q=[]; try{ q=JSON.parse(localStorage.getItem('ins4_queue')||'[]'); }catch(e){}
+  let q=[]; try{ q=JSON.parse(localStorage.getItem(ins4QueueKey())||'[]'); }catch(e){}
   if(!q.length){ ins4QueueBar(); return; }
   const rest=[];
   for(const item of q){
     try{
-      const res=await sbRpc('ins4_log', item.payload);
+      const res=await sbRpc('insurance_log_outcome', item.payload);
       if(!(res&&res.ok)) throw new Error('nope');
-      try{ jgetRaw('inscrm2_save',{reg:item.legacy.reg, customer:item.legacy.customer, mobile:item.legacy.mobile,
+      try{ if(item.legacy.reg) jgetRaw('inscrm2_save',{reg:item.legacy.reg, customer:item.legacy.customer, mobile:item.legacy.mobile,
         expiry:'', by:ins4Me(), byName:ins4MyName(), status:item.payload.p_outcome,
         remarks:item.payload.p_reason||'', premium:item.payload.p_premium||'', called:'1'}, function(){}, 30000); }catch(e){}
     }catch(e){ rest.push(item); }
   }
-  try{ localStorage.setItem('ins4_queue', JSON.stringify(rest)); }catch(e){}
+  try{ localStorage.setItem(ins4QueueKey(), JSON.stringify(rest)); }catch(e){}
   ins4QueueBar();
   if(manual) ins4Toast(rest.length?('Still '+rest.length+' waiting'):'All synced ✓');
 }
@@ -6080,6 +6173,8 @@ document.getElementById('es-type').addEventListener('change',()=>{
   ES_STAGE_MANUAL=false;
   if(val('es-type')==='free'){ try{ esSuggestFreeStage(); }catch(e){} }
   esRenderVariable();
+  /* R69: an SA override must move the price on screen straight away. */
+  try{ esUpdateLive(); }catch(e){}
 });
 document.getElementById('es-freestage').addEventListener('change',()=>{ ES_STAGE_MANUAL=true; esRenderVariable(); });
 ['es-km','es-dos'].forEach(function(id){ const el=document.getElementById(id); if(el) el.addEventListener('change',function(){ if(val('es-type')==='free'){ try{ esSuggestFreeStage(); esRenderVariable(); }catch(e){} } }); });
@@ -6733,18 +6828,22 @@ function esAddDueItem(name){
 let ES_COMPOSED=null, ES_COMPOSE_KEY='', ES_COMPOSE_ERR='';
 
 /* The gate already decided the service type. geFinalPurpose() writes it into
-   Visit Purpose as "Service - Paid Service", and the pending row carries it. */
+   Visit Purpose as "Service - Paid Service", and the pending row carries it.
+   R69 (Ravi, 17-Aug-2026): this PREFILLS the picker, it no longer freezes it.
+   The line under the dropdown says where the value came from. */
 function esApplyGateService(g){
   const purpose=String((g&&g.purpose)||'').trim();
   const rules=[[/free/i,'free'],[/paid/i,'paid'],[/joyride/i,'joyride'],
                [/general/i,'general'],[/accident|bodyshop/i,'accidental']];
   let t='';
   for(let i=0;i<rules.length;i++){ if(rules[i][0].test(purpose)){ t=rules[i][1]; break; } }
-  const sel=document.getElementById('es-type'), txt=document.getElementById('es-type-txt');
+  const sel=document.getElementById('es-type'), src=document.getElementById('es-type-src');
   const label={free:'Free service',paid:'Paid service',joyride:'Joyride',
                general:'General repair',accidental:'Accidental'}[t]||'';
   if(sel) sel.value=t;
-  if(txt) txt.value = label ? label : ((purpose||'—')+' — not a service visit');
+  if(src) src.textContent = label
+    ? ('Gate recorded '+label+'. Change it if the vehicle says otherwise.')
+    : ('Gate recorded '+(purpose||'—')+' — not a service visit. Pick the service type here.');
   const fw=document.getElementById('es-freestage-wrap');
   if(fw) fw.style.display=(t==='free')?'block':'none';
   if(t==='free'){ try{ esSuggestFreeStage(); }catch(e){} }
@@ -6957,8 +7056,11 @@ function esSameAsAbove(){
   esUpdateLive();
 }
 
-/* Odometer or free-stage changed on screen -> the manual is read again. */
-['es-km','es-dos','es-freestage'].forEach(function(id){
+/* Odometer, free-stage or SERVICE TYPE changed on screen -> the manual is read
+   again. R69: es-type joined this list the day the SA got the picker back — a
+   free-to-paid switch changes every composed line, and without it the screen
+   kept the previous type's parts. */
+['es-km','es-dos','es-freestage','es-type'].forEach(function(id){
   const el=document.getElementById(id);
   if(el) el.addEventListener('change', function(){ try{ esCompose(); }catch(e){} });
 });
@@ -7311,7 +7413,7 @@ function esNewEstimate(){
   ES_COMPOSED=null; ES_COMPOSE_KEY=''; ES_COMPOSE_ERR='';
   const mw=document.getElementById('es-manual-wrap'); if(mw) mw.style.display='none';
   const hw=document.getElementById('es-hist-wrap'); if(hw) hw.style.display='none';
-  const tt=document.getElementById('es-type-txt'); if(tt) tt.value='—';
+  const tt=document.getElementById('es-type-src'); if(tt) tt.textContent='';
   document.getElementById('es-model').value=''; document.getElementById('es-type').value=''; const pcat=document.getElementById('es-add-pcat'); if(pcat) pcat.value='';
   const exch=document.getElementById('es-express'); if(exch) exch.checked=false; // FIX: express fee no longer silently carries into the next estimate
   document.getElementById('es-freestage-wrap').style.display='none';
@@ -7347,19 +7449,19 @@ function esNewEstimate(){
   }catch(e){}
 }
 function esWaNum(m){ let n=(m||'').replace(/\D/g,''); if(n.length===10) n='91'+n; else if(n.length===11&&n[0]==='0') n='91'+n.slice(1); return n; }
-function esWaText(){
-  const d=ES.current; const L=['*Sehgal Auto — Service Estimate*',d.id+'  |  '+new Date(d.ts).toLocaleString('en-IN'),
+function esWaText(source){
+  const d=source||ES.current; const L=['*Sehgal Auto — Service Estimate*',d.id+'  |  '+new Date(d.ts).toLocaleString('en-IN'),
     d.model+(d.reg?'  ('+d.reg+')':''),d.km.toLocaleString('en-IN')+' km  |  '+d.service,''];
   [['Engine Oil',d.items.oil],['Parts',d.items.parts],['Labour',d.items.labour],['Estimate Protection',d.items.protection||[]],['Express Delivery',d.items.express||[]]].forEach(([t,a])=>a.forEach(x=>L.push('• '+x.l+' — '+(x.free?'No charge':inr(x.p)))));
   L.push('','Sub-total: '+inr(d.pre)); if(d.disc>0) L.push('Discount: -'+inr(d.disc));
   L.push('GST 18%: '+inr(d.tax),'*Total Estimate: '+inr(d.total)+'*','','Sehgal Auto, '+USER.ws);
   return L.join('\n');
 }
-function esSendWAtext(){ if(!ES.current) return; const n=esWaNum(ES.current.mob); if(n.length<11){ document.getElementById('es-msg').textContent='Enter a valid 10-digit mobile number.'; return; }
-  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(esWaText()),'_blank'); }
-function esBuildPDF(){
+function esSendWAtext(source){ const d=source||ES.current; if(!d) return; const n=esWaNum(d.mob); if(n.length<11){ document.getElementById('es-msg').textContent='Enter a valid 10-digit mobile number.'; return; }
+  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(esWaText(d)),'_blank'); }
+function esBuildPDF(source){
 
-  const d=ES.current; const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'}); const W=doc.internal.pageSize.getWidth();
+  const d=source||ES.current; const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'}); const W=doc.internal.pageSize.getWidth();
   doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.setTextColor(21,24,28); doc.text('SEHGAL AUTO',40,52);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(91,100,112); doc.text('Authorised Hero MotoCorp Workshop · '+USER.ws,40,66);
   doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(192,57,43); doc.text('SERVICE ESTIMATE',W-40,52,{align:'right'});
@@ -7388,15 +7490,15 @@ function esBuildPDF(){
 }
 /* SPEED 1: esBuildPDF returns a document the caller chains onto, so the library
    guard lives HERE, not inside the builder. */
-function esDownloadPDF(){ if(!ES.current) return;
-  heroEnsureLibs('pdf', function(ok){ if(!ok) return; esBuildPDF().save('Estimate_'+ES.current.id+'.pdf'); });
+function esDownloadPDF(source){ const d=source||ES.current; if(!d) return;
+  heroEnsureLibs('pdf', function(ok){ if(!ok) return; esBuildPDF(d).save('Estimate_'+d.id+'.pdf'); });
 }
-async function esSharePDF(){
-  if(!ES.current) return; const m=document.getElementById('es-msg');
+async function esSharePDF(source){
+  const d=source||ES.current; if(!d) return; const m=document.getElementById('es-msg');
   const libsOk=await heroEnsureLibs('pdf'); if(!libsOk) return;
-  const blob=esBuildPDF().output('blob'); const file=new File([blob],'Estimate_'+ES.current.id+'.pdf',{type:'application/pdf'});
+  const blob=esBuildPDF(d).output('blob'); const file=new File([blob],'Estimate_'+d.id+'.pdf',{type:'application/pdf'});
   if(navigator.canShare && navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file],title:'Service Estimate',text:'Sehgal Auto — your service estimate'}); }catch(e){} }
-  else{ esBuildPDF().save('Estimate_'+ES.current.id+'.pdf'); m.textContent='PDF downloaded. Open WhatsApp and attach it (file-sharing works directly on a phone).'; }
+  else{ esBuildPDF(d).save('Estimate_'+d.id+'.pdf'); m.textContent='PDF downloaded. Open WhatsApp and attach it (file-sharing works directly on a phone).'; }
 }
 async function esPushSheet(d){
   const rec={id:d.id,ts:d.ts,name:d.name,mob:d.mob,reg:d.reg,model:d.model,km:d.km,mo:d.mo,service:d.service,
@@ -7599,7 +7701,10 @@ function esOnGatePick(g){
      "Service type selection is already done from the gate why advisor has to do
       it again. Are you there for increasing work or decreasing work?"
      The guard's pill grid saves it inside Visit Purpose as "Service - Paid
-     Service" (geFinalPurpose), and the pending row already carries it. */
+     Service" (geFinalPurpose), and the pending row already carries it.
+     R69 (Ravi, 17-Aug-2026): the gate still fills it, but locking the field was
+     wrong — "Service type can be changed during preparing estimate." The SA can
+     overrule the barrier again; this call prefills, it does not freeze. */
   esApplyGateService(g);
   /* The additional mobile starts from whatever the gate recorded as the
      alternate contact; it stays compulsory and editable. */
@@ -11125,19 +11230,21 @@ function heroKpiFromCache(boxId){
     return {
       id:e.id||e.estimateId||('EST'+Date.now().toString().slice(-7)), ts:Number(e.ts||Date.parse(e.date||e.time)||Date.now()),
       name:e.name||e.customer||'', mob:e.mob||e.mobile||'', reg:raviNormalizeReg(e.reg||''), model:e.model||'',
-      fam:'', km:Number(e.km||0), mo:Number(e.mo||0), service:e.service||'', type:e.type||'', items:items,
+      fam:'', km:Number(e.km||e.odometer||e['Odometer']||0),
+      mo:Number(e.mo||e.age_mo||e['Age (mo)']||0), service:e.service||'', type:e.type||'', items:items,
       parts:Number(e.parts||0), oil:Number(e.oil||0), labour:Number(e.labour||0), pre:pre, disc:Number(e.discount||e.disc||0), tax:tax, total:total, floor:Number(e.floor||0)
     };
   }
   window.raviUseExistingEstimate = function(i, action){
     const e=(window.RAVI_SA_EST_CACHE||[])[i]; const d=normalizeStoredEstimate(e);
     if(!d){ alert('Estimate not found. Sync and try again.'); return; }
-    const prev=ES.current;
-    ES.current=d;
-    if(action==='view'){ showEstimatePreview(Object.assign({}, e, {subtotal:d.pre,gst:d.tax,total:d.total,items:d.items,model:d.model,service:d.service,empname:USER.personName}), d.reg, d.name, d.mob); return; }
-    if(action==='pdf'){ esDownloadPDF(); ES.current=prev; return; }
-    if(action==='wa'){ esSendWAtext(); ES.current=prev; return; }
-    if(action==='wapdf'){ esSharePDF().finally(()=>{ ES.current=prev; }); return; }
+    if(action==='view'){
+      showEstimatePreview(Object.assign({}, e, {subtotal:d.pre,gst:d.tax,total:d.total,items:d.items,model:d.model,service:d.service,km:d.km,mo:d.mo,empname:USER.personName}), d.reg, d.name, d.mob);
+      return;
+    }
+    if(action==='pdf'){ esDownloadPDF(d); return; }
+    if(action==='wa'){ esSendWAtext(d); return; }
+    if(action==='wapdf'){ esSharePDF(d); return; }
   };
 
   window.raviOpenDocModal = function(reg){
@@ -14086,7 +14193,7 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
    --------------------------------------------------------------------------- */
 var RT = { ready:false, loading:false, tried:false,
            complaint:[], labour:[], ladder:[], modelmap:{}, model:{},
-           byCode:{}, byComplaint:{}, parts:[], partsLoaded:false, partsLoading:false };
+           byCode:{}, byComplaint:{}, parts:[], partsByComplaint:{}, partsLoading:{} };
 
 var RT_CATS = ['Brakes','Engine','Transmission','Electrical','Suspension/Steering',
                'Fuel','Fuel Injection','Frame/Body','Value Added','General','Other'];
@@ -14120,22 +14227,20 @@ function rtLoad(cb){
     cb && cb(true);
   });
 }
-/* Parts are only pulled when the SA actually opens a complaint — 8,239 rows in
-   5 chunks, fetched once per session, never on estimate open. */
-function rtLoadParts(cb){
-  if(RT.partsLoaded){ cb&&cb(); return; }
-  if(RT.partsLoading){ setTimeout(function(){ rtLoadParts(cb); },300); return; }
-  RT.partsLoading=true;
-  var got=[], i=0;
-  (function next(){
-    jget('tree_parts',{i:i},function(res){
-      if(!res||!res.ok){ RT.partsLoading=false; RT.partsLoaded=true; RT.parts=got; cb&&cb(); return; }
-      got=got.concat(res.rows||[]);
-      i++;
-      if(i < (res.chunks||1)) next();
-      else { RT.parts=got; RT.partsLoaded=true; RT.partsLoading=false; cb&&cb(); }
-    });
-  })();
+/* R69: fetch only the links for the complaint the advisor opened. The former
+   client downloaded all 8,239 rows in five sequential requests. */
+function rtLoadParts(cc,cb){
+  cc=rtCode(cc); if(!cc){ cb&&cb(); return; }
+  if(RT.partsByComplaint[cc]){ cb&&cb(); return; }
+  if(RT.partsLoading[cc]){ setTimeout(function(){ rtLoadParts(cc,cb); },250); return; }
+  RT.partsLoading[cc]=true;
+  jget('tree_parts',{cc:cc},function(res){
+    var got=(res&&res.ok&&Array.isArray(res.rows))?res.rows:[];
+    RT.partsByComplaint[cc]=got; delete RT.partsLoading[cc];
+    var have={}; RT.parts.forEach(function(p){ have[String(p[0])+'|'+String(p[5])]=1; });
+    got.forEach(function(p){ var k=String(p[0])+'|'+String(p[5]); if(!have[k]){ have[k]=1; RT.parts.push(p); } });
+    cb&&cb();
+  });
 }
 
 /* ---------------------------------------------------------------------------
@@ -14229,7 +14334,7 @@ function rtDraw(){
   if(!RT_VIEW.cat){ body.innerHTML=rtCatHtml(); return; }
   if(!RT_VIEW.cc){ body.innerHTML=rtComplaintHtml(RT_VIEW.cat); return; }
   body.innerHTML=rtWorkHtml(RT_VIEW.cc);
-  rtLoadParts(function(){ if(RT_VIEW.cc && !RT_VIEW.q) document.getElementById('rt-body').innerHTML=rtWorkHtml(RT_VIEW.cc); });
+  rtLoadParts(RT_VIEW.cc,function(){ if(RT_VIEW.cc && !RT_VIEW.q) document.getElementById('rt-body').innerHTML=rtWorkHtml(RT_VIEW.cc); });
 }
 function rtGo(cat,cc){ RT_VIEW.cat=cat; RT_VIEW.cc=cc||''; RT_VIEW.q=''; 
   var s=document.getElementById('rt-search'); if(s) s.value=''; rtDraw();
@@ -14276,8 +14381,8 @@ function rtWorkHtml(cc){
   h+= rows.length ? rows.map(function(r){ return rtLabRow(r,cc); }).join('')
                   : '<div class="rt-empty">No labour code is linked to this complaint in the DMS master.</div>';
 
-  if(RT.partsLoaded){
-    var P=RT.parts.filter(function(p){ return p[5]===cc; })
+  if(RT.partsByComplaint[cc]){
+    var P=RT.partsByComplaint[cc].slice()
             .sort(function(a,b){ return (b[7]||0)-(a[7]||0); }).slice(0,25);
     h+='<div class="rt-sec">Parts usually replaced</div>';
     h+= P.length ? P.map(rtPartRow).join('') : '<div class="rt-empty">No part is linked to this complaint.</div>';
@@ -14338,10 +14443,10 @@ function rtSearchHtml(q){
         .map(function(x){ return rtResolve(x,rates); })
         .filter(function(r){ return r.ev!=='R'; }).slice(0,20);
   if(L.length){ h+='<div class="rt-sec">Labour codes</div>'+L.map(function(r){ return rtLabRow(r,''); }).join(''); n+=L.length; }
-  if(RT.partsLoaded){
+  if(RT.parts.length){
     var P=RT.parts.filter(function(p){ return p[0].toUpperCase().indexOf(Q)>-1 || String(p[1]).toUpperCase().indexOf(Q)>-1; }).slice(0,20);
     if(P.length){ h+='<div class="rt-sec">Parts</div>'+P.map(rtPartRow).join(''); n+=P.length; }
-  } else { rtLoadParts(function(){ if(RT_VIEW.q) rtDraw(); }); }
+  }
   /* R24 \u2014 the tree holds 8,239 parts; Hero makes 55,575. Everything above is a
      local filter over what is already on the phone; this placeholder is filled
      from the server for the other 47,442, so a part the dealer has never billed
@@ -14760,7 +14865,11 @@ function rtEnsureStrip(){
     +'<div class="rt-mk" style="left:33.3%"></div><div class="rt-mk" style="left:66.6%"></div></div>'
     +'<div id="rt-ticks"><span>2:1</span><span>1.5:1</span><span>1:1</span></div>'
     +'<div id="rt-next"></div>'
-    +'';   /* R66: complaint / suggested-labour / search-labour buttons stripped */
+    +'<div id="rt-actions">'
+    +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'cat\')">Add by complaint</button>'
+    +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')">Suggested labour</button>'
+    +'<button type="button" class="rt-btn" onclick="esOpenLabPicker()">Search labour</button>'
+    +'</div>';
   live.parentNode.insertBefore(d, live.nextSibling);
   return true;
 }
@@ -15567,8 +15676,17 @@ function huDiag(){
    ================================================================================ */
 
 /* ------------------------------ PARTS SCANNER ------------------------------ */
-let PS_LAST={photo:'',extra:{},guess:null};
-function psBootMod(){ psLoadRecent(); }
+let PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''};
+function psEngineState(text,state){
+  const el=document.getElementById('ps-engine-status'); if(!el) return;
+  el.textContent=text; el.setAttribute('data-state',state||'idle');
+}
+function psBootMod(){
+  psLoadRecent();
+  Promise.resolve(typeof sbToken==='function'?sbToken():'').then(function(t){
+    psEngineState(t?'Signed in · engine checked on scan':'Sign in required','idle');
+  }).catch(function(){ psEngineState('Sign in required','error'); });
+}
 function psStatus(msg,kind){
   const el=document.getElementById('ps-status'); if(!el) return;
   el.className='ps2-status'+(kind==='err'?' err':(kind==='ok'?' ok':''));
@@ -15584,7 +15702,8 @@ function psSetSaving(on){
   b.innerHTML=on?'<span aria-hidden="true">↻</span><span>Saving scan…</span>':'<span aria-hidden="true">✓</span><span>Save verified scan</span>';
 }
 function psClearScan(){
-  PS_LAST={photo:'',extra:{},guess:null}; PS_VERIFY=null; PS_VSEQ++;
+  if(PS_LAST.previewUrl){ try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){} }
+  PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''}; PS_VERIFY=null; PS_VSEQ++;
   psSetBusy(false); psSetSaving(false); psStatus('');
   ['ps-preview','ps-result'].forEach(function(id){ const el=document.getElementById(id); if(el) el.style.display='none'; });
   ['ps-partno','ps-desc','ps-mrp','ps-barcode','ps-remarks','ps-raw'].forEach(function(id){ const el=document.getElementById(id); if(el) el.value=''; });
@@ -15602,19 +15721,26 @@ function psClearScan(){
 function psPickPhoto(mode){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
   if(mode==='camera') inp.setAttribute('capture','environment');
-  inp.onchange=function(){
+  inp.onchange=async function(){
     const f=inp.files[0]; if(!f) return;
-    const rd=new FileReader();
-    rd.onload=function(e){
-      PS_LAST={photo:e.target.result,extra:{},guess:null};
+    if(!/^image\//i.test(f.type||'')){ psStatus('Choose a camera image.','err'); return; }
+    if(f.size>25*1024*1024){ psStatus('Photo is larger than 25 MB. Retake at normal camera resolution.','err'); return; }
+    psSetBusy(true); psStatus('Preparing photo at phone-safe resolution…');
+    try{
+      const c=await psUpright(f,2048);
+      const blob=await new Promise(function(res,rej){
+        c.toBlob(function(b){ b?res(b):rej(new Error('Could not prepare JPEG')); },'image/jpeg',0.90);
+      });
+      if(PS_LAST.previewUrl){ try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){} }
+      const previewUrl=URL.createObjectURL(blob);
+      PS_LAST={photo:previewUrl,photoBlob:blob,previewUrl:previewUrl,extra:{},guess:null,provider:''};
       PS_VERIFY=null; PS_VSEQ++; psVerifyBox('');   /* last photo's verdict must not survive into this one */
-      psSetSaving(false); psSetBusy(true);
+      psSetSaving(false);
       const pv=document.getElementById('ps-preview'); pv.style.display='block';
-      document.getElementById('ps-img').src=e.target.result;
+      document.getElementById('ps-img').src=previewUrl;
       document.getElementById('ps-result').style.display='none';
-      psAnalyze(e.target.result);
-    };
-    rd.readAsDataURL(f);
+      psAnalyze(blob);
+    }catch(e){ psSetBusy(false); psStatus('Could not prepare this image. Try JPEG or take a new photo.','err'); }
   };
   inp.click();
 }
@@ -15641,16 +15767,20 @@ async function psUpright(src, maxW){
       bmp=await createImageBitmap(blob,{imageOrientation:'from-image'});
     }
   }catch(e){ bmp=null; }
+  let tempUrl='';
   if(!bmp){
     bmp=await new Promise(function(res,rej){
       const i=new Image(); i.onload=function(){ res(i); }; i.onerror=rej;
-      i.src=(src instanceof Blob)?URL.createObjectURL(src):src;
+      tempUrl=(src instanceof Blob)?URL.createObjectURL(src):'';
+      i.src=tempUrl||src;
     });
   }
   let w=bmp.width, h=bmp.height;
   if(w>maxW){ h=Math.round(h*maxW/w); w=maxW; }
   const c=document.createElement('canvas'); c.width=w; c.height=h;
   c.getContext('2d').drawImage(bmp,0,0,w,h);
+  try{ if(bmp&&typeof bmp.close==='function') bmp.close(); }catch(e){}
+  if(tempUrl) try{ URL.revokeObjectURL(tempUrl); }catch(e){}
   return c;
 }
 function psRotate(src, deg){
@@ -15695,8 +15825,7 @@ async function psBarcode(canvas){
     };
     const W=canvas.width,H=canvas.height;
     return attempt(W,H,x=>x.drawImage(canvas,0,0))
-        || attempt(H,W,x=>{x.translate(H,0);x.rotate(Math.PI/2);x.drawImage(canvas,0,0);})
-        || attempt(W*2,H*2,x=>{x.scale(2,2);x.drawImage(canvas,0,0);});
+        || attempt(H,W,x=>{x.translate(H,0);x.rotate(Math.PI/2);x.drawImage(canvas,0,0);});
   }catch(e){ return null; }
 }
 /* R55.3 — the visible thinking. Every step of a read is logged where the
@@ -15792,13 +15921,87 @@ function psDecodeFromText(){
   psCorrectFromCatalogue();   /* R29 — the dictionary. Never blocks the save. */
   psVerifyPart();             /* R24 — never blocks the save. */
 }
+function psApplyIdentified_(j,barcode){
+  const r=(j&&j.result)||{};
+  const nums=Array.from(new Set((Array.isArray(r.part_numbers)?r.part_numbers:[])
+    .map(function(x){ return String(x||'').toUpperCase().trim(); }).filter(Boolean)));
+  const raw=String(r.raw_text||'').trim();
+  const g={label_found:!!(raw||nums.length),part_no:nums.length===1?nums[0]:'',
+    description:(r.part_name&&String(r.part_name).toLowerCase()!=='unknown')?String(r.part_name):'',
+    mrp:r.printed_mrp==null?'':String(r.printed_mrp),barcode:String(barcode||''),extra:{},
+    part_guess:String(r.part_name||''),probable_models:[],confidence_percent:0};
+  if(!g.part_no&&nums.length===0&&g.barcode&&/[A-Z]/i.test(g.barcode)&&/\d/.test(g.barcode)) g.part_no=g.barcode.toUpperCase();
+  if(r.category) g.extra.CATEGORY=String(r.category);
+  if(r.brand) g.extra.BRAND=String(r.brand);
+  if(r.condition) g.extra.CONDITION=String(r.condition);
+  if(r.count_guess) g.extra['VISIBLE COUNT']=String(r.count_guess);
+  if(nums.length>1) g.extra['PART NUMBER OPTIONS']=nums.join(' | ');
+  const provider=String(r.provider||'unknown');
+  const tried=j&&j.diag&&j.diag.tree?String(j.diag.tree):provider;
+  g.extra['READ PROVIDER']=provider; g.extra['ENGINE ROUTE']=tried;
+
+  PS_LAST.guess=g; PS_LAST.extra=g.extra; PS_LAST.fullText=raw;
+  PS_LAST.photoPath=(j&&j.photo_path)||null; PS_LAST.provider=provider;
+  PS_LAST.ambiguous=nums.length>1?nums:[];
+  PS_LAST.aux={barcode:g.barcode};
+  const rawEl=document.getElementById('ps-raw'); if(rawEl) rawEl.value=raw;
+  document.getElementById('ps-partno').value=g.part_no;
+  document.getElementById('ps-desc').value=g.description;
+  document.getElementById('ps-mrp').value=g.mrp;
+  document.getElementById('ps-barcode').value=g.barcode;
+  const xw=document.getElementById('ps-extra-wrap'), keys=Object.keys(g.extra);
+  xw.innerHTML=keys.length?('<div style="font-size:12px;font-weight:800;color:#0f766e;margin:4px 0">EXTRA FIELDS FOUND</div>'+keys.map(function(k,i){ return '<div class="fld"><label>'+raviEsc(k)+'</label><input id="ps-extra-'+i+'" value="'+raviEsc(String(g.extra[k]))+'"></div>'; }).join('')):'';
+  const gw=document.getElementById('ps-guess-wrap');
+  if(!g.label_found&&g.part_guess){ gw.style.display='block'; gw.innerHTML='AI identification: <b>'+raviEsc(g.part_guess)+'</b>'; }
+  else { gw.style.display='none'; gw.innerHTML=''; }
+  psThink('Server route: Gemini → Vision → Document AI. Answer selected from '+provider+'.');
+  if(tried&&tried!==provider) psThink('Independent OCR evidence attempted: '+tried+'.');
+  if(g.barcode) psThink('Phone barcode reader found: '+g.barcode+'.');
+  document.getElementById('ps-result').style.display='block';
+  psSetBusy(false);
+  if(nums.length>1){
+    psStatus('More than one printed number was found. Tap the correct one before saving.','err');
+    psShowAmbiguous(nums);
+  }else{
+    psStatus(g.label_found?'✔ Read complete. Verify the fields, then save.':'No label text found. Add what you know and save.','ok');
+    psCorrectFromCatalogue(); psVerifyPart();
+  }
+  if(typeof psDrillShow==='function') psDrillShow(g);
+  psEngineState('Read by '+provider+(tried&&tried!==provider?' · '+tried:''),'ok');
+}
+async function psAnalyzeEdge_(imageBlob){
+  psEnsureRawUI(); PS_LAST.think=[]; document.getElementById('ps-raw').value='';
+  psThink('Photo capped at 2048 px before OCR to protect phone memory.');
+  psEngineState('Checking Gemini → Vision → DocAI','busy');
+  const canvas=await psUpright(imageBlob,2048);
+  const barcodePromise=psBarcode(canvas).catch(function(){ return null; }).then(function(v){
+    canvas.width=1; canvas.height=1; return v;
+  });
+  const call=async function(){
+    const ctl=new AbortController(), timer=setTimeout(function(){ ctl.abort(); },55000);
+    const form=new FormData(); form.append('image',imageBlob,'scan.jpg'); form.append('store','1');
+    try{ return await sbFetch('/functions/v1/identify-part',{method:'POST',body:form,signal:ctl.signal}); }
+    finally{ clearTimeout(timer); }
+  };
+  let res=await call();
+  if(res.status===429){ psStatus('AI is busy — one retry in 3 seconds…'); await new Promise(function(ok){ setTimeout(ok,3000); }); res=await call(); }
+  let j={}; try{ j=await res.json(); }catch(e){}
+  if(!res.ok) throw new Error(j.error||('Scanner HTTP '+res.status));
+  const barcode=await barcodePromise;
+  psApplyIdentified_(j,barcode);
+}
 async function psAnalyze(dataUrl){
   /* R55 rewire: Vision now runs behind the vision-annotate Edge Function —
      the key lives in Supabase secrets, the caller must be signed in, and the
      response shape is the same raw annotate object, so psParseVision_ and
      everything after it is untouched. The old direct-with-synced-key path is
      kept under !SB_ON as the rollback. */
-  if(SB_ON && !(await sbToken())){ psSetBusy(false); psStatus('Sign in again to use the scanner (session expired).','err'); return; }
+  if(SB_ON && !(await sbToken())){ psSetBusy(false); psEngineState('Sign in required','error'); psStatus('Sign in again to use the scanner (session expired).','err'); return; }
+  if(SB_ON){
+    try{ await psAnalyzeEdge_(dataUrl instanceof Blob?dataUrl:(PS_LAST.photoBlob||dataUrl)); }
+    catch(e){ psSetBusy(false); psEngineState('Scan failed · retry','error'); psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err'); }
+    return;
+  }
   const key=SB_ON?'':((typeof geVisionKey==='function')?geVisionKey():'');
   if(!SB_ON && !key){ psSetBusy(false); psStatus('No Vision key set. Ask admin to save the Cloud Vision key in App Settings, then Sync Now.','err'); return; }
   psStatus('🔍 Reading the part label…');
@@ -16152,7 +16355,9 @@ function psVerifyPart(){
 }
 function psTakePart(pn){
   const el=document.getElementById('ps-partno'); if(!el) return;
-  el.value=String(pn||'').toUpperCase(); psCorrectHide(); psVerifyPart();
+  el.value=String(pn||'').toUpperCase();
+  if(PS_LAST) PS_LAST.ambiguous=[];
+  psCorrectHide(); psVerifyPart();
 }
 
 /* ---------------------------------------------------------------------------
@@ -16205,6 +16410,15 @@ function psCorrectBox(html){
   el.style.background='#eff6ff'; el.style.border='1px solid #bfdbfe'; el.style.color='#1e40af';
   el.innerHTML=html;
 }
+function psShowAmbiguous(nums){
+  nums=Array.isArray(nums)?nums:[];
+  if(nums.length<2) return;
+  psCorrectBox('⚠ <b>Several numbers are visible. The scanner will not guess.</b>'
+    +'<div style="margin-top:7px">'+nums.map(function(n){
+      return '<button class="btn ghost sm" style="margin:2px" onclick="psTakePart(\''+
+        String(n).replace(/'/g,"\\'")+'\')">Use '+raviEsc(n)+'</button>';
+    }).join('')+'</div>');
+}
 function psCorrectFromCatalogue(){
   const text=String((PS_LAST&&PS_LAST.fullText)||'').trim();
   psCorrectHide();
@@ -16213,6 +16427,9 @@ function psCorrectFromCatalogue(){
   const read=String((field&&field.value)||'').trim().toUpperCase();
   const my=++PS_CSEQ;
   const desc=String((document.getElementById('ps-desc')||{}).value||'');
+  if(PS_LAST&&Array.isArray(PS_LAST.ambiguous)&&PS_LAST.ambiguous.length>1){
+    psShowAmbiguous(PS_LAST.ambiguous); return;
+  }
 
   /* R55: same dictionary, now the part_ocr_sb RPC (exact tokens, the camera
      substitution table via translate(), description agreement scoring). */
@@ -16225,6 +16442,17 @@ function psCorrectFromCatalogue(){
     const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 
     if(res.found && res.best){
+      const topScore=Number(res.best.score||0);
+      const tied=[res.best].concat(res.candidates||[]).filter(function(x){
+        return x&&x.part&&Number(x.score||0)===topScore;
+      });
+      const seen={}, choices=tied.filter(function(x){
+        const k=norm(x.part.part); if(!k||seen[k]) return false; seen[k]=1; return true;
+      });
+      if(choices.length>1){
+        PS_LAST.ambiguous=choices.map(function(x){ return x.part.part; });
+        psShowAmbiguous(PS_LAST.ambiguous); return;
+      }
       const p=res.best.part;
       if(norm(p.part)===norm(read)){ psCorrectHide(); return; }  /* already right */
 
@@ -16357,6 +16585,11 @@ function psDrillFind(){
 
 function psSaveScan(){
   const g=PS_LAST.guess||{};
+  if(PS_LAST&&Array.isArray(PS_LAST.ambiguous)&&PS_LAST.ambiguous.length>1 &&
+     !String((document.getElementById('ps-partno')||{}).value||'').trim()){
+    psStatus('Choose the correct printed part number before saving.','err');
+    psShowAmbiguous(PS_LAST.ambiguous); return;
+  }
   const extra={};
   Object.keys(PS_LAST.extra||{}).forEach((k,i)=>{
     const el=document.getElementById('ps-extra-'+i);
@@ -16406,7 +16639,7 @@ function psSaveScan(){
       match_confidence: vOK?1:(Number(payload.confidence)>0?Number(payload.confidence)/100:null),
       ai_name: payload.guess||null,
       ocr_text: String((PS_LAST&&PS_LAST.fullText)||'').slice(0,4000)||null,
-      provider: 'vision',
+      provider: (PS_LAST&&PS_LAST.provider)||'unknown',
       photo_path: (PS_LAST&&PS_LAST.photoPath)||null,
       qty: 1,
       notes: payload.remarks||null,
@@ -16417,13 +16650,14 @@ function psSaveScan(){
         psSetSaving(false);
         psStatus('✔ Scan saved. It will appear in Recent scans in a moment.','ok');
         document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none';
-        PS_LAST={photo:'',extra:{},guess:null}; setTimeout(psLoadRecent,800);
+        if(PS_LAST.previewUrl) try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){}
+        PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''}; setTimeout(psLoadRecent,800);
       }).catch(function(e){ psSetSaving(false); psStatus('Save failed: '+String(e.message||e).slice(0,140),'err'); });
     };
-    if(!row.photo_path && PS_LAST && PS_LAST.photo){
+    if(!row.photo_path && PS_LAST && (PS_LAST.photoBlob||PS_LAST.photo)){
       /* compress NOW (1280px), upload as evidence, then insert. A failed
          upload never blocks the save — a scan without its photo still counts. */
-      psUpright(PS_LAST.photo, 1280).then(function(c){
+      psUpright(PS_LAST.photoBlob||PS_LAST.photo, 1280).then(function(c){
         const b64=c.toDataURL('image/jpeg',0.85).split(',')[1];
         const bin=atob(b64); const bytes=new Uint8Array(bin.length);
         for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
@@ -16443,7 +16677,8 @@ function psSaveScan(){
     if(!res||res.ok!==false){
       psStatus('✔ Scan saved. It will appear in Recent scans in a moment.','ok');
       document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none';
-      PS_LAST={photo:'',extra:{},guess:null}; setTimeout(psLoadRecent,1500);
+      if(PS_LAST.previewUrl) try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){}
+      PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''}; setTimeout(psLoadRecent,1500);
     } else psStatus('Save failed: '+((res&&res.error)||'unknown'),'err');
   }).catch(function(e){ psSetSaving(false); psStatus('Save failed: '+String(e).slice(0,120),'err'); });
 }
