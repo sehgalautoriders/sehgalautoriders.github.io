@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 55;
-window.HERO_BUILD = 'R71-2026.08.17.5';
+window.HERO_RELEASE = 56;
+window.HERO_BUILD = 'R71-2026.08.17.6';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5643,6 +5643,10 @@ function esFindPriceLabour(label, modelName){
   if(!raw || !ES_PRICE_LAB.length) return null;
   let best=null, bestScore=0;
   ES_PRICE_LAB.forEach(function(r){
+    /* A description match is not model evidence. The old scorer could choose a
+       DESTINI row for VIDA because the description scored 100 while a model
+       mismatch merely added zero. */
+    if(!heroTreeModelMatches(r['Model'], modelName||val('es-model'))) return;
     const code=esLabCleanCode(r['Labour Code']);
     const desc=String(r['Labour Description']||'').trim();
     if(!code||!desc) return;
@@ -5667,6 +5671,7 @@ function esPriceLabourOptions(){
   // Manual Add Labour dropdown: direct DMS labour master only. No MD_VariableLabour.
   const byKey={};
   ES_PRICE_LAB.forEach(function(r){
+    if(!heroTreeModelMatches(r['Model'], val('es-model'))) return;
     const code=esLabCleanCode(r['Labour Code']);
     const desc=String(r['Labour Description']||'').trim();
     if(!code||!desc||/_OLD$/i.test(code)) return;
@@ -5968,6 +5973,17 @@ function famFor(modelName){ const key=KNOWN_MODELS[String(modelName).toUpperCase
 const HERO_MODEL_OIL={}; // reg-normalised model key -> {part, desc, mrp, vol}
 let HERO_OIL_MAP_LOADED=false;
 function heroOilKey(m){ return String(m||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+/* Strict estimate-tree identity. Prefix is allowed only after full model
+   normalisation, so VIDA VX2 is valid for VIDA VX2 GO 3.4, while DESTINI 125,
+   VIDA V1 and XTREME 160R are not. Blank source models remain unknown. */
+function heroTreeModelKey(m){ return heroNormModel(m); }
+function heroTreeModelMatches(sourceModel, selectedModel){
+  const source=heroTreeModelKey(sourceModel), selected=heroTreeModelKey(selectedModel);
+  if(!source || !selected) return false;
+  if(source===selected) return true;
+  return Math.min(source.length,selected.length)>=5 &&
+    (source.indexOf(selected)===0 || selected.indexOf(source)===0);
+}
 function heroApplyOilMap(rows){
   if(!rows||!rows.length) return;
   let n=0;
@@ -6074,10 +6090,18 @@ function esLoadLabourForSelectedModel(modelName){
   if(sel) sel.innerHTML='<option value="">Loading mapped labour for this model…</option>';
   jget('labour_for_model',{model:modelName},function(res){
     if(req!==ES_LABOUR_REQ || val('es-model')!==modelName) return;
-    ES_PRICE_LAB=(res&&res.rows)||[];
+    /* The selected vehicle is the authority even if an old Apps Script cache,
+       alias or backend fallback returns another model. */
+    ES_PRICE_LAB=((res&&res.rows)||[]).filter(function(r){
+      return heroTreeModelMatches(r['Model'], modelName);
+    });
     ES_LABOUR_MODEL=modelName;
     esRebuildLabDropdown();
     esRenderVariable();
+    try{
+      const p=document.getElementById('rt-panel');
+      if(p && p.style.display==='flex' && RT_VIEW.mode==='suggest') rtDraw();
+    }catch(e){}
   });
 }
 let ES_PARTS_READY=false, ES_PARTS_LOADING=false;
@@ -6236,6 +6260,10 @@ document.getElementById('es-freestage').addEventListener('change',()=>{ ES_STAGE
 ['es-km','es-dos'].forEach(function(id){ const el=document.getElementById(id); if(el) el.addEventListener('change',function(){ if(val('es-type')==='free'){ try{ esSuggestFreeStage(); esRenderVariable(); }catch(e){} } }); });
 document.getElementById('es-model').addEventListener('change',()=>{
   esResetRemoved();
+  /* Never let the previous vehicle's composed estimate or open picker survive
+     beneath a newly selected model while the network request is in flight. */
+  ES_COMPOSED=null; ES_COMPOSE_KEY=''; ES_COMPOSE_ERR='';
+  try{ rtClose(); }catch(e){}
   esLoadLabourForSelectedModel(val('es-model'));
   esEnsurePartsReady(); // preload parts now so Category is ready and fast when the SA reaches it
   try{ esLoadServiceDue(); }catch(e){}   // owner-manual due list
@@ -6391,6 +6419,7 @@ function esBuild(fam, dec, km, modelName){
   const C=ES_COMPOSED;
   if(C){
     (C.oil||[]).forEach(function(o){
+      if(!heroTreeModelMatches(C.model_oil, modelName)) return;
       /* R70: tagged 'oil' rather than passed through as compose's generic
          'manual'. The oil comes from the model's own oil row, never from the
          parts tree, so it can never carry a complaint code — and printing
@@ -6401,6 +6430,7 @@ function esBuild(fam, dec, km, modelName){
                   stock_as_of:o.stock_as_of, why:o.why, src:'oil'});
     });
     (C.parts||[]).forEach(function(x){
+      if(!heroTreeModelMatches(x.from_model||C.model_parts, modelName)) return;
       L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', cc:x.cc||'', stk:x.stock,
                     outlets:x.outlets, stock_as_of:x.stock_as_of, why:x.why,
                     src:x.src, fromModel:x.from_model});
@@ -6409,6 +6439,7 @@ function esBuild(fam, dec, km, modelName){
       L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', why:x.why, src:'consumable', stk:x.stock});
     });
     (C.labour||[]).forEach(function(l){
+      if(!heroTreeModelMatches(l.from_model||C.model_labour, modelName)) return;
       const fit=(l.kind==='fitment');
       L.labour.push({l:l.desc, p:+l.amt||0, code:l.code||'', why:l.why, src:l.src,
                      free:(!fit && !(+l.amt>0)),
@@ -7321,7 +7352,28 @@ function esRenderManual(){
      no part number for this model cannot go on the estimate — the billing desk
      could not type it into the DMS — so it is named here instead of silently
      dropped. */
-  const um=(C.unmapped||[]);
+  const um=(C.unmapped||[]).slice();
+  const selectedModel=String(C.model_asked||val('es-model')||'');
+  (C.oil||[]).forEach(function(x){
+    if(!heroTreeModelMatches(C.model_oil, selectedModel)) um.push({
+      item:x.desc||'Engine oil',
+      why:'Blocked: tree source '+(C.model_oil||'unknown')+' does not match '+selectedModel+'.'
+    });
+  });
+  (C.parts||[]).forEach(function(x){
+    const src=x.from_model||C.model_parts||'';
+    if(!heroTreeModelMatches(src, selectedModel)) um.push({
+      item:x.desc||x.pn||'Part',
+      why:'Blocked: part belongs to '+(src||'an unknown model')+', not '+selectedModel+'.'
+    });
+  });
+  (C.labour||[]).forEach(function(x){
+    const src=x.from_model||C.model_labour||'';
+    if(!heroTreeModelMatches(src, selectedModel)) um.push({
+      item:x.desc||x.code||'Labour',
+      why:'Blocked: labour belongs to '+(src||'an unknown model')+', not '+selectedModel+'.'
+    });
+  });
   if(un){
     un.innerHTML = um.length
       ? '<table class="es-mini es-unmapped"><tbody>'+um.map(function(x){
@@ -7814,6 +7866,7 @@ function esNewEstimate(){
   ['es-name','es-mob','es-mob2','es-reg','es-km','es-dos','es-disc','es-disc-lab','es-disc-parts'].forEach(i=>{const el=document.getElementById(i); if(el) el.value='';});
   /* R65: the composed manual lines belong to ONE vehicle. */
   ES_COMPOSED=null; ES_COMPOSE_KEY=''; ES_COMPOSE_ERR='';
+  ES_PRICE_LAB=[]; ES_LABOUR_MODEL=''; ES_LABOUR_REQ++;
   const mw=document.getElementById('es-manual-wrap'); if(mw) mw.style.display='none';
   const hw=document.getElementById('es-hist-wrap'); if(hw) hw.style.display='none';
   const tt=document.getElementById('es-type-src'); if(tt) tt.textContent='';
@@ -14706,7 +14759,9 @@ function rtModel(){
 }
 function rtModelRates(){
   var map={};
+  var selected=String((typeof val==='function'?val('es-model'):'')||'');
   (ES_PRICE_LAB||[]).forEach(function(r){
+    if(!heroTreeModelMatches(r['Model'], selected)) return;
     var c=rtCode(r['Labour Code']); if(!c) return;
     var p=Number(String(r['Latest Rate (PreGST)']||r['Default Price']||0).replace(/[^0-9.]/g,''))||0;
     if(!map[c] || p>map[c].p) map[c]={p:p, l:String(r['Labour Description']||'').trim()};
@@ -14719,8 +14774,7 @@ function rtResolve(L, rates){
   if(String(L[10]||'')==='ZERO-RATE') return {code:code,name:L[1],rate:0,ev:'R',reason:'free-service code, never billed'};
   if(String(L[10]||'')==='AVOID')     return {code:code,name:L[1],rate:0,ev:'R',reason:'DMS carrier code — do not bill'};
   if(own && own.p>0) return {code:code,name:(own.l||L[1]),rate:own.p,ev:'G',reason:'exact model rate'};
-  var fb=Number(L[6]||L[5]||0);
-  return {code:code,name:L[1],rate:fb,ev:'A',reason:fb>0?'rate from another model — test in DMS':'no rate on record'};
+  return {code:code,name:L[1],rate:0,ev:'R',reason:'not mapped to the selected model'};
 }
 
 /* ---------------------------------------------------------------------------
@@ -14834,14 +14888,10 @@ function rtWorkHtml(cc){
   h+= rows.length ? rows.map(function(r){ return rtLabRow(r,cc); }).join('')
                   : '<div class="rt-empty">No labour code is linked to this complaint in the DMS master.</div>';
 
-  if(RT.partsByComplaint[cc]){
-    var P=RT.partsByComplaint[cc].slice()
-            .sort(function(a,b){ return (b[7]||0)-(a[7]||0); }).slice(0,25);
-    h+='<div class="rt-sec">Parts usually replaced</div>';
-    h+= P.length ? P.map(rtPartRow).join('') : '<div class="rt-empty">No part is linked to this complaint.</div>';
-  } else {
-    h+='<div class="rt-sec">Parts usually replaced</div><div class="rt-empty">Loading parts\u2026</div>';
-  }
+  /* MD_Tree_PartLink has no model column, so those rows cannot prove that a
+     complaint part fits this vehicle. Parts stay in the model-scoped browser. */
+  h+='<div class="rt-sec">Parts for this complaint</div>'
+    +'<div class="rt-empty">Use <b>Parts by category</b> for parts proven against '+rtEsc(rtModel()||'this model')+'.</div>';
   return h;
 }
 function rtLabRow(r, cc){
@@ -14896,17 +14946,9 @@ function rtSearchHtml(q){
         .map(function(x){ return rtResolve(x,rates); })
         .filter(function(r){ return r.ev!=='R'; }).slice(0,20);
   if(L.length){ h+='<div class="rt-sec">Labour codes</div>'+L.map(function(r){ return rtLabRow(r,''); }).join(''); n+=L.length; }
-  if(RT.parts.length){
-    var P=RT.parts.filter(function(p){ return p[0].toUpperCase().indexOf(Q)>-1 || String(p[1]).toUpperCase().indexOf(Q)>-1; }).slice(0,20);
-    if(P.length){ h+='<div class="rt-sec">Parts</div>'+P.map(rtPartRow).join(''); n+=P.length; }
-  }
-  /* R24 \u2014 the tree holds 8,239 parts; Hero makes 55,575. Everything above is a
-     local filter over what is already on the phone; this placeholder is filled
-     from the server for the other 47,442, so a part the dealer has never billed
-     can still be named, priced and put on an estimate. Filled async because it
-     is a network call and the local answer must never wait for it. */
-  h+='<div id="rt-ai-wrap"></div>';
-  rtAllIndia(q);
+  /* Unscoped part links and All-India search have no selected-model fit
+     evidence. The category flow uses mp_tree/mp_in and is model-scoped. */
+  h+='<div class="rt-sec">Parts</div><div class="rt-empty">Use <b>Parts by category</b> to search only parts mapped to '+rtEsc(rtModel()||'this model')+'.</div>';
   return n ? h : h+'<div class="rt-empty" id="rt-ai-empty">Nothing in the dealer\u2019s own tree matches \u201C'+rtEsc(q)+'\u201D.</div>';
 }
 
@@ -16023,8 +16065,7 @@ function ptRate(code, rates, fallbackRow){
   var own=rates[code];
   if(own && own.p>0) return {p:own.p, name:own.l, ev:'G'};
   var L=fallbackRow||RT.byCode[code];
-  var fb=L?Number(L[6]||L[5]||0):0;
-  return {p:fb, name:(L?L[1]:''), ev:'A'};
+  return {p:0, name:(L?L[1]:''), ev:'R'};
 }
 function rtSuggest(){
   var rates=(typeof rtModelRates==='function')?rtModelRates():{};
@@ -16093,6 +16134,10 @@ function ptRow(r){
     +'onclick="rtAddLab(\''+r.code+'\',\''+rtEsc(r.cc||'')+'\',this)">'+(on?'\u2713':'\uFF0B')+'</button></div>';
 }
 function rtSuggestHtml(){
+  var selected=String((typeof val==='function'?val('es-model'):'')||'');
+  if(!selected) return '<div class="rt-empty">Select the vehicle model first.</div>';
+  if(ES_LABOUR_MODEL!==selected)
+    return '<div class="rt-empty">Loading labour mapped to '+rtEsc(selected)+'…</div>';
   var s=rtSuggest();
   var sum=function(a){ return a.reduce(function(x,y){ return x+y.rate; },0); };
   var ratioAfter=function(add){ var l=s.lab+add; return l>0?(Math.round(s.parts/l*10)/10):0; };
