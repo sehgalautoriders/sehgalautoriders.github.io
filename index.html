@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 51;
-window.HERO_BUILD = 'R67-2026.08.14.4';
+window.HERO_RELEASE = 52;
+window.HERO_BUILD = 'R68-2026.08.17.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -14471,8 +14471,8 @@ function rtAddPart(pn, btn){
      end of the file (last-definition-wins), touches no markup above this block.
      Remove the block and the module reverts exactly to s34 behaviour.
 
-     14-Aug-2026: this banner is an HTML comment (<!--) but was closed with the
-     JAVASCRIPT terminator */ instead of -->. So the comment never closed here;
+     14-Aug-2026: this banner used an HTML-comment opener but was closed with the
+     JavaScript terminator instead of the HTML-comment closer, so it stayed open;
      it ran on to the next banner's close at "END ESTIMATE ACCURACY & UI (s35)",
      swallowing the style and script tags below it. Everything in this block —
      the odometer scan in the estimate, the model lock from records, the
@@ -15237,7 +15237,7 @@ function rtSuggestHtml(){
      A code may appear on more than one row when it serves more than one location.
 
      14-Aug-2026: same typo as the s35 banner — this HTML comment was closed with
-     the JavaScript */ instead of -->, so it ran on to the next banner's --> and
+     the JavaScript terminator instead of its HTML closer, so it ran onward and
      swallowed the whole block. Dealer scoping has never run: locBoot, locForCode,
      huRowVisible, codeVisibleToUser and HU_CODE_TO_WS were all undefined in the
      live app. Which means the Premia/PDI bug described above was written on
@@ -15418,8 +15418,8 @@ function locResolveForUser(){
      memory: rows received, codes present, what the map says for each, and
      whether the SA name survived hydration.
 
-     14-Aug-2026: third instance of the same typo — HTML comment opened with <!--
-     and closed with the JavaScript */, so this block was swallowed too. huDiag
+     14-Aug-2026: third instance of the same typo — an HTML comment was opened
+     and closed with the JavaScript terminator, so this block was swallowed too. huDiag
      was undefined in the live app and huActiveRows was never wrapped, which
      means point 2 above ("huRowVisible was written and never called") stayed
      true for a second reason nobody could see.
