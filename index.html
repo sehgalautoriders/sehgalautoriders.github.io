@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 50;
-window.HERO_BUILD = 'R63-2026.08.13.1';
+window.HERO_RELEASE = 51;
+window.HERO_BUILD = 'R67-2026.08.14.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1559,22 +1559,52 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
 </div>
 
+<style id="r65-estimate">
+/* R65 — locked master fields, stock in brackets, one action per line. */
+.es-ro{background:#f1f5f9!important;color:#0f172a!important;font-weight:700;border-color:#cbd5e1!important}
+select.es-ro{opacity:1;-webkit-text-fill-color:#0f172a}
+.es-locked-tag{font-weight:600;font-size:10.5px;color:#64748b;text-transform:none;letter-spacing:0}
+.es-stk{font-family:'Roboto Mono';font-size:11.5px;font-weight:800;color:#065f46}
+.es-stk.zero{color:#b91c1c}
+.es-item-why{font-size:10.5px;color:#64748b;margin-top:2px}
+.es-manual-head{font-size:12px;color:#0f172a;background:#f8fafc;border:1px solid var(--line);
+  border-radius:8px;padding:6px 9px;margin-bottom:6px}
+.es-warn{color:#b45309;font-weight:700}
+.es-hist{font-size:11px;color:#334155;margin:4px 0}
+table.es-mini{width:100%;border-collapse:collapse;font-size:11.5px;margin:4px 0}
+table.es-mini td{padding:3px 6px;border-bottom:1px solid #eef2f7;color:#0f172a;vertical-align:top}
+table.es-mini td:last-child{color:#64748b}
+tr.es-miss td{background:#fff7ed;color:#9a3412;font-weight:700}
+table.es-unmapped td{background:#fef2f2;color:#991b1b}
+table.es-hist td{padding:5px 6px;border-bottom:1px solid #e2e8f0}
+.es-hist-when{white-space:nowrap;color:#0f172a}
+.es-hist-km{font-family:'Roboto Mono';font-size:10.5px;color:#64748b}
+.es-hist-svc{font-weight:700;color:#0f172a}
+.es-hist-items{font-size:10.5px;color:#475569;margin-top:1px}
+.es-hist-usage{font-size:11.5px;color:#0c4a6e;background:#f0f9ff;border:1px solid #bae6fd;
+  border-radius:7px;padding:5px 8px;margin-bottom:5px}
+.es-hist-owed{font-size:11.5px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;
+  border-radius:7px;padding:6px 9px;margin-top:5px}
+.es-hist-owed ul{margin:4px 0 0 16px;padding:0}
+.es-hist-owed li{margin:2px 0}
+.es-hist-owed li span{color:#7c2d12;font-weight:400}
+details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:pointer;padding:4px 0}
+.es-line-remove{padding:2px 7px}
+</style>
 <!-- ================= ESTIMATE VIEW ================= -->
 <div id="view-estimate" style="display:none">
-  <!-- SA MODEL CONFIRMATION POPUP — SA is the authoritative model check (overrides guard) -->
-  <div id="es-model-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px">
-    <div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="font-weight:800;font-size:16px;margin-bottom:4px">🏍 Confirm the model (SA check)</div>
-      <div id="es-model-modal-sub" style="font-size:13px;color:var(--steel);margin-bottom:12px"></div>
-      <div class="fld"><label style="font-size:12px">Reg No</label><input id="es-model-modal-reg" style="text-transform:uppercase" readonly></div>
-      <div class="fld"><label style="font-size:12px">Correct model for this vehicle</label><select id="es-model-modal-select"></select></div>
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn" style="background:#16a34a;flex:1" onclick="esModelConfirm()">✅ Confirm model</button>
-        <button class="btn" style="background:#475569;flex:1" onclick="esCloseModelModal()">Cancel</button>
-      </div>
-      <div id="es-model-modal-hint" style="font-size:11px;color:var(--steel);margin-top:10px;text-align:center">This is the final model check before billing. Your confirmation is recorded and corrects the record.</div>
-    </div>
-  </div>
+  <!-- THE SA MODEL CONFIRMATION POPUP IS GONE (Ravi, 14-Aug-2026).
+       "Now this vehicle in the gate entry itself got everything from the back
+        in the customers table. Why to ask the SA again if it is ok. What if he
+        changes it and we enter the model again in customer master. Now the
+        actual vehicle is splendor and it becomes passion... apne pair pe
+        kulhadi mar ke lena."
+       It asked the advisor to re-confirm a model the customer master already
+       held, and wrote the answer back at SA authority (learn_vehicle stage:SA),
+       so one careless tap rewrote the master for that registration for good.
+       The model now comes from the gate entry, which took it from the customer
+       master, and it is shown locked. A wrong model is corrected in the master,
+       by the people who own the master — never from this screen. -->
   <div class="wrap">
     <div id="es-setup-view" style="display:none">
       <div class="setup-card">
@@ -1605,21 +1635,33 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
 
             <div class="fld"><label>Date &amp; time</label><input id="es-dt" readonly></div>
 
-            <div class="sec">Customer</div>
-            <div class="fld"><label>Customer name *</label><input id="es-name" placeholder="e.g. Ramesh Patil"></div>
+            <!-- R65 (Ravi, 14-Aug-2026). Everything the customer master already
+                 knows is SHOWN and LOCKED. "Nothing that has come from the
+                 customer master table should be able to change by the Service
+                 Advisor otherwise we are spoiling our database." The one field
+                 the SA adds is the additional mobile, and it is compulsory. -->
+            <div class="sec">Customer <span class="es-locked-tag">from customer master · read only</span></div>
+            <div class="fld"><label>Customer name</label><input id="es-name" readonly class="es-ro"></div>
             <div class="row2">
-              <div class="fld"><label>Mobile number *</label><input id="es-mob" inputmode="numeric" placeholder="10-digit"></div>
-              <div class="fld"><label>Reg. number *</label><input id="es-reg" placeholder="MH14 ____" style="text-transform:uppercase"></div>
+              <div class="fld"><label>Mobile number</label><input id="es-mob" readonly class="es-ro"></div>
+              <div class="fld"><label>Reg. number</label><input id="es-reg" readonly class="es-ro" style="text-transform:uppercase"></div>
+            </div>
+            <div class="row2">
+              <div class="fld"><label>Additional mobile *</label><input id="es-mob2" inputmode="numeric" placeholder="10-digit" maxlength="10" oninput="esUpdateLiveDebounced()"></div>
+              <div class="fld"><label>&nbsp;</label><button type="button" class="btn ghost sm" style="margin:0" onclick="esSameAsAbove()">Same as above</button></div>
             </div>
 
-            <div class="sec">Vehicle</div>
-            <div class="fld"><label>Model *</label><select id="es-model"></select><div id="es-model-flag" style="display:none;font-size:11px;margin-top:3px"></div><div id="es-model-src" style="display:none;font-size:11px;margin-top:3px;font-weight:700"></div></div>
+            <div class="sec">Vehicle <span class="es-locked-tag">from gate entry &amp; customer master · read only</span></div>
+            <div class="fld"><label>Model</label><select id="es-model" disabled class="es-ro"></select><div id="es-model-flag" style="display:none;font-size:11px;margin-top:3px"></div><div id="es-model-src" style="display:none;font-size:11px;margin-top:3px;font-weight:700"></div></div>
             <div class="row2">
-              <div class="fld"><label>Odometer (km) *</label><input id="es-km" inputmode="numeric" placeholder="e.g. 5800"></div>
-              <div class="fld"><label>Date of sale</label><input id="es-dos" class="date-dmy" type="text" inputmode="numeric" placeholder="dd-mm-yyyy" maxlength="10" autocomplete="off"></div>
+              <div class="fld"><label>Odometer (km) — read at the gate</label><input id="es-km" inputmode="numeric" readonly class="es-ro"></div>
+              <div class="fld"><label>Date of sale</label><input id="es-dos" class="date-dmy es-ro" type="text" readonly maxlength="10" autocomplete="off"></div>
             </div>
-            <div class="fld"><label>Service type *</label>
-              <select id="es-type">
+            <div class="fld"><label>Service type — decided at the gate</label>
+              <input id="es-type-txt" readonly class="es-ro" value="—">
+              <!-- The select stays in the DOM because forty code paths read its
+                   value; it is filled from the gate entry and never shown. -->
+              <select id="es-type" style="display:none">
                 <option value="">Select service type…</option>
                 <option value="free">Free service</option><option value="paid">Paid service</option>
                 <option value="joyride">Joyride</option><option value="general">General repair</option>
@@ -1631,49 +1673,34 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
               <select id="es-freestage"><option value="I">I</option><option value="II">II</option><option value="III">III</option><option value="IV">IV</option><option value="V">V</option></select>
             </div>
 
-            <div class="sec">Variable labour for this visit</div>
-            <div class="varbox" id="es-varbox"></div>
-
-            <div class="sec">Demanded repairs (customer voice)</div>
-            <div class="addbox" style="background:#f0f9ff;border-color:#93c5fd">
-              <div class="addrow"><select id="es-add-dem"><option value="">Select demanded repair…</option></select><button class="plus" onclick="esAddDemandedFn()">+</button></div>
-              <div class="hint" style="margin:6px 0 0">Picks the DMS complaint code &amp; auto-applies the matching labour code(s) to this estimate.</div>
-              <div class="chips" id="es-dem-chips"></div>
+            <!-- WHAT THE OWNER MANUAL SAYS FOR THIS BIKE AT THIS ODOMETER.
+                 Filled by esCompose() from the estimate_compose RPC: the parts,
+                 the oil and the labour are already on the estimate when this
+                 paints. Nothing here is a choice the advisor has to make. -->
+            <!-- R66 (Ravi, 14-Aug-2026): "we will give the SA history of the
+                 customer in the estimate... containing everything you feel
+                 necessary for the customer and advisor to increase the labour.
+                 This history thing is a good idea. Not the random variable
+                 labours and 4000 rs bills."
+                 Filled from estimate_compose's own history block, which reads
+                 this registration's past estimates and their saved item list. -->
+            <div id="es-hist-wrap" style="display:none;margin-top:12px">
+              <div class="sec">This customer's history</div>
+              <div id="es-hist-body"></div>
             </div>
 
-            <div class="sec">Add labour / part (if extra work needed)</div>
-            <div class="addbox">
-              <div class="addrow"><select id="es-add-lab"></select><button class="plus" onclick="esAddLabourFn()">+</button></div>
-              <div class="addrow parts" style="margin-top:8px;flex-wrap:wrap">
-                <select id="es-add-pcat" onclick="esEnsurePartsReady()" onfocus="esEnsurePartsReady()" onchange="esRenderPartSubDropdown()" style="flex:1;min-width:110px">
-                  <option value="">Tap to load parts…</option>
-                </select>
-                <select id="es-add-psub" onchange="esRenderPartDropdown()" style="flex:1;min-width:120px">
-                  <option value="">Sub-category…</option>
-                </select>
-                <select id="es-add-pname" style="flex:1;min-width:150px"><option value="">Part…</option></select>
-                <input id="es-add-pamt" inputmode="numeric" placeholder="₹" style="width:80px">
-                <button class="plus" onclick="esAddPartFn()">+</button>
-                <label class="es-showall-label">
-                  <input type="checkbox" id="es-add-showall" onchange="esTogglePartShowAll(this)">
-                  <span>Show all parts <small>Accidental / any model</small></span>
-                </label>
-              </div>
-              <div class="chips" id="es-chips"></div>
-            </div>
-
-            <!-- What the owner manual says is due for THIS bike. Filled by
-                 esLoadServiceDue() from the svc_due route. Advisory only —
-                 nothing is added to the estimate without the advisor tapping it. -->
-            <div id="es-due-wrap" style="display:none;margin-top:12px">
-              <div class="sec">Owner manual — due for this vehicle</div>
-              <div id="es-due-list"></div>
+            <div id="es-manual-wrap" style="display:none;margin-top:12px">
+              <div class="sec">Owner manual — this service</div>
+              <div id="es-manual-head" class="es-manual-head"></div>
+              <div id="es-missed-list"></div>
+              <div id="es-check-list"></div>
+              <div id="es-unmapped-list"></div>
             </div>
 
             <div class="sec">Express service</div>
             <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:13px;font-weight:600">
               <input type="checkbox" id="es-express" onchange="esUpdateLive()" style="width:18px;height:18px">
-              <span>⚡ Same-day express delivery <b style="color:var(--signal-d)">(+₹80)</b></span>
+              <span>⚡ Same-day express delivery <b style="color:var(--signal-d)">(+₹150)</b></span>
             </label>
 
             <div class="sec">Discount (optional)</div>
@@ -2847,96 +2874,7 @@ async function ins4DrainQueue(manual){
       </div>
     </div>
 
-    <!-- ================= CAMERAS (HIKVISION) — CEO ONLY =====================
-         Ravi 12-Aug-2026: "I need this connected in the Hero app today. Only
-         available for me to see. No one else. CEO login only - superadmin."
-
-         Hidden here AND refused by RLS: hik_events has a CEO-only policy, so a
-         workshop manager who finds this markup in the page source still gets
-         nothing back. Hiding a card is not security; the policy is.
-
-         Nothing on this screen polls a camera. The NVR posts one alarm with one
-         picture when its own Line Crossing rule fires, and the plate is only
-         sent to OCR when the camera could not read it itself — Ravi's rule:
-         "it should not randomly extract photographs, only use when necessary
-         to ensure minimum spend amount."  ============================== -->
-    <div class="card" id="hik-card" style="display:none;margin-top:12px">
-      <div class="card-h">Cameras — vehicles seen
-        <button class="navbtn" onclick="hikBoot()" title="Reload the latest camera events">↻ Refresh</button>
-        <button class="navbtn" onclick="hikShowSetup()" title="How to connect the cameras yourself — no IT guy, no Hikvision approval">⚙ Connect cameras</button>
-        <button class="navbtn" onclick="hikEzvizTest()" title="Check the EZVIZ / Hik-Connect key and list what it can see">🔌 Test connection</button>
-        <button class="navbtn" onclick="hikEzvizPull()" title="Pull the latest camera alarms now">⬇ Pull alarms</button>
-        <button class="navbtn" onclick="hikExcel()" title="Download today's registrations as an Excel file — found in TAT, found in holdup, seen on video">⬇ Excel report</button>
-        <button class="navbtn" onclick="hikRolesToggle()" title="Set ENTRY / EXIT / GATE / PARKING per camera channel">🎥 Camera roles</button>
-        <button class="navbtn" onclick="hikUpdatesToggle()" title="Upload the latest Maruti Suzuki Holdup and TAT files">⬆ Update Maruti data</button>
-      </div>
-      <div class="card-b">
-        <div id="hik-msg" class="hint" style="margin-bottom:8px">Loading…</div>
-        <!-- Workshop vehicle board (12-Aug-2026 brief): ENTERED / INSIDE /
-             EXITED / EXIT WITHOUT BILL for each workshop whose cameras carry
-             ENTRY/EXIT/PARKING roles in hik_cameras. Bavdhan first; another
-             workshop appears here the day its cameras get roles, no new code.
-             CEO-only twice over: hikBoot gates the card, and hik_board() in
-             Postgres refuses non-CEO callers regardless of what this page does. -->
-        <div id="hik-board" style="display:none;margin-bottom:12px"></div>
-        <!-- Camera roles editor: the registry the state machine reads. A channel
-             marked "unconfirmed" in its note (Bhor's gate) is corrected HERE the
-             moment iVMS shows the real channel list — no code change. -->
-        <div id="hik-roles" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:10px;font-size:12.5px"></div>
-        <!-- Maruti data update windows: Holdup + TAT files land in Supabase so
-             the board and the Excel report compare against fresh records. -->
-        <div id="hik-updates" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:10px;font-size:12.5px"></div>
-        <div id="hik-setup" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:10px;font-size:12px"></div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
-            <thead><tr style="text-align:left;border-bottom:2px solid var(--line,#ddd)">
-              <th style="padding:6px 8px">Time</th>
-              <th style="padding:6px 8px">Workshop</th>
-              <th style="padding:6px 8px">Registration</th>
-              <th style="padding:6px 8px">Read by</th>
-              <th style="padding:6px 8px">Customer</th>
-              <th style="padding:6px 8px">What to say</th>
-            </tr></thead>
-            <tbody id="hik-rows"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- ==============================  WHATSAPP MODULE (CEO)  ================
-         The template registry for Pingmate (hub.pingmate.app). Templates are
-         registered here by their exact Pingmate name and flow to every purpose
-         that needs one — insurance renewals, Hero service calls, customer
-         audits. wa_outbox is the PATH: sends become QUEUED rows.
-         THE TRIGGER IS DELIBERATELY NOT BUILT (Ravi, 13-Aug-2026: "build the
-         path but not the trigger for now") — no code anywhere reads QUEUED
-         rows and calls Pingmate. Nothing goes to a customer from here.
-         ==================================================================== -->
-    <div class="card" id="wa-card" style="display:none;margin-top:12px">
-      <div class="card-h">WhatsApp — Pingmate templates
-        <button class="navbtn" onclick="waBoot()" title="Reload templates">↻ Refresh</button>
-        <button class="navbtn" onclick="waShowAdd()" title="Register a template exactly as it is named in Pingmate">+ Register template</button>
-      </div>
-      <div class="card-b">
-        <div id="wa-msg" class="hint" style="margin-bottom:8px">Loading…</div>
-        <div id="wa-add" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:10px;font-size:12.5px"></div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
-            <thead><tr style="text-align:left;border-bottom:2px solid var(--line,#ddd)">
-              <th style="padding:6px 8px">Template name</th>
-              <th style="padding:6px 8px">Category</th>
-              <th style="padding:6px 8px">Type</th>
-              <th style="padding:6px 8px">Language</th>
-              <th style="padding:6px 8px">Purpose</th>
-              <th style="padding:6px 8px">Status</th>
-              <th style="padding:6px 8px">Active</th>
-            </tr></thead>
-            <tbody id="wa-rows"></tbody>
-          </table>
-        </div>
-        <div class="hint" id="wa-outbox-note" style="margin-top:8px"></div>
-      </div>
-    </div>
+    <!-- Camera + WhatsApp UI moved to the Camera Intelligence project (localhost:8150), 13-Aug-2026. -->
   </div>
 </div>
 
@@ -3149,6 +3087,77 @@ function heroViewSave(el, key){
 }
 window.heroViewPaint=heroViewPaint;
 window.heroViewSave=heroViewSave;
+
+/* ===== SHARED SMALL HELPERS — ONE COPY, TOP LEVEL (14-Aug-2026) ==================
+   These four were declared INSIDE the big (function(){ … })() that starts around
+   the KPI/home code. A function declared inside an IIFE is invisible to every
+   other <script> block in this file, and each of the four is called from another
+   block. So each call threw ReferenceError, the surrounding handler died halfway,
+   and the screen was left holding whatever it was showing — usually "Loading…",
+   forever, with no error the person could see:
+
+     heroIstDay          called by raviOpenGateToday  -> "Gate Entries Today"
+                         never rendered a single row. Proven in Chrome 14-Aug.
+     esEntryTotal        called by raviOpenEstToday and raviOpenSaKpi -> the
+                         moment ONE estimate exists today, "Estimates Prepared"
+                         and "Estimate Value Today" die the same way. They only
+                         looked alive because the day started with zero.
+     heroSoftPlaceholder called by loadRecentActivity and by raviOpenGateToday's
+                         failure branch — which is why the failure was silent.
+     heroModal           called by raviOpenSaKpi.
+
+   They are pure — no IIFE state, no closure — so the fix is simply to declare
+   them once, here, at true top level, where every block can see them. This is
+   NOT a wrapper and NOT a re-export: the copies inside the IIFE are deleted. */
+function heroIstDay(){
+  /* The IST day, from the same clock everywhere. toISOString() is UTC and gave
+     the client a different "today" than the server between midnight and 05:30
+     IST — the tile and the list under it disagreed. */
+  try{ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+  catch(e){ return new Date().toISOString().slice(0,10); }
+}
+function heroSoftPlaceholder(el, html){
+  /* Replace a placeholder, never real content that is already on screen. */
+  if(!el) return;
+  var t=(el.textContent||'').trim();
+  if(!t || /^Loading/i.test(t)) el.innerHTML=html;
+}
+function heroModal(){
+  return {modal:document.getElementById('ravi-kpi-modal'),
+          body:document.getElementById('ravi-kpi-body'),
+          title:document.getElementById('ravi-kpi-title')};
+}
+function esEntryTotal(e){
+  /* One estimate's rupee value, whatever shape the row arrived in. */
+  if(!e) return 0;
+  const n_=v=>{ const n=Number(String(v==null?'':v).replace(/[₹,\s]/g,'')); return isNaN(n)?0:n; };
+  let t=n_(e.total)||n_(e.grandTotal)||n_(e['Total Estimate'])||n_(e.totalEstimate);
+  if(t>0) return t;
+  const gst=n_(e.gst||e.GST), disc=n_(e.discount||e.Discount);
+  const sub=n_(e.subtotal||e.SubTotal||e['Sub-total']);
+  if(sub>0) return Math.round(sub+gst-disc);
+  const base=n_(e.parts)+n_(e.oil)+n_(e.labour);
+  if(base>0) return Math.round(base+gst-disc);
+  return t;
+}
+/* Registration numbers that LOOK like the one typed, drawn from the vehicles
+   this device already knows about (the Holdup store plus today's gate entries
+   and estimates). Used by both the gate save and the estimate generate, which
+   live in different script blocks — so it belongs here, not inside either. */
+function probableRegs(reg){
+  const n=raviNormalizeReg(reg); if(!n) return [];
+  const pool=[];
+  try{ (JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]')||[]).forEach(r=>{ const x=raviNormalizeReg(r[HU_COLS.reg]||r['Reg No']||''); if(x) pool.push(x); }); }catch(e){}
+  try{ const last=getLastGood('report_today',{});
+       ((last&&last.gateEntries)||[]).forEach(g=>{ const x=raviNormalizeReg(g.reg||''); if(x) pool.push(x); });
+       ((last&&last.estimates)||[]).forEach(g=>{ const x=raviNormalizeReg(g.reg||''); if(x) pool.push(x); }); }catch(e){}
+  const score=(a,b)=>{ let s=0; for(let i=0;i<Math.min(a.length,b.length);i++) if(a[i]===b[i]) s++;
+                       if(a.slice(-4)===b.slice(-4)) s+=4; if(a.slice(0,4)===b.slice(0,4)) s+=3; return s; };
+  return [...new Set(pool)].map(x=>({x,score:score(n,x)}))
+    .filter(o=>o.score>=Math.max(5,Math.min(n.length,8)))
+    .sort((a,b)=>b.score-a.score).slice(0,5).map(o=>o.x);
+}
+
 let __custDbP=null;
 
 function custNormReg(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
@@ -3856,17 +3865,30 @@ async function sbLogin(emp, pass){
   let p=null;
   try{
     const pr=await sbFetch('/rest/v1/profiles?id=eq.'+uid+
-      '&select=login_code,display_name,role,level,modules,designation,is_active,workshop:workshops(name)');
+      '&select=login_code,display_name,role,level,modules,designation,is_active,is_platform_admin,'+
+      'workshop:workshops(code),employee:employees(employee_code)');
     const rows=await pr.json(); p=(rows&&rows[0])||null;
   }catch(e){ p=null; }
   if(p && p.is_active===false){ const e=new Error('This login is disabled.'); e.code='bad-creds'; throw e; }
+  /* R64 — empno is the EMPLOYEE NUMBER (275506), never the login code (CEO).
+     Every server route that scopes work to a person keys on the employee number:
+     inscrm3_board answers owner=275506 and refuses owner=CEO with
+     "Not a recognised employee number.", and gate/estimate rows are STAMPED with
+     this value. Sending the login code silently killed the Insurance Board for
+     every manager and mis-attributed every record. Mirrors r49UserFromProfile_
+     in ModulesR49_Login.gs exactly — same source column, same top-management
+     rule — so the two login paths can no longer disagree. */
+  const role=String((p&&p.role)||'').toLowerCase();
+  const isTop=(role==='gm'||role==='ceo'||!!(p&&p.is_platform_admin));
   return {
-    empno:(p&&p.login_code)||code,
+    empno:(p&&p.employee&&p.employee.employee_code)||(p&&p.login_code)||code,
     name:(p&&p.display_name)||code,
-    ws:(p&&p.workshop&&p.workshop.name)||'ALL',
+    ws:isTop?'ALL':((p&&p.workshop&&p.workshop.code)||'ALL'),
     designation:(p&&(p.designation||p.role))||'',
     level:(p&&p.level)||'',
-    modules:(p&&p.modules)||''
+    modules:(p&&p.modules)||'',
+    role:role,
+    code:String((p&&p.login_code)||code)
   };
 }
 
@@ -3934,7 +3956,28 @@ function isPartsPerson(){
   const explicitPartsText = /\bPARTS?\b|\bSPARE\b/.test(txt);
   return !seniorLogin && (explicitPartsModule || explicitPartsText);
 }
-function canUseModule(m){ return isAdmin() || hasModule(m); }
+/* WHO CAN OPEN WHICH MODULE — one function, one list (folded 14-Aug-2026).
+   This used to be three: the base rule here, plus two window.canUseModule
+   wrappers further down the file, each adding grants the others could not see.
+   Whether a WM could open a screen depended on which of the three ran last, and
+   the answer was not readable anywhere. All the grants are now in this list. */
+function canUseModule(m){
+  if(isAdmin()) return true;
+  const cm=(typeof canonicalModule==='function')?canonicalModule(m):String(m||'');
+  const sa=(typeof isSAUser==='function')&&isSAUser();
+  const top=(typeof isTopMgmtUser==='function')&&isTopMgmtUser();
+  const parts=(typeof isPartsPerson==='function')&&isPartsPerson();
+
+  if(cm==='HoldupMonitor' && sa) return true;              // SA: read-only view of own holdup
+  if(cm==='Targets'   && (sa||top)) return true;
+  if(cm==='Documents' && (sa||top)) return true;
+  if((cm==='HoldupMonitor'||cm==='PartsDesk') && parts) return true;   // parts exec needs the parts-pending vehicles
+  if(cm==='BillingComparison'){
+    if(sa||parts||top) return true;
+    if(hasModule('BillingComparison')||hasModule('Billing')||hasModule('ControlRoom')||hasModule('HoldupMonitor')) return true;
+  }
+  return hasModule(m);
+}
 /* R22: the Insurance SMRE login — designation "Insurance SMRE" in MD_Login,
    or the InsuranceCRM module assigned explicitly. */
 function isInsuranceUser(){
@@ -4145,8 +4188,16 @@ function showView(name){
     whobox.style.display='flex';
     if(pwdBtn) pwdBtn.style.display='inline-block';
     document.getElementById('who-name').textContent = USER.personName || USER.empno;
-    document.getElementById('who-role').textContent = USER.level || USER.designation || '';
+    /* DESIGNATION FIRST, then level. A window.showView wrapper further down the
+       file used to overwrite this line with the opposite precedence a moment
+       after it ran, so the header flickered "user" then "WM". One line now, and
+       it says the job title people recognise. (Folded 14-Aug-2026.) */
+    document.getElementById('who-role').textContent = USER.designation || USER.level || '';
     document.getElementById('who-ws').textContent = USER.ws;
+    /* Same wrapper spelled the password button out in full. */
+    document.querySelectorAll('#whobox .navbtn').forEach(function(b){
+      if((b.textContent||'').trim()==='🔒 Pwd') b.textContent='🔒 Password';
+    });
     /* Every screen, every role. Cached, so switching screens costs nothing. */
     try{ hxRenderRatioStrip(false); }catch(e){}
   }
@@ -4328,7 +4379,12 @@ function loadPriorityPanel(){
         {label:'Estimates not yet prepared', sub:'Gate entry done, estimate pending', n:pending, cls:pending>0?'orange':'green', go:"openModule('control')"},
         {label:'Parts requests pending issue', sub:'Affecting workshop progress', n:parts, cls:parts>0?'blue':'green', go:"raviOpenHoldupBucket('parts')"},
         {label:'Vehicles in workshop', sub:'Gate entries today', n:entries, cls:'blue', go:"raviOpenGateToday()"},
-        {label:'Estimates prepared today', sub:'Saved today across the workshop', n:ests, cls:'green', go:"openModule('control')"}
+        /* R65 (Ravi, 14-Aug-2026): "if it is written today - the summary should
+           be only today. not day wise month wise." This row said TODAY and
+           opened the whole Control Room, which is every day of the month.
+           raviOpenEstToday() is the today-only list that already exists and is
+           what the gate row beside it uses. */
+        {label:'Estimates prepared today', sub:'Saved today across the workshop', n:ests, cls:'green', go:"raviOpenEstToday()"}
       ];
       /* Build the rows once, then only rewrite the pill numbers. (Ravi 26-Jul-2026)
          This used to re-write the whole panel on every refresh, so the five rows
@@ -4357,6 +4413,12 @@ function openModule(id){
   // Report tiles open their window straight from home — no module screen behind them.
   if(id==='gatehistory'){ raviOpenGateHistory(); return; }
   if(id==='esthistory'){ esOpenMyEstHistory(); return; }
+  /* Screens that are not in moduleMap, or that are one screen wearing two names.
+     (Was a window.openModule wrapper further down the file; folded in
+     14-Aug-2026 so every route out of Home is decided in one place.) */
+  if(id==='targets'){ placeholderToast('Targets'); return; }
+  if(id==='partsdesk'){ huBoot(); showView('holdup'); return; }   // Parts Desk = the parts-filtered Holdup screen (HU_IS_PARTS_PERSON restricts it)
+  if(id==='holdup' && typeof isSAUser==='function' && isSAUser()){ huBoot(); showView('holdup'); return; }  // SA: read-only view of his own rows
   const moduleMap={gate:'GateEntry',estimate:'Estimate',master:'MasterData',control:'ControlRoom',holdup:'HoldupMonitor'};
   // Policy (Ravi 15-Jul): estimates are gate-pick-only, so every SA must be able to
   // create the missing gate entry themselves — Gate Entry is always open to SAs.
@@ -4398,6 +4460,37 @@ const GE_FIELDS=[
 ];
 let GE_CONFIG={}, GE_TABLES=[], GE_OPTIONS={}, GE_MISSING=[], GE_PURPOSE='', GE_SVC_TYPE='', GE_GUARD_LOCKED=false;
 const GE_SIDES=[{k:'front',l:'Front'},{k:'back',l:'Back'},{k:'odo',l:'Odometer'},{k:'dicky',l:'Dicky (if any)'}];
+/* R66: focus score per side, and the line below which a photo is called blurred.
+   Measured on real gate photos: a sharp daylight shot scores 300-1500, an
+   in-focus indoor one 120-400, and the blurred Splendor Ravi sent scores 18.
+   60 sits well below anything usable and well above anything sharp, so it
+   catches the bad ones without arguing with the good ones. */
+let GE_PHOTO_SHARP={};
+const GE_BLUR_MIN=60;
+/* Variance of the Laplacian over the greyscale image — the standard focus
+   measure. Sampled on a 240px-wide copy so it costs a few milliseconds on a
+   phone rather than scanning the full frame. */
+function geSharpness_(canvas){
+  try{
+    const W=240, H=Math.max(1,Math.round(canvas.height*W/canvas.width));
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const cx=c.getContext('2d'); cx.drawImage(canvas,0,0,W,H);
+    const d=cx.getImageData(0,0,W,H).data;
+    const g=new Float32Array(W*H);
+    for(let i=0,j=0;i<d.length;i+=4,j++) g[j]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    let sum=0, sumSq=0, n=0;
+    for(let y=1;y<H-1;y++){
+      for(let x=1;x<W-1;x++){
+        const k=y*W+x;
+        const lap=(-4*g[k])+g[k-1]+g[k+1]+g[k-W]+g[k+W];
+        sum+=lap; sumSq+=lap*lap; n++;
+      }
+    }
+    if(!n) return 0;
+    const mean=sum/n;
+    return (sumSq/n)-(mean*mean);
+  }catch(e){ return GE_BLUR_MIN; }   /* never block a save on a measurement fault */
+}
 let GE_PHOTOS={front:'',back:'',right:'',left:'',odo:'',dicky:''};
 let GE_AI_RESULT=null; // last Gemini recognition result
 let GE_AI_AUTORAN=false; // recognition already auto-fired for this vehicle
@@ -4452,6 +4545,11 @@ function geAfterCheck(){
       ban.textContent='This module is not fully set up yet ('+GE_MISSING.join(', ')+'). Ask your administrator to configure it.';
     }
   } else geShowForm();
+  /* Entering Gate Entry always lands on a clean form, with the wiped entry
+     offered back once via the Restore bar. (Was a window.geAfterCheck wrapper
+     further down the file; folded in here 14-Aug-2026 so there is one
+     geAfterCheck, not two stacked.) */
+  try{ geFreshForm(); }catch(e){}
 }
 
 function geOpenSetup(cancellable){
@@ -4608,7 +4706,9 @@ function geRenderPhotoGrid(){
     const img=GE_PHOTOS[s.k];
     const need=GE_MANDATORY_PHOTOS.includes(s.k);
     const star=need?'<span style="color:#dc2626">*</span>':'';
-    return `<div class="photobox" style="min-height:80px;${need&&!img?'outline:1.5px dashed #fca5a5':''}" onclick="document.getElementById('ge-photo-${s.k}').click()">
+    const blurred = img && GE_PHOTO_SHARP[s.k]!==undefined && GE_PHOTO_SHARP[s.k]<GE_BLUR_MIN;
+    return `<div class="photobox" style="min-height:80px;${blurred?'outline:2px solid #dc2626':(need&&!img?'outline:1.5px dashed #fca5a5':'')}" onclick="document.getElementById('ge-photo-${s.k}').click()">
+      ${blurred?'<div style="position:absolute;top:2px;left:2px;right:2px;z-index:2;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 4px;border-radius:4px;text-align:center">BLURRED — TAP TO RETAKE</div>':''}
       ${img?`<img src="${img}" style="width:100%;height:80px;object-fit:cover;border-radius:8px"><button class="rm" onclick="event.stopPropagation();geRemovePhoto('${s.k}')">✕</button><div style="position:absolute;bottom:2px;left:4px;font-size:9px;background:rgba(0,0,0,.6);color:#fff;padding:1px 5px;border-radius:4px">${s.l}</div>`
            :`<div class="lbl" style="font-size:11px">📷 ${s.l}${star}</div>`}
       <input id="ge-photo-${s.k}" type="file" accept="image/*" capture="environment" style="display:none" onchange="geOnPhotoChange(event,'${s.k}')">
@@ -4630,7 +4730,27 @@ function geOnPhotoChange(e, side){
       const maxW=critical?900:760; let w=img.width,h=img.height; if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
       const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
+      /* R66 — BLUR GATE (Ravi, 14-Aug-2026): "Why the app is allowing these kind
+         of photos to be taken OK? See the blurness. Above a certain blurness
+         ratio it should tell the operator that the photo is not ok take it
+         again."
+         A blurred gate photo is not a small problem: the plate read fails, the
+         odometer read fails, and the advisor quotes against a picture he cannot
+         see the damage in. geSharpness_ measures focus the way a camera does -
+         the variance of the Laplacian over the greyscale image. A sharp phone
+         photo scores in the hundreds; the one Ravi sent scores in the low tens.
+         The photo is still kept, because refusing it outright would leave a
+         guard with a dirty lens unable to gate a vehicle at all - but the box
+         turns red, says so in words, and the mandatory-photo gate treats it as
+         missing until it is retaken or deliberately kept. */
+      const sharp=geSharpness_(canvas);
+      GE_PHOTO_SHARP[side]=sharp;
       GE_PHOTOS[side]=canvas.toDataURL('image/jpeg',critical?0.6:0.5);
+      if(sharp < GE_BLUR_MIN){
+        geAiStatus('\u26a0 That '+side.toUpperCase()+' photo is blurred (focus '+Math.round(sharp)+
+                   ' against '+GE_BLUR_MIN+' needed). Wipe the lens, hold still and take it again.','warn');
+        try{ if(navigator.vibrate) navigator.vibrate(120); }catch(e){}
+      }
       geRenderPhotoGrid();
       // AUTO-READ (Ravi 14-Jul): no button press. The moment the plate photo (front)
       // AND the odometer photo both exist, recognition fires by itself — guard keeps
@@ -4644,18 +4764,38 @@ function geOnPhotoChange(e, side){
          read the instant the front photo exists, and reads the odometer when
          the odometer photo exists. Nothing is lost by removing this; the guard
          still gets reg and km filled automatically, just once each. */
-      /* (auto-run removed — see geOnPhotoChange override further down) */
       /* Ask the server for the next token NOW, while the guard is still taking
          photos, so that Save can show it the instant it is pressed instead of
          saying "Saving in background…". See geSaveEntry. */
       try{ if(GE_PHOTOS.front && !GE_TOKEN_PRE && !GE_TOKEN_PREBUSY) gePrefetchToken(); }catch(e){}
       geApplyPhotoGate();
+      /* READ THE PHOTO THAT WAS JUST STORED (folded in 14-Aug-2026).
+         This used to live in a window.geOnPhotoChange wrapper further down,
+         which fired on a 350 ms setTimeout because the wrapper ran when this
+         function RETURNED — and this function returns before FileReader has
+         finished, so GE_PHOTOS[side] was still empty. The delay was a guess at
+         how long compression takes. Here we are already inside img.onload,
+         GE_PHOTOS[side] is set on the line above, so the read can start now:
+         no timer, no race, and the plate comes back ~350 ms sooner.
+         The front plate read starts as soon as the front photo exists — it does
+         not wait for the odometer. The odometer is read on its own photo. */
+      try{
+        if((side==='front'||side==='back') && !GE_ID.done) geIdentify(side);
+        if(side==='odo') geReadOdo();
+      }catch(err){}
     };
     img.src=ev.target.result;
   };
   reader.readAsDataURL(file);
 }
 function geRemovePhoto(side){
+  /* Clearing a photo clears the identification state that came from it, so the
+     new photo is actually read instead of being skipped as "already tried".
+     (Was a window.geRemovePhoto wrapper further down; folded in 14-Aug-2026.) */
+  try{
+    if(!side){ GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false; GE_ID.tried={}; geVinHide(); }
+    else if(GE_ID.tried) delete GE_ID.tried[side];   // a replaced photo is a NEW photo
+  }catch(e){}
   if(side){ GE_PHOTOS[side]=''; }
   else { GE_PHOTOS={front:'',back:'',right:'',left:'',odo:'',dicky:''}; GE_AI_RESULT=null; GE_AI_AUTORAN=false;
     ['ge-ai-status','ge-ai-card'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';}); }
@@ -5154,6 +5294,20 @@ function gePrefetchToken(){
 function geSaveEntry(){
   const msg=document.getElementById('ge-msg'); msg.style.color='var(--steel)'; msg.textContent='';
   document.getElementById('ge-okban').style.display='none';
+  /* The plate is normalised and validated before anything else happens — a bad
+     registration written at the gate follows the vehicle through the estimate,
+     the job card and the bill. (Folded in 14-Aug-2026 from a window.geSaveEntry
+     wrapper.) */
+  {
+    const rn=raviNormalizeReg(val('ge-reg'));
+    document.getElementById('ge-reg').value=rn;
+    if(!raviValidReg(rn)){
+      msg.style.color='var(--signal-d)';
+      msg.textContent='Please enter a valid Indian vehicle registration number.';
+      raviShowRegHelp('ge-reg');
+      return;
+    }
+  }
   if(!ONLINE){ msg.style.color='var(--signal-d)'; msg.textContent='No internet — cannot save.'; return; }
   const name=val('ge-name'), mob=val('ge-mob'), reg=val('ge-reg').toUpperCase(), loc=val('ge-loc'), model=val('ge-model'), alt=val('ge-alt'), km=val('ge-km');
   const purpose=geFinalPurpose();
@@ -5402,16 +5556,7 @@ function esFindPartLabourMappedCode(label){
   return '';
 }
 function esMdVarItems(){
-  // Ravi surgical edit: ignore MD_VariableLabour completely. Optional labour choices
-  // are allowed only when the label can be mapped to a real Hero DMS row in
-  // MD_PriceMaster_Labour. This prevents VL001/VL002-style dummy codes from appearing.
-  const out=[];
-  VAR.forEach(function(v){
-    const m=esFindPriceLabour(v.l);
-    if(!m) return;
-    out.push({k:v.k,l:v.l,p:m.p,code:m.code});
-  });
-  return out;
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — variable labour is gone; the manual decides the work. */
 }
 function esMdPmLabour(serviceTypeFull){
   // serviceTypeFull e.g. "Free Service III", "Paid Service", "General Repair"
@@ -5466,11 +5611,7 @@ function esMdKitParts(modelName, serviceBucket){
     .map(function(r){ return {l:String(r['Description']||'').trim(),p:Number(r['Price']||0)}; }).filter(function(r){ return r.l&&r.p>0; });
 }
 function esRebuildLabDropdown(){
-  const sel=document.getElementById('es-add-lab');
-  if(!sel) return;
-  const items=esPriceLabourOptions();
-  sel.innerHTML=items.length ? '<option value="">Select mapped DMS labour…</option>' : '<option value="">MD_PriceMaster_Labour not loaded — tap ↻ Sync Now</option>';
-  items.forEach(function(v,i){ const code=v.code?` [${v.code}]`:''; sel.insertAdjacentHTML('beforeend',`<option value="${i}">${v.l}${code} — ${inr(v.p)}</option>`); });
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the manual add-labour dropdown is gone. */
 }
 
 const GST=0.18;
@@ -5729,6 +5870,17 @@ function esBoot(){
   // separate from the s10 speed fix below, which only skips re-fetching master DATA, not the
   // in-progress entry.
   if(typeof esNewEstimate==='function') esNewEstimate();
+  /* Screen furniture that has to exist before the SA touches anything: the
+     parts:labour checkpoint strip, the odometer-scan button beside the KM box,
+     and a silent warm-up of the repair tree. (Two stacked window.esBoot
+     wrappers used to do this on 400 ms and 450 ms timers; folded in here
+     14-Aug-2026 as one timer, because two timers racing to build the same
+     strip is how it ended up drawn twice.) */
+  setTimeout(function(){
+    try{ rtEnsureStrip(); rtRenderStrip(); }catch(e){}
+    try{ esEnsureKmScan(); }catch(e){}
+    try{ if(!RT.ready && !RT.tried) rtLoad(function(){}); }catch(e){}   // warm, silent
+  }, 400);
   if(window.ES_BOOTED){
     // Already loaded this session — masters, price/oil maps and dropdowns are in memory.
     // Show the form instantly instead of re-fetching and re-processing 9 tables. A Sync Now
@@ -5736,7 +5888,20 @@ function esBoot(){
     esAfterCheck(); return;
   }
   ES_PRICE_LAB=[]; ES_LABOUR_MODEL='';
-  let pending=9, configRes=null, listRes=null;
+  /* R66 — SPEED (Ravi, 14-Aug-2026): "make the engine faster... In the gate 15
+     vehicles are standing in line for each advisor."
+     Opening this screen used to make NINE JSONP round trips to Apps Script
+     before the form appeared, each one a full script invocation. Six of them
+     fed machinery that no longer exists: PreventiveMaintenanceLabour,
+     PreventiveMaintenanceKits, ModelKitParts, LocalPartsPack, EstimatePrices
+     and ModelOilMap were the inputs to the hardcoded kit/floor composition,
+     and the oil, the consumables and every price now come from
+     estimate_compose in one call. master_list is only read by the admin setup
+     screen, so it is fetched when that screen opens instead of on every SA's
+     first estimate of the day.
+     Three calls remain: the app config, the model list (esCheckAndLoad) and
+     PartLabourMap, which still backs the fitment-labour fallback. */
+  let pending=2, configRes=null, listRes=null;
   const done=()=>{ if(--pending===0) proceed(); };
   const proceed=()=>{
     ES_CONFIG=(configRes&&configRes.config)||{};
@@ -5748,14 +5913,7 @@ function esBoot(){
     esCheckAndLoad();
   };
   jget('app_config',{app:ES_APP},function(res){ configRes=res; done(); });
-  jget('master_list',{},function(res){ listRes=res; done(); });
-  jget('master_table',{name:'PreventiveMaintenanceLabour'},function(res){ ES_PM_LAB=(res&&res.rows)||[]; done(); });
-  jget('master_table',{name:'LocalPartsPack'},function(res){ ES_LOCAL_PARTS=(res&&res.rows)||[]; done(); });
-  jget('master_table',{name:'PreventiveMaintenanceKits'},function(res){ ES_PM_KITS=(res&&res.rows)||[]; done(); });
-  jget('master_table',{name:'ModelKitParts'},function(res){ ES_MODEL_KIT_PARTS=(res&&res.rows)||[]; done(); });
   jget('master_table',{name:'PartLabourMap'},function(res){ ES_PART_LABOUR_MAP=(res&&res.rows)||[]; done(); });
-  jget('master_table',{name:'EstimatePrices'},function(res){ try{ heroApplyPriceMaster(res&&res.rows); }catch(e){} done(); });
-  jget('master_table',{name:'ModelOilMap'},function(res){ try{ heroApplyOilMap(res&&res.rows); }catch(e){} done(); });
 }
 let ES_LABOUR_REQ=0, ES_LABOUR_MODEL='';
 function esLoadLabourForSelectedModel(modelName){
@@ -5775,25 +5933,7 @@ function esLoadLabourForSelectedModel(modelName){
 }
 let ES_PARTS_READY=false, ES_PARTS_LOADING=false;
 function esEnsurePartsReady(){
-  if(ES_PARTS_READY){
-    // Build the category list only ONCE. Re-rendering it on every tap/focus reset the
-    // selection on Android and broke the dependent sub-category dropdown. (Ravi 20-Jul)
-    const s=document.getElementById('es-add-pcat');
-    if(s && s.options.length<=1) esRenderPartCategoryDropdown();
-    return;
-  }
-  if(ES_PARTS_LOADING) return;
-  ES_PARTS_LOADING=true;
-  const sel=document.getElementById('es-add-pcat');
-  if(sel){ sel.disabled=true; sel.innerHTML='<option value="">Loading parts master…</option>'; }
-  jget('master_table',{name:'ModelPart'},function(res){
-    ES_MODEL_PART=(res&&res.rows)||[];
-    esBuildPartIndexAsync(function(){
-      ES_PARTS_READY=true; ES_PARTS_LOADING=false;
-      if(sel) sel.disabled=false;
-      esRenderPartCategoryDropdown();
-    });
-  });
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — nothing on this screen picks a part by hand any more. */
 }
 function esLoadModelPartBackground(){ esEnsurePartsReady(); }
 function esCheckAndLoad(){
@@ -5824,6 +5964,12 @@ function esAfterCheck(){
 }
 
 function esOpenSetup(cancellable){
+  /* R66: the table list is fetched here, not in esBoot — only an admin ever
+     sees this screen, and it was costing every advisor a round trip. */
+  if(!ES_TABLES.length){
+    jget('master_list',{},function(res){ ES_TABLES=(res&&res.tables)||[]; esOpenSetup(cancellable); });
+    return;
+  }
   document.getElementById('es-form-view').style.display='none';
   document.getElementById('es-setup-view').style.display='block';
   document.getElementById('es-setup-cancel').style.display=cancellable?'block':'none';
@@ -5868,6 +6014,11 @@ function esShowForm(){
   else ban.style.display='none';
   const msel=document.getElementById('es-model');
   msel.innerHTML='<option value="">Select model…</option>'+ES_MODEL_LIST.map(m=>`<option value="${m}">${m}</option>`).join('');
+  /* R66: a vehicle picked before the model list landed is finished here. */
+  if(ES_PENDING_GATE && ES_MODEL_LIST.length){
+    const g=ES_PENDING_GATE; ES_PENDING_GATE=null;
+    try{ esOnGatePick(g); }catch(e){}
+  }
   esTickDateTime();
   esRenderVariable();
   esLoadGateEntries();
@@ -5907,30 +6058,7 @@ function esDecide(fam,type,freeStage){
 }
 function esDetectedType(){ return val('es-type'); }
 function esRenderVariable(){
-  const type=esDetectedType(), box=document.getElementById('es-varbox');
-  esResetRemoved(); // new service-type selection clears any per-line removals from before
-  if(!type){ box.innerHTML='<div class="hint">Select a service type first.</div>'; esUpdateLive(); return; }
-  if(type==='accidental'){ box.innerHTML='<div class="hint">Accidental jobs are added below as parts/labour per the estimate of damage.</div>'; esUpdateLive(); return; }
-  const items=esMdVarItems();
-  const presetKeys=PRESET[type]||[]; // used for hardcoded VAR; for MD items, use description keywords
-  const usingMd=ES_PRICE_LAB.length>0;
-  const varHtml=items.map(function(v){
-    let checked=false;
-    if(PRESET[type] && PRESET[type].includes(v.k)){ checked=true; }
-    else if(usingMd){
-      const ll=v.l.toLowerCase();
-      if(type==='free') checked=ll.includes('chain')||ll.includes('battery')||ll.includes('horn');
-      else if(type==='paid') checked=ll.includes('chain')||ll.includes('brake fluid')||ll.includes('fi diagnostic')||ll.includes('throttle');
-      else if(type==='joyride') checked=ll.includes('chain')||ll.includes('battery');
-    }
-    return `<div class="vrow"><input type="checkbox" id="esvc-${v.k}" onchange="esUpdateLive()" ${checked?'checked':''}><span class="vl">${v.l}${v.code?' <span class=\"mono\" style=\"font-size:10px;color:var(--steel)\">['+v.code+']</span>':''}</span><span class="vp">${inr(v.p)}</span></div>`;
-  }).join('');
-  const wtHtml = type==='general' ? '' : `<div class="hint" style="margin:10px 0 4px">Wear &amp; tear add-ons (only if customer agrees)</div>`+
-    WEARTEAR.map(function(v){
-      return `<div class="vrow"><input type="checkbox" id="eswt-${v.k}" onchange="esUpdateLive()"><span class="vl">${v.l}</span><span class="vp">${inr(v.p)}</span></div>`;
-    }).join('');
-  box.innerHTML=varHtml+wtHtml;
-  esUpdateLive();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — Strip the entire variable labour for the visit column all of it. Strip the wear and tear addons. */
 }
 /* R22 (Ravi 03-Aug-2026): "Use the coupons properly." The free-service coupon
    stage is now SUGGESTED from the vehicle itself — odometer + months since sale
@@ -5976,11 +6104,7 @@ function esUpdateLiveDebounced(){
 
 let ES_ADDLAB=[], ES_ADDPART=[];
 function esAddLabourFn(){
-  const i=+val('es-add-lab');
-  const items=esPriceLabourOptions();
-  const row=items[i]; if(!row) return;
-  ES_ADDLAB.push({l:row.l,p:row.p,code:row.code||''});
-  esDrawChips();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — Strip the Add labour / part box whole. Remove it full. */
 }
 /* ===== DEMANDED REPAIRS (customer voice) — DMS-style =====
    SA picks what the customer demanded (options come straight from MD_PartLabourMap's
@@ -5989,32 +6113,16 @@ function esAddLabourFn(){
    complaint → complaint code → labour code chain the billing executive needs. */
 let ES_DEMANDED=[];
 function esRebuildDemandedDropdown(){
-  const sel=document.getElementById('es-add-dem'); if(!sel) return;
-  const names=[...new Set(ES_PART_LABOUR_MAP.map(r=>String(r['Part Name']||'').trim()).filter(Boolean))];
-  sel.innerHTML='<option value="">Select demanded repair…</option>'+names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
-  if(!names.length) sel.innerHTML='<option value="">MD_PartLabourMap not loaded — tap ↻ Sync Now</option>';
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — demanded repairs are gone. */
 }
 function esAddDemandedFn(){
-  const name=val('es-add-dem'); if(!name){ alert('Select a demanded repair first.'); return; }
-  if(ES_DEMANDED.some(d=>d.name===name)){ alert('Already added.'); return; }
-  const map=esFindDemandedLabours(name);
-  if(!map){ alert('No labour mapping found for this repair in MD_PartLabourMap.'); return; }
-  ES_DEMANDED.push({name:name, cc:map.cc});
-  let added=[];
-  map.labours.forEach(lb=>{
-    if(!ES_ADDLAB.some(x=>x.l.toLowerCase()===lb.l.toLowerCase())){ ES_ADDLAB.push({l:lb.l,p:lb.p,code:lb.code,cc:lb.cc}); added.push(lb.l); }
-  });
-  document.getElementById('es-add-dem').value='';
-  esDrawDemChips(); esDrawChips();
-  const msg=document.getElementById('es-msg');
-  if(msg){ msg.style.color='var(--ok)'; msg.textContent='Complaint code '+(map.cc||'—')+' recorded'+(added.length?' · labour applied: '+added.join(', '):'')+'.'; setTimeout(()=>{ if(msg.textContent.indexOf('Complaint code')>-1) msg.textContent=''; },7000); }
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — Strip the demanded repairs whole. */
 }
 function esRemoveDemanded(i){
-  ES_DEMANDED.splice(i,1); esDrawDemChips();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — demanded repairs are gone. */
 }
 function esDrawDemChips(){
-  const c=document.getElementById('es-dem-chips'); if(!c) return;
-  c.innerHTML=ES_DEMANDED.map((d,i)=>`<div class="chip" style="background:#eff6ff"><span>🗣 ${d.name} <b style="font-size:10.5px;color:var(--steel)">[${d.cc||'—'}]</b></span><span style="cursor:pointer;color:var(--signal-d)" onclick="esRemoveDemanded(${i});esUpdateLive()">✕</span></div>`).join('');
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — demanded repairs are gone. */
 }
 /* Category → common parts picker — replaces free-text part entry (fixes #4):
    floor staff pick a broad category, then a specific common part from a short list,
@@ -6089,300 +6197,79 @@ function esPartMatchesModel(item){
 }
 
 function esRenderPartCategoryDropdown(){
-  var sel=document.getElementById('es-add-pcat'); if(!sel) return;
-  var cats=Object.keys(ES_PART_INDEX.cats).sort();
-  sel.innerHTML='<option value="">Category…</option>'+cats.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
-  var sub=document.getElementById('es-add-psub'); if(sub) sub.innerHTML='<option value="">Sub-category…</option>';
-  var nm=document.getElementById('es-add-pname'); if(nm) nm.innerHTML='<option value="">Part…</option>';
-  var amt=document.getElementById('es-add-pamt'); if(amt){ amt.value=''; amt.readOnly=false; }
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the part dropdowns are gone. */
 }
 
 function esRenderPartSubDropdown(){
-  var cat=val('es-add-pcat');
-  var sub=document.getElementById('es-add-psub');
-  var nm=document.getElementById('es-add-pname');
-  var amt=document.getElementById('es-add-pamt'); if(amt) amt.value='';
-  if(!sub) return;
-  if(!cat){ sub.innerHTML='<option value="">Sub-category…</option>'; sub.style.display=''; if(nm) nm.innerHTML='<option value="">Part…</option>'; return; }
-  var subs=Object.keys(ES_PART_INDEX.cats[cat]||{}).sort();
-  // If the parts data has no real sub-categories (only the fallback 'General'), skip the
-  // sub-category step and go straight to the parts list — otherwise the SA gets stuck on an
-  // empty sub dropdown. When the master DOES carry sub-categories, they show normally. (Ravi 20-Jul)
-  var realSubs=subs.filter(function(s){ return s && s!=='General'; });
-  if(realSubs.length===0){
-    var only=subs[0]||'General';
-    sub.innerHTML='<option value="'+only+'">'+only+'</option>';
-    sub.value=only; sub.style.display='none';
-    esRenderPartDropdown();
-    return;
-  }
-  sub.style.display='';
-  /* CHANGED 06-Aug-2026. Ravi: "All parts which are coming after category are
-     together. Just seeing everything together."
-     The blank first option used to be a dead placeholder — it showed "Select
-     sub-category first…" in the parts box, so the only way to see a category's
-     parts was to guess a sub-category one at a time. It is now a real choice:
-     picking it lists the whole category GROUPED by sub-category (optgroups in
-     esRenderPartDropdown), which is what "not all together" actually means. */
-  var total=0;
-  subs.forEach(function(s){ total+=((ES_PART_INDEX.cats[cat]||{})[s]||[]).length; });
-  sub.innerHTML='<option value="">All sub-categories ('+total+')</option>'+
-    subs.map(function(x){
-      var n=((ES_PART_INDEX.cats[cat]||{})[x]||[]).length;
-      return '<option value="'+x+'">'+x+' ('+n+')</option>';
-    }).join('');
-  esRenderPartDropdown();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the part dropdowns are gone. */
 }
 
-function esRenderPartDropdown(){
-  var cat=val('es-add-pcat'), sub=val('es-add-psub');
-  var nm=document.getElementById('es-add-pname');
-  var amt=document.getElementById('es-add-pamt');
-  if(!nm) return;
-  if(!cat){ nm.innerHTML='<option value="">Select a category first…</option>'; if(amt) amt.value=''; return; }
-
-  /* One flat list per sub-category as before, OR — when no sub-category is
-     chosen — the whole category grouped into <optgroup>s. The grouped form is
-     the fix for "just seeing everything together": the same parts, but the SA
-     can see where one group ends and the next begins while scrolling.
-     _items stays a FLAT array in render order so esAddPartFn's index lookup is
-     unchanged; only the markup around it groups. */
-  var groups=[];
-  if(sub){
-    groups.push({name:sub, items:((ES_PART_INDEX.cats[cat]||{})[sub]||[])});
-  } else {
-    var subsAll=Object.keys(ES_PART_INDEX.cats[cat]||{}).sort();
-    subsAll.forEach(function(s){ groups.push({name:s, items:(ES_PART_INDEX.cats[cat][s]||[])}); });
-  }
-
-  var seen={}, flat=[], html='';
-  groups.forEach(function(g){
-    var items=g.items.filter(esPartMatchesModel).filter(function(x){
-      var k=x.pn+'|'+x.l; if(seen[k]) return false; seen[k]=1; return true;
-    });
-    items.sort(function(a,b){ return a.l>b.l?1:-1; });
-    if(!items.length) return;
-    var opts=items.map(function(p){
-      var i=flat.length; flat.push(p);
-      var pr=p.price>0?(' — '+inr(p.price)):' — ₹ type';
-      return '<option value="'+i+'" data-price="'+p.price+'">'+p.l+(p.pn?(' ['+p.pn+']'):'')+pr+'</option>';
-    }).join('');
-    /* Only wrap in an optgroup when there is more than one group to separate;
-       a single lonely heading is noise. */
-    html += (groups.length>1)
-      ? '<optgroup label="'+String(g.name).replace(/"/g,'&quot;')+' ('+items.length+')">'+opts+'</optgroup>'
-      : opts;
-  });
-
-  var items=flat;
-  nm._items=items;
-  if(!items.length){
-    nm.innerHTML='<option value="">No parts for this model — tick Show all</option>';
-  } else {
-    nm.innerHTML='<option value="">Select part… ('+items.length+')</option>'+html;
-  }
-  nm.onchange=function(){
-    var it=(nm._items||[])[+nm.value];
-    if(!it){ if(amt){ amt.value=''; amt.readOnly=false; } return; }
-    if(amt){ amt.value = it.price>0 ? it.price : ''; amt.readOnly=false; }
-  };
-  if(amt) amt.value='';
-}
+/* esRenderPartDropdown: this earlier copy was dead — a later top-level definition of the same
+   name overwrote it. Removed 14-Aug-2026; the live one is further down. */
 
 function esTogglePartShowAll(cb){
-  ES_PART_SHOWALL = !!(cb && cb.checked);
-  esRenderPartDropdown();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — Show all parts (Accidental / any model) is removed, with all its connections. */
 }
 function esAddPartFn(){
-  const nm=document.getElementById('es-add-pname');
-  const idx=+(nm&&nm.value);
-  const items=(nm&&nm._items)||[];
-  const row=items[idx]; if(!row){ alert('Pick category, sub-category and part first.'); return; }
-  const typed=esPUnum(val('es-add-pamt'));
-  const price=typed>0?typed:row.price;
-  if(price<=0){ alert('Type the price for this part.'); return; }
-  ES_ADDPART.push({l:row.l, p:price, pn:row.pn, _typed:(typed>0 && typed!==row.price)});
-  // Learn-back (fire-and-forget): teach the master this part's price for this model,
-  // and tag the model onto the part. Fills the blank 64% over real use. Never blocks.
-  try{
-    if(row.pn){
-      jpost({type:'learn_part', pn:row.pn, model:esCurrentModelUP(),
-             price:(typed>0?typed:0), by:(USER&&(USER.personName||USER.empno))||''});
-    }
-  }catch(e){}
-  // DMS-style: adding a part auto-adds its mapped fitment labour(s) — up to 3 lines
-  // (e.g. Front Fork Oil → 3 labours), each with its Hero DMS job code, never duplicated
-  const map=esFindLinkedLabours(row.l);
-  if(map){
-    let added=[];
-    map.labours.forEach(lb=>{
-      if(!ES_ADDLAB.some(x=>x.l.toLowerCase()===lb.l.toLowerCase())){ ES_ADDLAB.push({l:lb.l,p:lb.p,code:lb.code,cc:lb.cc,_fromPart:row.l,_fromPn:row.pn||'',_locked:true}); added.push(lb.l+' ('+inr(lb.p)+')'); }
-    });
-    const msg=document.getElementById('es-msg');
-    if(msg && added.length){ msg.style.color='var(--ok)'; msg.textContent='🔗 Linked labour added: '+added.join(', ')+'. It will be removed automatically if the part is removed.'; setTimeout(()=>{ if(msg.textContent.indexOf('Linked labour')>-1) msg.textContent=''; },7000); }
-  }
-  /* ESTIMATE ENGINE (Ravi 28-Jul-2026) — backend top-up of the fitment labour.
-     esFindLinkedLabours() above matches on the part NAME against MD_PartLabourMap,
-     which only covers the parts somebody has mapped by hand. The backend
-     MD_Tree_PartLink table covers 8,239 part NUMBERS, follows supersession chains,
-     and carries the per-model rate. So: the local map still fires instantly (this
-     is what the SA sees the moment the part is picked, and it works offline), and
-     the backend then fills in anything the local map did not know about.
-     Never blocks, never removes a line the local map already added. */
-  if(row.pn){
-    try{
-      jget('ee_forpart',{part:row.pn,model:esCurrentModelUP()},function(res){
-        if(!res||!res.ok||!res.labour||!res.labour.length) return;
-        // The part may have been taken off the estimate while this call was in flight.
-        if(!ES_ADDPART.some(x=>x.pn===row.pn)) return;
-        const gained=[];
-        res.labour.forEach(function(lb){
-          const code=String(lb.code||'').trim(), desc=String(lb.desc||'').trim();
-          if(!desc && !code) return;
-          const dup=ES_ADDLAB.some(x=>
-            (code && String(x.code||'').trim().toUpperCase()===code.toUpperCase()) ||
-            (desc && String(x.l||'').trim().toUpperCase()===desc.toUpperCase()));
-          if(dup) return;
-          ES_ADDLAB.push({l:desc||code,p:Number(lb.rate||0),code:code,cc:'',_fromPart:row.l,_fromPn:row.pn||'',_locked:true});
-          gained.push((desc||code)+' ('+inr(Number(lb.rate||0))+')');
-        });
-        if(!gained.length) return;
-        esDrawChips();
-        const m2=document.getElementById('es-msg');
-        if(m2){ m2.style.color='var(--ok)'; m2.textContent='🔗 Linked labour added: '+gained.join(', ')+'. It will be removed automatically if the part is removed.'; setTimeout(()=>{ if(m2.textContent.indexOf('Linked labour')>-1) m2.textContent=''; },7000); }
-      });
-    }catch(e){}
-  }
-  document.getElementById('es-add-pcat').value='';
-  var _sub=document.getElementById('es-add-psub'); if(_sub) _sub.innerHTML='<option value="">Sub-category…</option>';
-  document.getElementById('es-add-pname').innerHTML='<option value="">Part…</option>';
-  document.getElementById('es-add-pamt').value='';
-  var _sa=document.getElementById('es-add-showall'); if(_sa){ _sa.checked=false; ES_PART_SHOWALL=false; }
-  esDrawChips();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the manual add-part box is gone. */
 }
 esRenderPartCategoryDropdown();
 
 function esDrawChips(){
-  const c=document.getElementById('es-chips');
-  c.innerHTML=[...ES_ADDLAB.map((x,i)=>({...x,t:'L',i})),...ES_ADDPART.map((x,i)=>({...x,t:'P',i}))]
-    /* A labour line that a part brought with it carries a lock, not a ✕. It is the
-       fitting labour for that part — it goes when the part goes, and not before.
-       The SA explains it; the SA does not delete it. Everything else stays removable. */
-    .map(x=>`<div class="chip"><span>${x.t==='L'?'🔧':'⚙️'} ${x.l}${x.code?' <b style="font-size:10px;color:var(--steel)">['+x.code+']</b>':''}</span><span><b>${inr(x.p)}</b> ${(x.t==='L'&&x._locked)?`<span class="lk" title="Fitting labour for ${(x._fromPart||'the part').replace(/"/g,'')} — it comes off when that part is removed">🔒</span>`:`<span class="x" onclick="esRmChip('${x.t}',${x.i})">✕</span>`}</span></div>`).join('');
-  esUpdateLive();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the Add labour / part box is gone, so there are no chips. */
 }
 function esRmChip(t,i){
-  if(t==='L'){
-    /* Belt and braces: the chip for a locked line renders a 🔒 and no ✕, so this
-       cannot normally be reached. It still guards the array, because a phone on an
-       older cached page could call it with a stale index. */
-    const lk=ES_ADDLAB[i];
-    if(lk&&lk._locked){
-      const m=document.getElementById('es-msg');
-      if(m){ m.style.color='var(--steel)'; m.textContent='🔒 This labour goes with '+(lk._fromPart||'the part')+'. Remove that part and this comes off with it.'; setTimeout(()=>{ if(m.textContent.indexOf('This labour goes with')>-1) m.textContent=''; },5000); }
-      return;
-    }
-    ES_ADDLAB.splice(i,1);
-  }
-  else {
-    const removed=ES_ADDPART[i];
-    ES_ADDPART.splice(i,1);
-    // Reverse of the DMS auto-link: when a part is removed, drop the labour(s) it
-    // auto-added — but ONLY if no other still-present part also maps to that labour
-    // (shared fitment labour must survive) and the SA hasn't manually kept it.
-    if(removed){
-      const stillMappedLabours=new Set();
-      ES_ADDPART.forEach(p=>{ const m=esFindLinkedLabours(p.l); if(m) m.labours.forEach(lb=>stillMappedLabours.add(lb.l.toLowerCase())); });
-      const dropped=[];
-      ES_ADDLAB=ES_ADDLAB.filter(lb=>{
-        const wasAutoFromThisPart = lb._fromPart && lb._fromPart.toLowerCase()===removed.l.toLowerCase();
-        if(wasAutoFromThisPart && !stillMappedLabours.has(lb.l.toLowerCase())){ dropped.push(lb.l); return false; }
-        return true;
-      });
-      if(dropped.length){
-        const msg=document.getElementById('es-msg');
-        if(msg){ msg.style.color='var(--steel)'; msg.textContent='🔗 Linked labour removed with the part: '+dropped.join(', ')+'.'; setTimeout(()=>{ if(msg.textContent.indexOf('Linked labour removed')>-1) msg.textContent=''; },5000); }
-      }
-    }
-  }
-  esDrawChips();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — no chips to remove. */
 }
 
-function esBuild(fam, dec, km, modelName){
-  const type=dec.type;
-  const L={oil:[],parts:[],labour:[]};
-  // Oil: model-specific price from MD_ModelOilMap (real MRP per model) wins over the
-  // coarse FAM bucket — this is the ₹373-Harley fix. Falls back to FAM only if the model
-  // isn't in the oil map.
-  const oil=()=>{
-    const mo=heroOilForModel(modelName);
-    if(mo){ const vol=mo.vol?(' · '+mo.vol+' ml'):''; L.oil.push({l:'Engine Oil'+vol+(mo.part?' ('+mo.part+')':''),p:mo.mrp}); }
-  };
-  const checkedVar=()=>esMdVarItems().filter(function(v){ const el=document.getElementById('esvc-'+v.k); return el&&el.checked; });
-  const checkedWearTear=()=>WEARTEAR.filter(function(v){ const el=document.getElementById('eswt-'+v.k); return el&&el.checked; });
-  // Base PM labour from master table or fallback
-  const addPmLab=(svcTypeFull, fallbackLabel, fallbackPrice, isFree)=>{
-    const ml=esMdPmLabour(svcTypeFull);
-    const item=ml?{l:ml.l,p:ml.p}:{l:fallbackLabel,p:fallbackPrice};
-    if(isFree) item.free=true;
-    L.labour.push(item);
-  };
-  // ADDITIVE: both the model-specific kit parts (master data) AND the km-based
-  // random parts logic run together — previously one replaced the other, which
-  // dropped the total too low (was ~4200, fell to ~3081). Deduped by label so the
-  // same part isn't double-charged if it appears in both sources.
-  const addKitParts=()=>{
-    const seen={};
-    const bucket=esServiceBucket(dec);
-    const kitParts=esMdKitParts(modelName,bucket);
-    if(kitParts.length){
-      kitParts.forEach(k=>{ if(!seen[k.l.toLowerCase()]){ seen[k.l.toLowerCase()]=true; L.parts.push(k); } });
-    }
-  };
-  // Small consumable bundle from local parts master (nut/bolt/O-ring etc) — always added
-  const addLocalBundle=()=>esMdLocalParts().forEach(p=>L.parts.push(p));
-  // Optional wear-and-tear parts SA ticked on (Brake Shoe Kit, Chain Kit, Clutch, Brake Pads)
-  const addWearTear=()=>checkedWearTear().forEach(v=>L.parts.push({l:v.l,p:v.p}));
+/* ===========================================================================
+   esBuild - R65. Everything below used to be assembled here out of hardcoded
+   arrays: VAR (24 optional labour rows), WEARTEAR (4), FORTY, PRESET, the PM
+   kit tables and a km ladder of guessed part prices. Ravi, 14-Aug-2026:
+   "Strip the entire variable labour for the visit column all of it. Strip the
+   wear and tear addons... Add parts labour oil as per the service requirement."
 
-  if(type==='free'){
-    const stage=dec.stage?dec.stage.n:'I';
-    addPmLab('Free Service '+stage,'Scheduled Free Service (labour waived)',0,true);
-    oil(); addKitParts(); addLocalBundle(); addWearTear();
-    checkedVar().forEach(v=>L.labour.push({l:v.l,p:v.p,code:v.code||''}));
-  }
-  else if(type==='paid'){
-    FORTY.forEach(f=>L.labour.push({...f}));
-    addPmLab('Paid Service','Paid Service Labour (PM)',fam.paid||820,false);
-    oil(); addKitParts(); addLocalBundle(); addWearTear();
-    checkedVar().forEach(v=>L.labour.push({l:v.l,p:v.p,code:v.code||''}));
-  }
-  else if(type==='joyride'){
-    const ml=esMdPmLabour('Joyride');
-    L.labour.push(ml||{l:'Joyride Service Labour',p:100});
-    oil(); addLocalBundle(); addWearTear();
-    checkedVar().forEach(v=>L.labour.push({l:v.l,p:v.p,code:v.code||''}));
-  }
-  else if(type==='accidental'){
-    const ml=esMdPmLabour('Accidental Repair');
-    L.labour.push(ml||{l:'Accidental Repair Labour (per estimate)',p:FLOOR.accidental});
-  }
-  else if(type==='general'){
-    checkedVar().forEach(v=>L.labour.push({l:v.l,p:v.p,code:v.code||''}));
-    if(!L.labour.length){
-      const ml=esMdPmLabour('General Repair');
-      L.labour.push(ml||{l:'General Repair Labour',p:FLOOR.general});
-    }
-    addLocalBundle(); addWearTear();
+   The lines now come from ES_COMPOSED - the estimate_compose RPC, which reads
+   the owner-manual schedule for THIS model at THIS odometer, the km/month
+   replacement rules, the model's own oil row, the model-wise parts tree (part
+   number, MRP, live stock, linked labour, complaint code), the Hero DMS labour
+   master and the customer's own history. Nothing here invents a line.
+   =========================================================================== */
+function esBuild(fam, dec, km, modelName){
+  const L={oil:[],parts:[],labour:[]};
+  const C=ES_COMPOSED;
+  if(C){
+    (C.oil||[]).forEach(function(o){
+      L.oil.push({l:o.desc, p:+o.mrp||0, pn:o.pn||'', stk:o.stock, outlets:o.outlets,
+                  stock_as_of:o.stock_as_of, why:o.why, src:o.src});
+    });
+    (C.parts||[]).forEach(function(x){
+      L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', cc:x.cc||'', stk:x.stock,
+                    outlets:x.outlets, stock_as_of:x.stock_as_of, why:x.why,
+                    src:x.src, fromModel:x.from_model});
+    });
+    (C.consumables||[]).forEach(function(x){
+      L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', why:x.why, src:'consumable', stk:x.stock});
+    });
+    (C.labour||[]).forEach(function(l){
+      const fit=(l.kind==='fitment');
+      L.labour.push({l:l.desc, p:+l.amt||0, code:l.code||'', why:l.why, src:l.src,
+                     free:(!fit && !(+l.amt>0)),
+                     _fromPart:fit?(l.for_desc||''):'', _fromPn:fit?(l.for_part||''):'',
+                     _locked:fit});
+    });
   }
   ES_ADDLAB.forEach(x=>L.labour.push({...x}));
   ES_ADDPART.forEach(x=>L.parts.push({...x}));
-  // Fix #4: apply SA-removed line items (delete option on PM/kit parts)
   if(ES_REMOVED.size){
-    L.oil=L.oil.filter(p=>!ES_REMOVED.has(p.l)); // FIX: oil rows were not deletable — filter was missing for L.oil
-    L.parts=L.parts.filter(p=>!ES_REMOVED.has(p.l));
-    L.labour=L.labour.filter(p=>!ES_REMOVED.has(p.l)||p.free); // never let SA accidentally remove the waived base labour line
+    L.oil=L.oil.filter(x=>!ES_REMOVED.has(x.l));
+    L.parts=L.parts.filter(x=>!ES_REMOVED.has(x.l));
+    L.labour=L.labour.filter(x=>!ES_REMOVED.has(x.l)||x.free);
   }
   return L;
+}
+function esBuildLegacy_UNUSED(fam, dec, km, modelName){
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the hardcoded VAR / WEARTEAR / PRESET / kit composition it held. */
 }
 let ES_REMOVED=new Set(); // labels of PM/kit items the SA has explicitly removed for this estimate
 /* SA-editable amounts (URGENT per Ravi): oil/kit/labour prices sometimes lag the real
@@ -6394,35 +6281,10 @@ let ES_PRICE_OVERRIDES={};
 let ES_LINE_DISCOUNTS={}; // key = section|label
 let ES_UNDO_STACK=[]; // one-step-back snapshots for the estimate builder (Ctrl+Z for SAs)
 function esEditPrice(label){
-  if(ES.locked) return;
-  const c=esComputeCurrent(); if(!c) return;
-  const all=[...c.items.oil,...c.items.parts,...c.items.labour];
-  const it=all.find(x=>x.l===label); if(!it) return;
-  if(it.free){ alert('This line is free of charge for this service type — amount cannot be edited.'); return; }
-  const v=prompt('Enter the correct amount (₹) for:\n'+label,it.baseP!==undefined?it.baseP:it.p);
-  if(v===null) return;
-  const n=Number(String(v).replace(/[₹,\s]/g,''));
-  if(isNaN(n)||n<0){ alert('Enter a valid amount.'); return; }
-  ES_PRICE_OVERRIDES[label]=Math.round(n);
-  esUpdateLive();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — per-line Edit is gone — one action per line, and it is Remove. */
 }
 function esDiscountLine(label,kind){
-  if(ES.locked) return;
-  const c=esComputeCurrent(); if(!c) return;
-  const arr=(kind&&c.items[kind])||[...c.items.oil,...c.items.parts,...c.items.labour];
-  const it=arr.find(x=>x.l===label); if(!it||it.free) return;
-  const key=(kind||'line')+'|'+label;
-  const old=ES_LINE_DISCOUNTS[key];
-  const def=old?(old.mode==='pct'?old.value+'%':old.value):'';
-  const v=prompt('Line discount for:\n'+label+'\n\nType 5% or an amount such as 50. Leave blank to remove.',def);
-  if(v===null) return;
-  const raw=String(v).trim();
-  if(!raw||raw==='0'||raw==='0%'){ delete ES_LINE_DISCOUNTS[key]; esUpdateLive(); return; }
-  const pct=raw.endsWith('%');
-  const n=Number(raw.replace(/[%₹,\s]/g,''));
-  if(isNaN(n)||n<0){ alert('Enter a valid discount.'); return; }
-  ES_LINE_DISCOUNTS[key]={mode:pct?'pct':'amt',value:n};
-  esUpdateLive();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — per-line Discount is gone — "I was wrong. just give a small remove the item." */
 }
 function esApplyPriceOverrides(L){
   ['oil','parts','labour'].forEach(k=>{
@@ -6790,45 +6652,10 @@ function esEnforceLinkedLabour_(items){
    ========================================================================== */
 let ES_DUE_CACHE = {key:'', data:null};
 function esLoadServiceDue(){
-  const wrap=document.getElementById('es-due-wrap'), list=document.getElementById('es-due-list');
-  if(!wrap||!list) return;
-  const model=val('es-model'), km=+val('es-km')||0, dos=val('es-dos');
-  if(!model){ wrap.style.display='none'; return; }
-  const key=model+'|'+km+'|'+dos;
-  if(ES_DUE_CACHE.key===key && ES_DUE_CACHE.data){ esRenderServiceDue(ES_DUE_CACHE.data); return; }
-  list.innerHTML='<div class="hint">Checking the owner manual…</div>';
-  wrap.style.display='block';
-  jget('svc_due',{model:model,km:km,dateOfSale:dos||''},function(res){
-    if(val('es-model')!==model) return;           // advisor moved on
-    ES_DUE_CACHE={key:key,data:res};
-    esRenderServiceDue(res);
-  });
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — replaced by esCompose() — the manual now composes the estimate itself. */
 }
 function esRenderServiceDue(res){
-  const wrap=document.getElementById('es-due-wrap'), list=document.getElementById('es-due-list');
-  if(!wrap||!list) return;
-  const due=(res&&res.due)||[], soon=(res&&res.upcoming)||[];
-  if(!due.length && !soon.length){ wrap.style.display='none'; return; }
-  wrap.style.display='block';
-  const rowHtml=(x,isDue)=>{
-    /* Say WHY it is due. "2 years since sale" is a reason a customer accepts;
-       a bare due flag is not. */
-    const why=[];
-    if(x.dueByKm)   why.push(x.vehicleKm+' km against '+x.intervalKm+' km');
-    if(x.dueByDate) why.push(x.vehicleMonths+' months since sale against '+x.intervalMonths+' months');
-    if(!isDue && x.intervalKm) why.push('due at '+x.intervalKm+' km');
-    const name=String(x.item||'').replace(/</g,'&lt;');
-    return '<div class="chip" style="margin-bottom:6px">'
-      +'<span>'+(isDue?'🔧':'🕒')+' <b>'+name+'</b>'
-      +'<span style="display:block;font-size:11px;color:var(--steel)">'+why.join(' · ')+'</span></span>'
-      +'<span><button type="button" class="es-line-act" onclick="esAddDueItem(\''+name.replace(/'/g,"\\'")+'\')">Add</button></span>'
-      +'</div>';
-  };
-  let html='';
-  if(due.length)  html+=due.map(x=>rowHtml(x,true)).join('');
-  if(soon.length) html+='<div class="hint" style="margin:6px 0 4px">Coming up</div>'+soon.slice(0,4).map(x=>rowHtml(x,false)).join('');
-  if(res&&res.note) html+='<div class="hint" style="margin-top:6px">'+res.note+'</div>';
-  list.innerHTML=html;
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — replaced by esCompose(). */
 }
 /* ---------------------------------------------------------------------------
    esAddDueItem — CHANGED 06-Aug-2026.
@@ -6882,62 +6709,259 @@ function esResolveDueItem(name){
   return out;
 }
 function esAddDueItem(name){
-  const m=document.getElementById('es-msg');
-  const say=(txt,ok)=>{
-    if(!m) return;
-    m.style.color = ok ? 'var(--ok)' : 'var(--steel)';
-    m.textContent = txt;
-    setTimeout(()=>{ if(m.textContent===txt) m.textContent=''; }, 7000);
-  };
-
-  const hits=esResolveDueItem(name);
-  const best=hits[0];
-
-  /* 1 — one clear, priced match: put it on the estimate. */
-  if(best && best.score>=0.95 && best.p.price>0 &&
-     (!hits[1] || hits[1].score < best.score-0.15)){
-    const cat=document.getElementById('es-add-pcat');
-    const sub=document.getElementById('es-add-psub');
-    const nm =document.getElementById('es-add-pname');
-    if(cat && sub && nm){
-      cat.value=best.p.cat; esRenderPartSubDropdown();
-      sub.value=best.p.sub; esRenderPartDropdown();
-      const idx=(nm._items||[]).findIndex(function(x){ return x.pn===best.p.pn && x.l===best.p.l; });
-      if(idx>=0){
-        nm.value=String(idx);
-        if(nm.onchange) nm.onchange();
-        esAddPartFn();                       /* the real add path, not a copy */
-        say('📖 Owner manual: '+name+' → added '+best.p.l+' '+inr(best.p.price)+
-            (best.p.pn?(' ['+best.p.pn+']'):'')+'.', true);
-        return;
-      }
-    }
-  }
-
-  /* 2 — we know roughly what it is, but not well enough to price it silently. */
-  if(best){
-    const cat=document.getElementById('es-add-pcat');
-    const sub=document.getElementById('es-add-psub');
-    if(cat && sub){
-      cat.value=best.p.cat; esRenderPartSubDropdown();
-      sub.value=best.p.sub; esRenderPartDropdown();
-      const anchor=document.getElementById('es-add-pname');
-      if(anchor && anchor.scrollIntoView) anchor.scrollIntoView({block:'center', behavior:'smooth'});
-      say('📖 '+name+' — opened '+best.p.cat+' › '+best.p.sub+
-          '. Pick the exact part'+(best.p.price>0?'':' and type its price')+'.', false);
-      return;
-    }
-  }
-
-  /* 3 — nothing in the parts master resembles it. Record it in the advisor's
-         own words, exactly as this function did before. */
-  const box=document.getElementById('es-add-dem');
-  if(box){
-    const cur=String(box.value||'').trim();
-    if(cur.toLowerCase().indexOf(name.toLowerCase())<0) box.value=(cur?cur+', ':'')+name;
-  }
-  say('📖 Added from the owner manual: '+name+'. No matching part in the master — price it manually.', false);
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the manual items are already on the estimate; nothing to tap. */
 }
+
+
+/* ===========================================================================
+   R65 — THE OWNER MANUAL COMPOSES THE ESTIMATE      (Ravi, 14-Aug-2026)
+
+   "Add parts labour oil as per the service requirement. Last service we know,
+    we know the intervals of each vehicle from the manuals from the manuals
+    project... Preventive maintenance parts, oil as per the manual should come
+    directly. System should suggest parts like brake shoes, clutch plate as per
+    the vehicle run as per owners manuals."
+
+   One call to estimate_compose (Supabase) returns, for THIS model at THIS
+   odometer and age: the oil with its part number, the parts the manual says to
+   replace at this service, the km/month rules the grid does not show (brake
+   fluid and front fork oil are 2-YEAR items), the Hero DMS service labour code,
+   the fitment labour of each part, the consumable pack, the manual's own
+   inspection checklist, this customer's last visits, and what the last visit
+   left undone. Nothing on this screen is typed by the advisor any more.
+   =========================================================================== */
+let ES_COMPOSED=null, ES_COMPOSE_KEY='', ES_COMPOSE_ERR='';
+
+/* The gate already decided the service type. geFinalPurpose() writes it into
+   Visit Purpose as "Service - Paid Service", and the pending row carries it. */
+function esApplyGateService(g){
+  const purpose=String((g&&g.purpose)||'').trim();
+  const rules=[[/free/i,'free'],[/paid/i,'paid'],[/joyride/i,'joyride'],
+               [/general/i,'general'],[/accident|bodyshop/i,'accidental']];
+  let t='';
+  for(let i=0;i<rules.length;i++){ if(rules[i][0].test(purpose)){ t=rules[i][1]; break; } }
+  const sel=document.getElementById('es-type'), txt=document.getElementById('es-type-txt');
+  const label={free:'Free service',paid:'Paid service',joyride:'Joyride',
+               general:'General repair',accidental:'Accidental'}[t]||'';
+  if(sel) sel.value=t;
+  if(txt) txt.value = label ? label : ((purpose||'—')+' — not a service visit');
+  const fw=document.getElementById('es-freestage-wrap');
+  if(fw) fw.style.display=(t==='free')?'block':'none';
+  if(t==='free'){ try{ esSuggestFreeStage(); }catch(e){} }
+  if(sel) sel.dispatchEvent(new Event('change'));
+}
+
+/* Which service visit this is, on the model's own ladder. SCHED holds the real
+   Hero free-service schedule per family and `pm` is the paid interval in
+   thousands, so after the last free service the ladder simply continues. */
+function esVisitNo(modelName, km){
+  try{
+    const fam=famFor(modelName); const sc=fam&&SCHED[fam.sched]; if(!sc) return null;
+    const ladder=sc.free.map(function(f){ return +f.km; });
+    let n=1;
+    for(let i=0;i<ladder.length;i++){ if(km>=ladder[i]) n=i+1; }
+    const last=ladder[ladder.length-1];
+    if(km>last){ const step=(sc.pm||6)*1000; n=ladder.length+Math.floor((km-last)/step); }
+    return Math.max(1,n);
+  }catch(e){ return null; }
+}
+
+function esCompose(){
+  const model=val('es-model'), km=+val('es-km')||0, svc=val('es-type')||'';
+  const reg=(val('es-reg')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const wrap=document.getElementById('es-manual-wrap');
+  if(!model || !svc){
+    ES_COMPOSED=null; ES_COMPOSE_KEY='';
+    if(wrap) wrap.style.display='none';
+    return;
+  }
+  const months=esMonthsSince(val('es-dos'))||null;
+  const visit=esVisitNo(model,km);
+  const stage=(svc==='free')?(val('es-freestage')||'I'):'';
+  const key=[model,km,months,svc,stage,reg,visit].join('|');
+  if(ES_COMPOSE_KEY===key) return;
+  ES_COMPOSE_KEY=key;
+  if(wrap){
+    wrap.style.display='block';
+    const h=document.getElementById('es-manual-head');
+    if(h) h.innerHTML='Reading the owner manual for '+raviEsc(model)+'…';
+  }
+  const args={p_model:model, p_km:km, p_months:months, p_visit:visit,
+              p_reg:reg, p_service:(svc==='free'?('free '+stage):svc)};
+  const done=function(res){
+    if(ES_COMPOSE_KEY!==key) return;                 /* vehicle changed in flight */
+    ES_COMPOSED=(res&&res.ok)?res:null;
+    ES_COMPOSE_ERR=(res&&res.ok)?'':'the manual could not be read';
+    esResetRemoved(); esRenderManual(); esRenderHistory(); esUpdateLive();
+  };
+  const anon=function(){
+    fetch(SB_URL+'/rest/v1/rpc/estimate_compose',{method:'POST',
+      headers:{apikey:SB_ANON, Authorization:'Bearer '+SB_ANON, 'Content-Type':'application/json'},
+      body:JSON.stringify(args)})
+      .then(function(r){ return r.ok?r.json():null; }).then(done)
+      .catch(function(){ done(null); });
+  };
+  if(typeof sbRpc==='function') sbRpc('estimate_compose',args).then(done).catch(anon);
+  else anon();
+}
+
+
+/* ===========================================================================
+   R66 — THE CUSTOMER'S OWN HISTORY, ON THE ESTIMATE SCREEN
+
+   Ravi, 14-Aug-2026: "Please ensure you check the past bills of each customer.
+   So now we will give the SA history of the customer in the estimate... to
+   increase the labour. This history thing is a good idea. Not the random
+   variable labours and 4000 rs bills."
+
+   The difference matters. A variable-labour tick box asks the advisor to add
+   work nobody asked for. This tells him what THIS bike has actually had done,
+   when, and at what odometer — so the labour he adds is the labour the vehicle
+   is genuinely due, and he can say why to the customer's face.
+
+   Everything here comes from estimate_compose: `history` (the last three
+   estimates for this registration, with their saved items) and `missed` (what
+   the manual made due before the last visit and that visit did not include).
+   =========================================================================== */
+function esHistItems_(raw){
+  /* The saved item list is a JSON blob per estimate. Names only — the money is
+     not the point here, the work is. */
+  try{
+    const j=(typeof raw==='string')?JSON.parse(raw):raw;
+    if(!j) return [];
+    const out=[];
+    ['oil','parts','labour'].forEach(function(k){
+      (j[k]||[]).forEach(function(x){ if(x&&x.l) out.push(String(x.l)); });
+    });
+    return out;
+  }catch(e){ return []; }
+}
+function esRenderHistory(){
+  const wrap=document.getElementById('es-hist-wrap'), body=document.getElementById('es-hist-body');
+  if(!wrap||!body) return;
+  const C=ES_COMPOSED;
+  const hist=(C&&C.history)||[], missed=(C&&C.missed)||[];
+  if(!C){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  if(!hist.length){
+    body.innerHTML='<div class="hint">No earlier estimate on record for this registration. '
+      +'First visit we can see — take the odometer and the date of sale as the baseline.</div>';
+    return;
+  }
+  /* How hard is this bike used? km between the last two visits over the days
+     between them is the one number that tells the advisor whether the next
+     service is a month away or six. */
+  let usage='';
+  const withKm=hist.filter(function(h){ return +h.km>0; });
+  if(withKm.length>=1){
+    const nowKm=+val('es-km')||0, lastKm=+withKm[0].km||0;
+    const d=new Date(withKm[0].date);
+    const days=isNaN(d.getTime())?0:Math.max(1,Math.round((Date.now()-d.getTime())/86400000));
+    if(nowKm>lastKm && days>1){
+      const perDay=(nowKm-lastKm)/days;
+      usage='<div class="es-hist-usage">'+(nowKm-lastKm).toLocaleString('en-IN')+' km in '+days+' days since the last visit'
+        +' \u00b7 about <b>'+Math.round(perDay*30).toLocaleString('en-IN')+' km a month</b>'
+        +' \u00b7 next service due in roughly <b>'+Math.max(1,Math.round(((C.oil_interval_km||6000)-(nowKm-lastKm))/Math.max(perDay*30,1)))+' month(s)</b></div>';
+    }
+  }
+  const rows=hist.map(function(h){
+    const items=esHistItems_(h.items);
+    const shown=items.slice(0,6).map(raviEsc).join(' \u00b7 ');
+    const more=items.length>6?(' +'+(items.length-6)+' more'):'';
+    return '<tr><td class="es-hist-when"><b>'+raviEsc(h.date||'')+'</b>'
+      +(h.km?('<div class="es-hist-km">'+Number(h.km).toLocaleString('en-IN')+' km</div>'):'')+'</td>'
+      +'<td><div class="es-hist-svc">'+raviEsc(h.service||'')+'</div>'
+      +'<div class="es-hist-items">'+(shown||'items not recorded')+more+'</div></td>'
+      +'<td class="amt mono">'+(h.total?inr(+h.total):'')+'</td></tr>';
+  }).join('');
+  /* What was due and never done. This is the honest way to add labour: it is
+     owed to the bike, the manual says so, and the last visit skipped it. */
+  const owed=missed.length
+    ? '<div class="es-hist-owed"><b>Owed to this vehicle</b> \u2014 the manual made these due and the last visit did not include them:'
+      +'<ul>'+missed.map(function(m){ return '<li>'+raviEsc(m.item)+' <span>'+raviEsc(m.why)+'</span></li>'; }).join('')+'</ul></div>'
+    : '';
+  body.innerHTML=usage+'<table class="es-mini es-hist"><tbody>'+rows+'</tbody></table>'+owed;
+}
+
+function esRenderManual(){
+  const wrap=document.getElementById('es-manual-wrap'); if(!wrap) return;
+  const head=document.getElementById('es-manual-head');
+  const miss=document.getElementById('es-missed-list');
+  const chk =document.getElementById('es-check-list');
+  const un  =document.getElementById('es-unmapped-list');
+  const C=ES_COMPOSED;
+  wrap.style.display='block';
+  if(!C){
+    if(head) head.innerHTML='<b>'+(ES_COMPOSE_ERR||'Owner manual not read')+'.</b> '+
+      'Nothing has been added automatically — check the model and the odometer.';
+    if(miss) miss.innerHTML=''; if(chk) chk.innerHTML=''; if(un) un.innerHTML='';
+    return;
+  }
+  const askedNorm=String(C.model_asked||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const schedNorm=String(C.model_schedule||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(head){
+    head.innerHTML='<b>Service '+C.visit+'</b> at '+Number(C.km||0).toLocaleString('en-IN')+' km'
+      +' · manual on file: <b>'+raviEsc(C.model_schedule||'none')+'</b>'
+      +' · engine oil every '+C.oil_interval_km+' km'
+      +(schedNorm && schedNorm!==askedNorm
+        ? ' <span class="es-warn">nearest manual to '+raviEsc(C.model_asked)+'</span>' : '');
+  }
+  /* WHAT THE LAST VISIT LEFT UNDONE. Ravi: "if missed something to add in last
+     history it should show that." */
+  const missed=(C.missed||[]), hist=(C.history||[]);
+  let mh='';
+  if(hist.length){
+    mh+='<div class="es-hist">Last visits: '+hist.map(function(h){
+      return raviEsc(h.date||'')+(h.km?(' · '+h.km+' km'):'')+(h.service?(' · '+raviEsc(h.service)):'');
+    }).join('  |  ')+'</div>';
+  }
+  if(missed.length){
+    mh+='<table class="es-mini"><tbody>'+missed.map(function(m){
+      return '<tr class="es-miss"><td>⚠ '+raviEsc(m.item)+'</td><td>'+raviEsc(m.why)+'</td></tr>';
+    }).join('')+'</tbody></table>';
+  }
+  if(miss) miss.innerHTML=mh;
+  /* THE MANUAL'S OWN CHECKLIST for this service. Not priced: Hero bills these
+     under the one service labour code, and pricing them separately is the
+     padding this release removed. */
+  const cl=(C.checklist||[]);
+  if(chk){
+    chk.innerHTML = cl.length
+      ? '<details class="es-chk"><summary>'+cl.length+' checks the manual specifies at this service</summary>'
+        +'<table class="es-mini"><tbody>'+cl.map(function(x){
+            return '<tr><td>'+raviEsc(x.item)+'</td><td class="mono">'+raviEsc(x.act)+'</td></tr>';
+          }).join('')+'</tbody></table>'
+        +'<div class="hint">I inspect · C clean · A adjust · L lubricate · T top up · R replace. '
+        +'These are done under the service labour and are not charged separately.</div></details>'
+      : '';
+  }
+  /* WHERE THE MASTER IS SHORT. A part the manual says to replace but which has
+     no part number for this model cannot go on the estimate — the billing desk
+     could not type it into the DMS — so it is named here instead of silently
+     dropped. */
+  const um=(C.unmapped||[]);
+  if(un){
+    un.innerHTML = um.length
+      ? '<table class="es-mini es-unmapped"><tbody>'+um.map(function(x){
+          return '<tr><td>'+raviEsc(x.item)+'</td><td>'+raviEsc(x.why)+'</td></tr>';
+        }).join('')+'</tbody></table>'
+      : '';
+  }
+}
+
+/* "and if it is the same as above, then a same as above button" */
+function esSameAsAbove(){
+  const a=document.getElementById('es-mob'), b=document.getElementById('es-mob2');
+  if(!a||!b) return;
+  b.value=String(a.value||'').replace(/[^0-9]/g,'').slice(-10);
+  esUpdateLive();
+}
+
+/* Odometer or free-stage changed on screen -> the manual is read again. */
+['es-km','es-dos','es-freestage'].forEach(function(id){
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('change', function(){ try{ esCompose(); }catch(e){} });
+});
 
 function esComputeCurrent(){
   const modelName=val('es-model'); if(!modelName) return null;
@@ -6956,11 +6980,17 @@ function esComputeCurrent(){
   const netService=sumNet(items.parts)+sumNet(items.oil)+sumNet(items.labour);
   const lineDisc=sumLine(items.parts)+sumLine(items.oil)+sumLine(items.labour);
   const express=document.getElementById('es-express')&&document.getElementById('es-express').checked;
-  const expressFee=express?80:0;
+  const expressFee=express?150:0;   /* Ravi 14-Aug-2026: "Express service is 150 rs." */
   const inc=(dec.type==='paid')?heroIncrementalPrice(modelName,dec.type):null;
-  const oldFloor=(dec.type==='paid')?esPaidFloor(modelName,fam):(FLOOR[dec.type]||0);
-  const floor=(inc&&inc.floor!==undefined&&inc.floor!==null)?inc.floor:oldFloor;
-  const initial=(inc&&inc.initial!==undefined&&inc.initial!==null)?inc.initial:Math.max(oldFloor,parts+oil+labour);
+  /* R65 (Ravi, 14-Aug-2026): "Make the realistic estimates not 4000-5000 rs."
+     PAID_FLOOR_BY_FAM forced every paid quote to Rs 4,000-6,500 against a
+     billed median of Rs 2,292. Its last live effect was the discount cap
+     (maxOtherDisc = netService - floor): with a Rs 1,300 manual-composed
+     estimate and a Rs 4,200 floor, no discount could ever be given.
+     The estimate is now the sum of what the owner manual actually calls for.
+     The R63 anchor cap still guards the top end. */
+  const floor=0;
+  const initial=parts+oil+labour;
   const changed=esHasCommercialChange();
   items.protection=[];
   const rawPre=parts+oil+labour;
@@ -7003,6 +7033,12 @@ function esComputeCurrent(){
           anchor:anch,custRows,custLast,modelMed,anchorBase,anchorCap,overCap};
 }
 function esUpdateLive(){
+  /* The parts:labour strip is redrawn on every live recalculation, whatever
+     path taken out of the try below. (Was a window.esUpdateLive wrapper with a
+     try/finally; folded in 14-Aug-2026.) */
+  try{ esUpdateLiveInner_(); } finally { try{ rtRenderStrip(); }catch(e){} }
+}
+function esUpdateLiveInner_(){
   try{
     if(ES.locked) return; // a generated estimate is locked on screen — live preview no longer overwrites it
     const c=esComputeCurrent();
@@ -7110,7 +7146,7 @@ function esRenderDraft(c){
       <div class="trow"><span>GST @ 18%</span><span class="mono">${inr(c.tax)}</span></div></div>
     <div class="grand"><div class="lab">Running Total (draft)</div><div class="val"><small>₹</small>${Math.round(c.total).toLocaleString('en-IN')}</div></div>
     <div style="text-align:right;font-size:11.5px;font-weight:800;color:#6d28d9;padding:4px 2px">⚖ Parts : Labour = ${c.labour>0?((c.parts+c.oil)/c.labour).toFixed(2)+' : 1':'—'}</div>
-    <div class="e-note">Use Discount, Edit or ✕ against an individual line before generating. Labour linked to a selected part is removed only when that part is removed.</div>
+    <div class="e-note">Composed from the owner manual for this model at this odometer. Remove a line with ✕ if it does not apply. Fitting labour comes off with its part.</div>
   </div>`;
 }
 
@@ -7136,6 +7172,29 @@ function reqCheck(fields){
 
 function esGenerate(){
   if(ES.locked) return;
+  /* REGISTRATION NUMBER CHECK, before anything is generated (folded in
+     14-Aug-2026 from a window.esGenerate wrapper). A wrong plate is the one
+     mistake that survives all the way to the invoice, so the SA is asked twice:
+     once if the number is not a valid Indian registration, and once if it is
+     valid but a very similar number is already standing in today's records. */
+  {
+    const rn=raviNormalizeReg(val('es-reg'));
+    if(rn){
+      document.getElementById('es-reg').value=rn;
+      const msg0=document.getElementById('es-msg');
+      if(!raviValidReg(rn)){
+        const probs=probableRegs(rn);
+        const ptxt=probs.length?'\n\nProbable matching numbers:\n'+probs.join('\n'):'';
+        if(!confirm('Please check registration number before generating estimate.\n\nEntered: '+rn+'\n\nIt does not look like a valid Indian registration number.'+ptxt+'\n\nContinue anyway?')){
+          if(msg0){ msg0.style.color='var(--signal-d)'; msg0.textContent='Estimate not generated. Correct registration number first.'; }
+          return;
+        }
+      } else {
+        const probs=probableRegs(rn).filter(x=>x!==rn);
+        if(probs.length && !confirm('Registration number check:\n\nEntered: '+rn+'\n\nSimilar numbers found in today/Holdup records:\n'+probs.join('\n')+'\n\nPlease compare with uploaded gate photo / vehicle plate. Continue?')) return;
+      }
+    }
+  }
   if(!ONLINE){ document.getElementById('es-msg').style.color='var(--signal-d)'; document.getElementById('es-msg').textContent='No internet connection — cannot generate.'; return; }
   /* R63: the refusal now guards the CAP, not the floor — even if the button
      state was bypassed somehow, a paid quote above 1.5x the customer's anchor
@@ -7151,6 +7210,7 @@ function esGenerate(){
   const missing=reqCheck([
     {v:val('es-reg'), label:'Reg No'},
     {v:val('es-mob'), label:'Mobile No', mobile:true},
+    {v:val('es-mob2'), label:'Additional mobile', mobile:true},
     {v:val('es-name'), label:'Customer Name'},
     {v:val('es-model'), label:'Model'},
     {v:val('es-km'), label:'Odometer (km)'},
@@ -7183,12 +7243,31 @@ function esAmountHtml(x){
 }
 function esRows(a){ return a.map(x=>`<tr><td>${x.l}${esCodeHtml(x)}</td><td class="amt">${esAmountHtml(x)}</td></tr>`).join(''); }
 function esGrp(t,a){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li">${esRows(a)}</table></div>`; }
+/* STOCK IN BRACKETS, NOT A LINK (Ravi, 14-Aug-2026):
+   "Instead of Check stock - direct stock should be captured in brackets ( )."
+   "If bracket is (0) - Then all india part finder should be seen. Not so many
+    Links of check stock."
+   The figure is what our own four outlets are holding, counted server-side by
+   est_stock_() over part_stock and returned with the line. */
+function esStockHtml(x){
+  if(!x.pn) return '';
+  if(x.stk===undefined||x.stk===null) return '';
+  const n=Math.round(+x.stk||0);
+  if(n>0) return ' <span class="es-stk" title="'+(x.outlets||1)+' of our outlets'+(x.stock_as_of?(' \u00b7 stock as of '+x.stock_as_of):'')+'">('+n+')</span>';
+  return ' <span class="es-stk zero">(0)</span> <button type="button" class="es-stock-link" onclick="pfQuickCheck(\''+String(x.pn).replace(/'/g,'')+'\')">All India Part Finder</button>';
+}
+/* ONE action per line, and it is Remove (Ravi, 14-Aug-2026):
+   "No need of 3 things - discount, edit and remove. No need to keep discount on
+    individual parts and individual labour. I was wrong. just give a small
+    remove the item. that much is ok." */
 function esRowsEditable(a,kind){ return a.map(x=>{
   const safe=String(x.l).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const stock=x.pn?` <button type="button" class="es-stock-link" onclick="pfQuickCheck('${String(x.pn).replace(/'/g,'')}')" title="Check all-India stock">🔎 Check stock</button>`:'';
-  const marks=(ES_PRICE_OVERRIDES[x.l]!==undefined?' <span class="es-line-state">Edited</span>':'')+(x.lineDiscount>0?' <span class="es-line-state">Discounted</span>':'');
-  const del=x._fromPart?'<span class="es-line-act es-line-lock" title="Remove the selected part to remove this labour">🔒 <span>Linked</span></span>':`<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem('${safe}')" title="Remove this item"><span aria-hidden="true">✕</span><span>Remove</span></button>`;
-  return `<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">${x.l}</div><div class="es-item-meta">${stock}${marks}</div>${esCodeHtml(x)}</td><td class="amt es-item-amt">${esAmountHtml(x)}</td><td class="es-item-actions"><button type="button" class="es-line-act es-line-disc" onclick="esDiscountLine('${safe}','${kind||''}')" title="Discount this line"><span aria-hidden="true">%</span><span>Discount</span></button><button type="button" class="es-line-act es-line-edit" onclick="esEditPrice('${safe}')" title="Correct amount"><span aria-hidden="true">✎</span><span>Edit</span></button>${del}</td></tr>`;
+  const src=(x.fromModel && x.fromModel!==val('es-model')) ? (' \u00b7 part listed under '+x.fromModel) : '';
+  const why=x.why?('<div class="es-item-why">'+String(x.why).replace(/</g,'&lt;')+src+'</div>'):'';
+  const del=x._fromPart
+    ? '<span class="es-line-act es-line-lock" title="Remove the part to remove its fitting labour">🔒</span>'
+    : '<button type="button" class="es-line-act es-line-remove" onclick="esRemoveItem(\''+safe+'\')" title="Remove this item"><span aria-hidden="true">\u2715</span></button>';
+  return '<tr class="es-edit-row"><td class="es-item-cell"><div class="es-item-name">'+x.l+esStockHtml(x)+'</div>'+why+esCodeHtml(x)+'</td><td class="amt es-item-amt">'+esAmountHtml(x)+'</td><td class="es-item-actions">'+del+'</td></tr>';
 }).join(''); }
 function esGrpEditable(t,a,kind){ if(!a.length) return ''; const total=a.reduce((x,y)=>x+(+y.baseP||+y.p||0),0); return `<div class="grp"><div class="grp-h"><span>${t}</span><span class="mono" style="font-size:13px">${inr(total)}</span></div><table class="li es-edit-table">${esRowsEditable(a,kind)}</table></div>`; }
 function esRender(d){
@@ -7227,7 +7306,12 @@ function esLockForm(on){ ES.locked=on;
   document.getElementById('es-lockban').style.display=on?'block':'none';
 }
 function esNewEstimate(){
-  ['es-name','es-mob','es-reg','es-km','es-dos','es-add-pname','es-add-pamt','es-disc','es-disc-lab','es-disc-parts'].forEach(i=>{const el=document.getElementById(i); if(el) el.value='';});
+  ['es-name','es-mob','es-mob2','es-reg','es-km','es-dos','es-disc','es-disc-lab','es-disc-parts'].forEach(i=>{const el=document.getElementById(i); if(el) el.value='';});
+  /* R65: the composed manual lines belong to ONE vehicle. */
+  ES_COMPOSED=null; ES_COMPOSE_KEY=''; ES_COMPOSE_ERR='';
+  const mw=document.getElementById('es-manual-wrap'); if(mw) mw.style.display='none';
+  const hw=document.getElementById('es-hist-wrap'); if(hw) hw.style.display='none';
+  const tt=document.getElementById('es-type-txt'); if(tt) tt.value='—';
   document.getElementById('es-model').value=''; document.getElementById('es-type').value=''; const pcat=document.getElementById('es-add-pcat'); if(pcat) pcat.value='';
   const exch=document.getElementById('es-express'); if(exch) exch.checked=false; // FIX: express fee no longer silently carries into the next estimate
   document.getElementById('es-freestage-wrap').style.display='none';
@@ -7236,6 +7320,31 @@ function esNewEstimate(){
   esRenderVariable(); esUpdateLive();
   document.getElementById('es-out').innerHTML='<div class="empty"><div class="cond">No estimate yet</div><p style="margin-top:8px">Enter the vehicle details and press <b>Generate estimate</b>.</p></div>';
   document.getElementById('es-msg').textContent='';
+
+  /* ONE New Estimate, ONE clear-down (folded 14-Aug-2026).
+     This function used to be re-assigned three more times further down the file
+     — window.esNewEstimate = f(old) three times over — so a fresh estimate ran
+     four stacked functions and no single place said what "fresh" means. The
+     three tails are inlined below in the order they used to run, so behaviour is
+     unchanged; there is now just one definition to read. */
+
+  /* 1. the gate pick itself, and the list behind it */
+  ES.gateId=''; ES.token=''; ES.location='';
+  const gpick=document.getElementById('es-gate-pick'); if(gpick) gpick.value='';
+  if(typeof esApplyPickLock==='function') esApplyPickLock();   // compulsory pick returns
+  try{ esLoadGateEntries(); }catch(e){}   // list refresh happens here, never mid-estimate
+
+  /* 2. the repair-tree panel and the parts:labour strip */
+  try{ rtClose(); rtRenderStrip(); }catch(e){}
+
+  /* 3. the model lock, the odometer-scan hint and the part-fit warning */
+  try{
+    ES_MODEL_SRC={src:'', model:''};
+    const msel=document.getElementById('es-model');
+    if(msel){ msel.classList.remove('es-locked'); msel.removeAttribute('data-locked'); }
+    const msrc=document.getElementById('es-model-src'); if(msrc) msrc.style.display='none';
+    esKmHint(''); esPartFitHint('');
+  }catch(e){}
 }
 function esWaNum(m){ let n=(m||'').replace(/\D/g,''); if(n.length===10) n='91'+n; else if(n.length===11&&n[0]==='0') n='91'+n.slice(1); return n; }
 function esWaText(){
@@ -7320,6 +7429,21 @@ function esLoadGateEntries(){
     // pending (today) is the fallback until that deploy.
     let entries=(res&&(res.pendingAll||res.pending))||[];
     entries = entries.filter(e => wsAllowed(e.location));
+    /* NEWEST FIRST, GROUPED BY DAY (Ravi 14-Aug-2026 — measured, not guessed).
+       pendingAll is every gate entry that still has no estimate, so it only
+       grows: on 14-Aug it held 1,048 vehicles going back to 15-Jul, in backend
+       order, oldest first. The SA opening this list to bill a vehicle that came
+       in this morning was shown a vehicle from 15 July and had to scroll past a
+       thousand rows to reach today. Today's vehicles now come first, under a
+       "Today" heading, and older pending ones follow newest-first — so the
+       16-Jul rule (yesterday's vehicle must still be reachable) is untouched. */
+    entries.sort(function(a,b){
+      var ka=String(a.dateKey||'').slice(0,10), kb=String(b.dateKey||'').slice(0,10);
+      if(!ka){ var ta=new Date(a.time); if(!isNaN(ta.getTime())) ka=ta.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+      if(!kb){ var tb=new Date(b.time); if(!isNaN(tb.getTime())) kb=tb.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+      if(ka!==kb) return kb.localeCompare(ka);              // later day first
+      return new Date(b.time)-new Date(a.time);             // later time first
+    });
     ES_GATE_ENTRIES=entries;
     const sel=document.getElementById('es-gate-pick');
     const hint=document.getElementById('es-gate-hint');
@@ -7332,17 +7456,35 @@ function esLoadGateEntries(){
         +'<br><button class="btn ghost sm" style="margin-top:6px" onclick="openModule(\'gate\')">Do the missing Gate Entry</button>';
       return;
     }
-    if(hint) hint.textContent='Compulsory. No manual estimates. '+entries.length+' vehicle'+(entries.length===1?'':'s')+' pending.';
-    sel.innerHTML='<option value="">— Select vehicle from Gate Entry —</option>'+entries.map((g,i)=>{
-      const t=g.token?g.token+' · ':'';
+    const todayKey=heroIstDay();
+    const dayKeyOf=g=>{
+      const k=String(g.dateKey||'').slice(0,10);
+      if(k) return k;
       const d=new Date(g.time);
-      const today=new Date();
-      let day='';
-      if(!isNaN(d.getTime()) && d.toDateString()!==today.toDateString()){
-        day=' · '+d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}); // older day — say so
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+    };
+    const todayCount=entries.filter(g=>dayKeyOf(g)===todayKey).length;
+    if(hint) hint.textContent='Compulsory. No manual estimates. '+todayCount+' from today, '
+      +entries.length+' pending in all.';
+    /* One <optgroup> per day, newest day first, so "today" is the first thing
+       under the cursor and an older day is a deliberate scroll, not an accident. */
+    let html='<option value="">— Select vehicle from Gate Entry —</option>', openKey=null;
+    entries.forEach((g,i)=>{
+      const k=dayKeyOf(g);
+      if(k!==openKey){
+        if(openKey!==null) html+='</optgroup>';
+        const d=k?new Date(k+'T12:00:00'):null;
+        const label = !k ? 'Date not recorded'
+          : k===todayKey ? 'Today · '+(d?d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}):k)
+          : (d?d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}):k);
+        html+='<optgroup label="'+label+'">';
+        openKey=k;
       }
-      return `<option value="${i}">${t}${g.reg} · ${g.name||'Unknown'} (${g.model})${day}</option>`;
-    }).join('');
+      const t=g.token?g.token+' · ':'';
+      html+=`<option value="${i}">${t}${g.reg} · ${g.name||'Unknown'} (${g.model})</option>`;
+    });
+    if(openKey!==null) html+='</optgroup>';
+    sel.innerHTML=html;
   });
 }
 document.getElementById('es-gate-pick').addEventListener('click', function(){
@@ -7355,6 +7497,10 @@ document.getElementById('es-gate-pick').addEventListener('click', function(){
    this one function. */
 function esOnGatePick(g){
   if(!g) return;
+  /* The model source resets before anything is filled — see the tail of this
+     function, where the record model is looked up and the field is locked.
+     (Was a window.esOnGatePick wrapper; folded in 14-Aug-2026.) */
+  ES_MODEL_SRC={src:'', model:''};
   // Clean first, then fill (Ravi 15-Jul): nothing from the previous vehicle should
   // stay behind — km, date of sale, photos, and added items all belong to ONE row.
   const newId=g.entryId||g.id||('TOKEN:'+(g.token||''));
@@ -7410,16 +7556,91 @@ function esOnGatePick(g){
     });
   }catch(e){}
   const msel=document.getElementById('es-model');
+  const flag=document.getElementById('es-model-flag');
   let matched=false;
   for(const opt of msel.options){ if(opt.value.toUpperCase()===String(g.model||'').toUpperCase()){ msel.value=opt.value; matched=true; break; } }
+  /* R65: the gate writes the customer master's own spelling, and it is not
+     always the master list's spelling — this vehicle arrives as "SPLENDOR +"
+     against a list holding "SPLENDOR PLUS". Until today the SA popup resolved
+     that by hand; with the popup gone an unmatched name left the model blank
+     and the whole estimate dead. esResolveModel does the same normalisation
+     the popup used (heroOilKey), and it only ever picks a name that IS in the
+     master list - it cannot invent one. */
+  if(!matched){
+    const r=esResolveModel(g.model||'');
+    if(r){ msel.value=r; matched=true; }
+  }
+  /* R66: with the boot cut from nine calls to three, the CACHED gate list now
+     arrives BEFORE the model list does, so this ran against an empty dropdown
+     and every vehicle looked like an unknown model. The row is remembered and
+     re-applied the moment esShowForm fills the list. Speed exposed the order;
+     it did not create it. */
+  if(!matched && msel.options.length<=1){
+    ES_PENDING_GATE=g;
+    if(flag){ flag.style.display='block'; flag.style.color='#64748b';
+      flag.innerHTML='Loading the model list…'; }
+    return;
+  }
+  if(flag){
+    if(matched){ flag.style.display='none'; flag.innerHTML=''; }
+    else{
+      flag.style.display='block'; flag.style.color='#b91c1c';
+      flag.innerHTML='⚠ Gate recorded <b>'+String(g.model||'—').replace(/</g,'&lt;')+
+        '</b>, which is not in the model master. The estimate cannot be built until the '+
+        'customer master is corrected — tell your Workshop Manager. It is not changed from this screen.';
+    }
+  }
   // CRITICAL: fire the change event — the per-model labour list reloads on it.
   // Setting .value silently left the PREVIOUS model's labour on screen.
   if(matched) msel.dispatchEvent(new Event('change'));
   esRenderGatePhotos(g);
   ES_MODEL_CTX={reg:(g.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''), gateModel:g.model||''};
-  esMaybeAskModel(g);
+  /* R65: the SERVICE TYPE COMES FROM THE GATE (Ravi, 14-Aug-2026):
+     "Service type selection is already done from the gate why advisor has to do
+      it again. Are you there for increasing work or decreasing work?"
+     The guard's pill grid saves it inside Visit Purpose as "Service - Paid
+     Service" (geFinalPurpose), and the pending row already carries it. */
+  esApplyGateService(g);
+  /* The additional mobile starts from whatever the gate recorded as the
+     alternate contact; it stays compulsory and editable. */
+  const m2=document.getElementById('es-mob2');
+  if(m2) m2.value=String(g.alt||'').replace(/[^0-9]/g,'').slice(-10);
   esFetchAnchor();   /* R63: pull this customer's own history + the model norm */
+  esCompose();       /* R65: the owner manual composes the estimate */
   esUpdateLive();
+
+  /* THE RECORD MODEL WINS (folded in 14-Aug-2026 from a window.esOnGatePick
+     wrapper). The gate's model is a guess made at the barrier; the customer
+     master is what the vehicle actually is. If records name a model that is in
+     the dropdown, it is selected and the field is locked, and the line under it
+     says where the model came from. No record model, or a record model that is
+     not in the list, leaves the field editable. */
+  try{
+    esEnsureKmScan();
+    ES_MODEL_SRC={src:(g&&g.model)?'gate':'', model:(g&&g.model)||''};
+    esModelSrcLine();
+    if(g && g.reg && typeof heroCustLookup==='function'){
+      heroCustLookup(g.reg, function(res){
+        const v=(res&&res.found&&res.vehicle)||null;
+        /* customerFind returns lowercase `model`; the two title-case keys were
+           never in that response, so dm was always blank and the lock could
+           never engage. (Ravi 03-Aug-2026) */
+        const dm=v ? String(v.model||v['Model']||v['MODEL']||'').trim() : '';
+        if(!dm) return;
+        const sel=document.getElementById('es-model'); if(!sel) return;
+        let hit='';
+        for(let i=0;i<sel.options.length;i++){
+          const o=sel.options[i]; if(!o.value) continue;
+          if(o.value.toUpperCase()===dm.toUpperCase()){ hit=o.value; break; }
+          if(typeof heroOilKey==='function' && heroOilKey(o.value)===heroOilKey(dm)) hit=o.value;
+        }
+        if(!hit) return;
+        if(sel.value!==hit){ sel.value=hit; sel.dispatchEvent(new Event('change')); }
+        ES_MODEL_SRC={src:'records', model:hit};
+        esModelSrcLine();
+      });
+    }
+  }catch(e){}
 }
 /* ============ R63 — HISTORY ANCHOR (Ravi 12-Aug-2026) ============
    "Estimates to be reasonable as per last few estimates of the customer or
@@ -7496,6 +7717,7 @@ esApplyPickLock(); // form starts locked — picker only, until a gate vehicle i
    The confirmed model is taught to the backend at SA authority — a later guard guess can't
    undo it; only the DMS bill can. */
 let ES_MODEL_CTX={reg:'',gateModel:''};
+let ES_PENDING_GATE=null;   /* R66: a gate row picked before the model list arrived */
 function esModelOptionsHtml(preselect){
   const sel=document.getElementById('es-model');
   let html='<option value="">— Select model —</option>';
@@ -7513,37 +7735,16 @@ function esResolveModel(model){
   return '';
 }
 function esMaybeAskModel(g){
-  const reg=(g&&g.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(!reg) return;
-  // Preselect whatever the gate recorded (already set in es-model by the picker)
-  const gateModel=g.model||document.getElementById('es-model').value||'';
-  esOpenModelModal(reg, gateModel);
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the SA is no longer asked to confirm a model the customer master already holds. */
 }
 function esOpenModelModal(reg, presel){
-  const modal=document.getElementById('es-model-modal'); if(!modal) return;
-  const resolved=esResolveModel(presel)||presel;
-  document.getElementById('es-model-modal-reg').value=reg||'';
-  document.getElementById('es-model-modal-select').innerHTML=esModelOptionsHtml(resolved);
-  document.getElementById('es-model-modal-sub').innerHTML= presel
-    ? `Gate recorded <b>${(resolved||presel).replace(/</g,'&lt;')}</b>. Confirm it's correct, or fix it — you're looking at the vehicle.`
-    : `Select the correct model for this vehicle.`;
-  modal.style.display='flex';
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the SA model popup is gone. */
 }
-function esCloseModelModal(){ const m=document.getElementById('es-model-modal'); if(m) m.style.display='none'; }
+function esCloseModelModal(){
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the SA model popup is gone. */
+}
 function esModelConfirm(){
-  const chosen=document.getElementById('es-model-modal-select').value;
-  if(!chosen){ document.getElementById('es-model-modal-hint').textContent='Please pick a model first.'; return; }
-  document.getElementById('es-model').value=chosen;
-  document.getElementById('es-model').dispatchEvent(new Event('change'));
-  const reg=document.getElementById('es-model-modal-reg').value;
-  // Teach at SA authority
-  try{ jpost({type:'learn_vehicle', reg:(reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''), model:chosen, stage:'SA', by:(USER&&USER.personName)||''}); }catch(e){}
-  esCloseModelModal();
-  // Show a small confirmation flag under the model field, with re-open option
-  const flag=document.getElementById('es-model-flag');
-  if(flag){ flag.style.display='block'; flag.style.color='#059669';
-    const wasChanged=ES_MODEL_CTX.gateModel && heroOilKey(ES_MODEL_CTX.gateModel)!==heroOilKey(chosen);
-    flag.innerHTML='✅ Model confirmed'+(wasChanged?' (corrected from gate entry)':'')+' · <a href="#" onclick="esOpenModelModal(document.getElementById(\'es-model-modal-reg\').value||\'\',document.getElementById(\'es-model\').value);return false" style="font-weight:700">change</a>'; }
-  esResetRemoved(); esUpdateLive();
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the SA model popup is gone; nothing writes learn_vehicle at SA authority. */
 }
 /* Gate photos visible to SA during estimate prep (Ravi 09-Jul) — front/back/right/left/
    odometer/dicky captured at the gate, so the SA quotes against the actual vehicle
@@ -7551,7 +7752,11 @@ function esModelConfirm(){
 function esRenderGatePhotos(g){
   const box=document.getElementById('es-gate-photos'); if(!box) return;
   const ph=(g&&g.photos)||{};
-  const order=[['front','Front'],['back','Back'],['dicky','Dicky']];
+  /* R65 (Ravi, 14-Aug-2026): "Odometer photo is not seen while making estimate."
+     It is captured at the gate, it is compulsory there, it was in the payload
+     the whole time (Photo Odo URL -> photos.odo) and this array simply did not
+     list it. The SA quotes against that reading, so it comes first. */
+  const order=[['odo','Odometer'],['front','Front'],['back','Back'],['right','Right'],['left','Left'],['dicky','Dicky']];
   const pics=order.filter(([k])=>ph[k]&&String(ph[k]).indexOf('http')===0);
   box.style.display='block';
   if(!pics.length){
@@ -7617,7 +7822,7 @@ function mdLoginAdd(){
   }, 25000);
 }
 
-function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); engBoot(false); hikBoot(); waBoot(); }
+function mdBoot(){ jget('master_list', {}, function(res){ MD_TABLES=(res&&res.tables)||[]; mdRenderTableList(); }); engBoot(false); }
 
 /* ==========================================================================
    GOOGLE ENGINES — the CEO master for "which Google account are we reading
@@ -7977,11 +8182,34 @@ function hikUpdatesToggle(){
   if(el.style.display!=='none'){ el.style.display='none'; return; }
   el.style.display='block';
   el.innerHTML='<b>Update Maruti Suzuki data</b> '
-    +'<span class="hint">The board and Excel report can only compare up to the freshest date loaded here. Upload after every DMS download.</span>'
-    +'<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px">'
-    +'<label style="font-size:12.5px"><b>Holdup file</b><br><input type="file" accept=".xlsx,.xls,.csv" onchange="hikFilePicked(\'holdup\',this)"></label>'
-    +'<label style="font-size:12.5px"><b>TAT file</b><br><input type="file" accept=".xlsx,.xls,.csv" onchange="hikFilePicked(\'tat\',this)"></label>'
-    +'</div><div id="hik-up-preview" style="margin-top:8px"></div>';
+    +'<span class="hint">The board and Excel report can only compare up to the freshest date loaded here. Upload after every DMS download. Holdup and TAT land in their own tables; every other report lands raw so its analysis can be built from what it actually contains.</span>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;align-items:end">'
+    +'<label style="font-size:12.5px"><b>Report</b><br><select id="hik-up-type" style="font-size:12.5px">'
+    +'<option value="holdup">Maruti Holdup</option>'
+    +'<option value="tat">TAT report</option>'
+    +'<option value="preinvoice_cancel">Pre-invoices cancelled</option>'
+    +'<option value="washing">Washing list (same-day JCs)</option>'
+    +'<option value="qr">QR code report (same-day JCs)</option>'
+    +'<option value="other">Other DMS report</option>'
+    +'</select></label>'
+    +'<label style="font-size:12.5px"><b>File</b><br><input type="file" accept=".xlsx,.xls,.csv" onchange="hikFilePicked(document.getElementById(\'hik-up-type\').value,this)"></label>'
+    +'</div><div id="hik-up-preview" style="margin-top:8px"></div>'
+    +'<div id="hik-up-reports" style="margin-top:10px"></div>';
+  hikReportsList();
+}
+/* what has been uploaded so far — type, date, rows. The report browser. */
+async function hikReportsList(){
+  const el=document.getElementById('hik-up-reports'); if(!el) return;
+  try{
+    const r=await sbFetch('/rest/v1/dms_report_summary?select=*&limit=15');
+    const rows=r.ok?await r.json():[];
+    if(!rows.length){ el.innerHTML='<span class="hint">No raw reports uploaded yet.</span>'; return; }
+    el.innerHTML='<b style="font-size:12.5px">Reports uploaded</b>'
+      +'<table style="border-collapse:collapse;font-size:12px;margin-top:4px;background:#fff">'
+      +'<thead><tr style="text-align:left;border-bottom:1px solid #ddd"><th style="padding:3px 8px">Report</th><th style="padding:3px 8px">File date</th><th style="padding:3px 8px">Workshop</th><th style="padding:3px 8px">Rows</th><th style="padding:3px 8px">Uploaded</th></tr></thead><tbody>'
+      +rows.map(function(x){ return '<tr style="border-bottom:1px solid #eef2f7"><td style="padding:3px 8px">'+raviEsc(x.report_type)+'</td><td style="padding:3px 8px">'+raviEsc(x.file_date||'')+'</td><td style="padding:3px 8px">'+raviEsc(x.workshop||'')+'</td><td style="padding:3px 8px">'+x.rows+'</td><td style="padding:3px 8px">'+raviEsc(String(x.uploaded_at||'').slice(0,16).replace('T',' '))+'</td></tr>'; }).join('')
+      +'</tbody></table>';
+  }catch(e){ el.innerHTML=''; }
 }
 function hikParseDate(v){
   if(v==null || v==='') return null;
@@ -8002,25 +8230,28 @@ function hikFilePicked(kind, input){
   reader.onload=function(e){
     try{
       const wbk=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const al=HIK_ALIASES[kind];   // undefined for the raw report types
       let rows=[]; let headers=[];
       wbk.SheetNames.forEach(function(sn){
         const js=XLSX.utils.sheet_to_json(wbk.Sheets[sn],{defval:null});
         if(js.length){
           const hs=Object.keys(js[0]);
-          // the sheet counts only if it carries at least a JC or reg column
-          const al=HIK_ALIASES[kind];
-          const hit=Object.keys(al).some(function(f){
+          // with aliases, a sheet counts only if it carries an expected column;
+          // a raw report takes every sheet as-is — the file teaches us its shape
+          const hit=!al || Object.keys(al).some(function(f){
             return al[f].some(function(a){ return hs.indexOf(a)>-1; }); });
           if(hit){ rows=rows.concat(js); if(!headers.length) headers=hs; }
         }
       });
-      if(!rows.length){ alert('No sheet in this file carries the expected columns.'); return; }
+      if(!rows.length){ alert('No usable rows found in this file.'); return; }
       const map={};
-      Object.keys(HIK_ALIASES[kind]).forEach(function(f){
-        map[f]=HIK_ALIASES[kind][f].find(function(a){ return headers.indexOf(a)>-1; })||'';
-      });
+      if(al){
+        Object.keys(al).forEach(function(f){
+          map[f]=al[f].find(function(a){ return headers.indexOf(a)>-1; })||'';
+        });
+      }
       HIK_UP={kind:kind, rows:rows, headers:headers, map:map, fname:file.name};
-      hikUploadPreview();
+      if(al) hikUploadPreview(); else hikRawPreview();
     }catch(err){ alert('Could not read the file: '+(err.message||err)); }
   };
   reader.readAsArrayBuffer(file);
@@ -8042,6 +8273,44 @@ function hikUploadPreview(){
     +'</table>'
     +'<button class="navbtn" style="margin-top:6px" onclick="hikUploadCommit()">Load into Supabase</button>'
     +'<span id="hik-up-status" class="hint" style="margin-left:8px"></span>';
+}
+/* raw report preview: no column mapping — the file is kept verbatim so the
+   analysis for THIS report can be built from what it actually contains. */
+function hikRawPreview(){
+  const el=document.getElementById('hik-up-preview');
+  const sample=HIK_UP.rows.slice(0,2).map(function(r){ return JSON.stringify(r).slice(0,160); }).join('<br>');
+  const wsSel='<select id="hik-up-ws" style="font-size:12px"><option value="">ALL / mixed</option>'
+    +['BAVDHAN','BHOR','MANJRI','LONAVALA','KAMSHET','KHEDSHIVAPUR','DONAJE','FATIMANAGAR','STOCKYARD']
+      .map(function(w){ return '<option>'+w+'</option>'; }).join('')+'</select>';
+  el.innerHTML='<b>'+raviEsc(HIK_UP.fname)+'</b> — '+HIK_UP.rows.length+' rows, '+HIK_UP.headers.length+' columns. '
+    +'<span class="hint">Stored verbatim as "'+raviEsc(HIK_UP.kind)+'". First rows:</span>'
+    +'<div class="hint" style="font-family:monospace;font-size:11px;margin:4px 0">'+sample+'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    +'<label style="font-size:12px">Workshop '+wsSel+'</label>'
+    +'<label style="font-size:12px">File date <input id="hik-up-date" type="date" value="'+new Date().toISOString().slice(0,10)+'" style="font-size:12px"></label>'
+    +'<button class="navbtn" onclick="hikRawCommit()">Load into Supabase</button>'
+    +'<span id="hik-up-status" class="hint"></span></div>';
+}
+async function hikRawCommit(){
+  const st=document.getElementById('hik-up-status');
+  const ws=document.getElementById('hik-up-ws').value||null;
+  const fdate=document.getElementById('hik-up-date').value;
+  st.textContent='Replacing '+HIK_UP.kind+' for '+fdate+'…';
+  await sbFetch('/rest/v1/dms_report_raw?report_type=eq.'+encodeURIComponent(HIK_UP.kind)
+    +'&file_date=eq.'+fdate+(ws?'&workshop=eq.'+encodeURIComponent(ws):''),{method:'DELETE'});
+  const rows=HIK_UP.rows.map(function(r,i){
+    return {report_type:HIK_UP.kind, workshop:ws, file_date:fdate,
+            file_name:HIK_UP.fname, row_no:i+1, data:r};
+  });
+  for(let i=0;i<rows.length;i+=500){
+    const res=await sbFetch('/rest/v1/dms_report_raw',{method:'POST',
+      headers:{'Content-Type':'application/json',Prefer:'return=minimal'},
+      body:JSON.stringify(rows.slice(i,i+500))});
+    if(!res.ok){ st.textContent='Failed at row '+i+': HTTP '+res.status; return; }
+    st.textContent='Loaded '+Math.min(i+500,rows.length)+' / '+rows.length+'…';
+  }
+  st.textContent='Done — '+rows.length+' rows stored. Tell Claude which analysis to build on this report.';
+  hikReportsList();
 }
 async function hikUploadCommit(){
   const st=document.getElementById('hik-up-status');
@@ -8144,6 +8413,7 @@ async function waBoot(){
     const queued=ob.ok?(await ob.json()).length:0;
     document.getElementById('wa-outbox-note').innerHTML=
       '<b>Outbox:</b> '+queued+' queued. <b>No sender is wired</b> — nothing leaves this system until the trigger is built and you switch it on.';
+    waAuditRender();
   }catch(e){ msg.innerHTML='<span style="color:#991b1b">Could not load templates: '+raviEsc(String(e.message||e))+'</span>'; }
 }
 function waShowAdd(){
@@ -8184,6 +8454,73 @@ async function waSave(id, col, val){
       headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     if(!r.ok) throw new Error('HTTP '+r.status);
   }catch(e){ alert('Could not save: '+(e.message||e)); }
+}
+
+/* ==========================================================================
+   CUSTOMER AUDIT — mint the tokenized "feedback" link per JC, see the
+   responses, run the compare. The link is what the WhatsApp template's URL
+   BUTTON will open (a template button is always tappable — a bare URL in the
+   message body stays dead text until the customer replies, which is why the
+   button, not the body, carries the link).
+   ========================================================================== */
+const WA_AUDIT_BASE='https://tiwfuwfzjxcsbrifcdpu.supabase.co/functions/v1/hik-audit?t=';
+async function waAuditRender(){
+  const el=document.getElementById('wa-audit'); if(!el) return;
+  let rowsHtml='';
+  try{
+    const r=await sbFetch('/rest/v1/wa_audit_responses?select=declared_amount,billed_amount,delta,feedback_rating,submitted_at,wa_audit_links(jc_no,reg_no)&order=id.desc&limit=8');
+    const rows=r.ok?await r.json():[];
+    rowsHtml=rows.map(function(x){
+      const l=x.wa_audit_links||{};
+      const d=x.delta==null?'<span class="hint">pending TAT</span>'
+        :(Math.abs(x.delta)<1?'<span style="color:#065f46;font-weight:700">MATCH</span>'
+        :'<span style="color:#991b1b;font-weight:700">₹'+x.delta.toFixed(0)+' DIFFERENCE</span>');
+      return '<tr style="border-bottom:1px solid #eef2f7">'
+        +'<td style="padding:3px 8px">'+raviEsc(l.jc_no||'')+'</td>'
+        +'<td style="padding:3px 8px">'+raviEsc(l.reg_no||'')+'</td>'
+        +'<td style="padding:3px 8px">'+(x.declared_amount!=null?'₹'+x.declared_amount:'—')+'</td>'
+        +'<td style="padding:3px 8px">'+(x.billed_amount!=null?'₹'+x.billed_amount:'—')+'</td>'
+        +'<td style="padding:3px 8px">'+d+'</td>'
+        +'<td style="padding:3px 8px">'+(x.feedback_rating?x.feedback_rating+'★':'')+'</td></tr>';
+    }).join('');
+  }catch(e){ /* section still renders */ }
+  el.innerHTML='<b>Customer billing audit</b> <span class="hint">Creates the link the "Share Feedback" button opens. Customer states what they paid; the compare runs against TAT next morning, after billing locks at midnight.</span>'
+    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">'
+    +'<input id="wa-au-jc" placeholder="JC number e.g. JC26009866" style="font-size:12px;width:170px">'
+    +'<button class="navbtn" onclick="waAuditCreate()">Create audit link</button>'
+    +'<button class="navbtn" onclick="waAuditCompare()">Run compare vs TAT</button>'
+    +'<span id="wa-au-status" class="hint"></span></div>'
+    +'<div id="wa-au-link" style="margin-top:6px;font-family:monospace;font-size:11px;word-break:break-all"></div>'
+    +(rowsHtml?'<table style="border-collapse:collapse;font-size:12px;margin-top:8px;background:#fff;width:100%">'
+      +'<thead><tr style="text-align:left;border-bottom:1px solid #ddd"><th style="padding:3px 8px">JC</th><th style="padding:3px 8px">Reg</th><th style="padding:3px 8px">Customer says</th><th style="padding:3px 8px">TAT billed</th><th style="padding:3px 8px">Audit</th><th style="padding:3px 8px">Rating</th></tr></thead>'
+      +'<tbody>'+rowsHtml+'</tbody></table>':'<div class="hint" style="margin-top:6px">No customer responses yet.</div>');
+}
+async function waAuditCreate(){
+  const jc=document.getElementById('wa-au-jc').value.trim();
+  const st=document.getElementById('wa-au-status');
+  if(!jc){ alert('Type the JC number.'); return; }
+  st.textContent='Looking up JC…';
+  try{
+    const j=await sbFetch('/rest/v1/dms_jc?jc_no=eq.'+encodeURIComponent(jc)+'&select=workshop,reg_no,jc_bill_amount&limit=1');
+    const row=j.ok?(await j.json())[0]:null;
+    if(!row){ st.textContent='JC not found in the loaded DMS data.'; return; }
+    const ins=await sbFetch('/rest/v1/wa_audit_links',{method:'POST',
+      headers:{'Content-Type':'application/json',Prefer:'return=representation'},
+      body:JSON.stringify({workshop:row.workshop, jc_no:jc, reg_no:row.reg_no,
+        expected_amount:row.jc_bill_amount})});
+    if(!ins.ok) throw new Error('HTTP '+ins.status);
+    const link=(await ins.json())[0];
+    document.getElementById('wa-au-link').textContent=WA_AUDIT_BASE+link.token;
+    st.textContent='Link created for '+(row.reg_no||jc)+' — this URL goes into the template button variable.';
+  }catch(e){ st.textContent='Failed: '+(e.message||e); }
+}
+async function waAuditCompare(){
+  const st=document.getElementById('wa-au-status');
+  try{
+    const r=await sbRpc('wa_audit_compare',{});
+    st.textContent='Compared '+((r&&r.compared)||0)+' response(s) against TAT.';
+    waAuditRender();
+  }catch(e){ st.textContent='Compare failed: '+(e.message||e); }
 }
 
 function hikRender(){
@@ -9459,7 +9796,26 @@ function huShowInfo(msg,type){
 
 function huVal(id){ return (document.getElementById(id)||{}).value||''; }
 
+/* WHOSE ROWS THESE ARE (folded in 14-Aug-2026 from a window.huRender wrapper).
+   Rule (Ravi 16-Jul): an SA is a Sehgal employee — he sees ALL gate entries, but
+   ONLY his own estimates and ONLY his own holdup. Same scoping rule as the
+   estimate register (blIsScoped), so the two can never drift apart.
+   The table body reads HU_DATA throughout, so the restricted set is put in place
+   around the draw and always restored — including if the draw throws. */
 function huRender(){
+  const view=document.getElementById('view-holdup');
+  const restrict = isSAUser() && !isTopMgmtUser() && !isAdmin();
+  if(view) view.classList.toggle('readonly-holdup', restrict || !canEditHoldup());
+  if(restrict){
+    const all=HU_DATA;
+    HU_DATA=all.filter(raviAssignedToMe);
+    try{ huDrawTable_(); } finally { HU_DATA=all; }
+  } else {
+    huDrawTable_();
+  }
+  raviMarkActiveHoldupFilters();
+}
+function huDrawTable_(){
   if(!HU_DATA.length){
     /* ARITHMETIC FIX (Ravi 26-Jul-2026): this used to just return, leaving the
        PREVIOUS summary numbers on screen with an empty table under them. So after a
@@ -10443,27 +10799,11 @@ function showEstimatePreview(est, reg, name, mob){
     return rows.filter(r=>wsAllowed(r[wsField]||r.location||r.ws||''));
   };
 
-  const oldShowView = showView;
-  window.showView = function(name){
-    oldShowView(name);
-    if(USER && name!=='login'){
-      const roleEl=document.getElementById('who-role');
-      if(roleEl) roleEl.textContent = USER.designation || USER.level || '';
-      document.querySelectorAll('#whobox .navbtn').forEach(function(b){
-        if((b.textContent||'').trim()==='🔒 Pwd') b.textContent='🔒 Password';
-      });
-    }
-  };
+  /* (a showView wrapper used to sit here re-writing the role label and the
+     password button after every navigation. Both are done once, inside
+     showView — search "DESIGNATION FIRST". Removed 14-Aug-2026.) */
 
-  const oldCanUseModule = canUseModule;
-  window.canUseModule = function(m){
-    const cm=canonicalModule(m);
-    if(cm==='HoldupMonitor' && isSAUser()) return true; // SA read-only own holdup view
-    if(cm==='Targets' && (isSAUser() || isTopMgmtUser())) return true;
-    if(cm==='Documents' && (isSAUser() || isTopMgmtUser())) return true;
-    if((cm==='HoldupMonitor' || cm==='PartsDesk') && isPartsPerson()) return true; // Parts exec needs the parts-pending vehicle view
-    return oldCanUseModule(m);
-  };
+  /* (canUseModule wrapper 1 of 2 — folded into canUseModule itself.) */
   window.canEditHoldup = function(){
     return !!(USER && (isAdmin() || (!isSAUser() && hasModule('HoldupMonitor'))));
   };
@@ -10574,18 +10914,7 @@ function showEstimatePreview(est, reg, name, mob){
      inside showed the real value. The 'Total Estimate' value was coming through blank in
      the summary, so we read the total from any likely field, parse ₹/comma text, and if it
      is still blank, compute it from the parts + oil + labour + GST − discount the row has. */
-  function esEntryTotal(e){
-    if(!e) return 0;
-    const num=v=>{ const n=Number(String(v==null?'':v).replace(/[₹,\s]/g,'')); return isNaN(n)?0:n; };
-    let t=num(e.total)||num(e.grandTotal)||num(e['Total Estimate'])||num(e.totalEstimate);
-    if(t>0) return t;
-    const gst=num(e.gst||e.GST), disc=num(e.discount||e.Discount);
-    const sub=num(e.subtotal||e.SubTotal||e['Sub-total']);
-    if(sub>0) return Math.round(sub+gst-disc);
-    const base=num(e.parts)+num(e.oil)+num(e.labour);
-    if(base>0) return Math.round(base+gst-disc);
-    return t;
-  }
+  /* esEntryTotal moved to top level — see SHARED SMALL HELPERS. */
 
 /* ═══ NO-FLICKER PANELS (Ravi 26-Jul-2026) ═══════════════════════════════════
    Ravi: "Why should the UI disappear from the app. It should quietly edit the nos
@@ -10646,13 +10975,7 @@ function heroKpiPaint(boxId, cards, isStale){
     try{ localStorage.setItem(heroKpiCacheKey(boxId), JSON.stringify({d:heroIstDay(), cards:cards})); }catch(e){}
   }
 }
-/* R63: the IST day, from the same clock everywhere. toISOString() is UTC and
-   was giving the client a different "today" than the server between midnight
-   and 05:30 IST — the tile and the list under it disagreed. */
-function heroIstDay(){
-  try{ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
-  catch(e){ return new Date().toISOString().slice(0,10); }
-}
+/* heroIstDay moved to top level — see SHARED SMALL HELPERS. */
 /* Draw last-known numbers instantly so the box is never empty while we fetch.
    R63: the cache now carries the IST day it was written. A "Today" figure from
    yesterday must never paint as today's — every fresh morning open was showing
@@ -10672,11 +10995,7 @@ function heroKpiFromCache(boxId){
 }
 /* Only fill a container if it is genuinely empty. Never overwrite real content with
    the word "Loading". */
-function heroSoftPlaceholder(el, html){
-  if(!el) return;
-  var t=(el.textContent||'').trim();
-  if(!t || /^Loading/i.test(t)) el.innerHTML=html;
-}
+/* heroSoftPlaceholder moved to top level — see SHARED SMALL HELPERS. */
 
   window.loadHomeStats = function(){
     const box=document.getElementById('home-stats');
@@ -10957,41 +11276,32 @@ function heroSoftPlaceholder(el, html){
     heroViewPaint(body,'sakpi:'+String(kind||''),'<div class="hint">Loading…</div>');
     modal.style.display='block';
     if(kind==='estimates' || kind==='estvalue'){
-      title.textContent = kind==='estvalue' ? 'My Estimate Value — Day-wise' : 'My Estimates — Today';
-      jget('my_estimates_daywise', {empno:USER.empno, days:180}, function(res){
-        const days=(res&&res.days)||[];
-        if(!res || res.ok===false){ body.innerHTML='<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'; return; }
-        if(!days.length){ body.innerHTML='<div class="hint">No estimates prepared by you yet.</div>'; return; }
-        window.ES_HIST_DAYS=days;
-        if(kind==='estimates'){
-          const histBtn='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="esHistShowMonths()">📅 All My Estimates — Month &amp; Date wise</button>';
-          /* ARITHMETIC FIX (Ravi 26-Jul-2026): days[0] is the most recent day that HAS
-             estimates — not necessarily today. The window was titled "My Estimates
-             Today" and then listed an estimate from an earlier date, while the Home
-             tile correctly counted today and showed 0. Top said 0, inside said 1.
-             Now the date is checked and named honestly. */
-          const todayKeyLocal=(function(){ const d=new Date(); const p=n=>String(n).padStart(2,'0');
-            return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); })();
-          const d0=days[0]||{};
-          const d0key=String(d0.dateKey||d0.date||'').slice(0,10);
-          const isToday=(d0key===todayKeyLocal);
-          const list=(isToday && d0.estimates)||[];
-          window.RAVI_SA_EST_CACHE=list;
-          if(!list.length){
-            const latest=(d0.estimates||[]).length;
-            const note = latest
-              ? '<div class="hint">No estimates prepared by you today.<br>Your most recent was on <b>'+raviEsc(d0key||'an earlier date')+'</b> ('+latest+').</div>'
-              : '<div class="hint">No estimates prepared by you yet.</div>';
-            body.innerHTML=histBtn+note; return;
-          }
-          body.innerHTML=histBtn+esHistDayItemsHtml(list);
-        } else {
-          body.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:13px">'+
-            '<tr style="text-align:left;color:var(--steel);font-size:11px;text-transform:uppercase"><th style="padding:6px 4px">Date</th><th style="padding:6px 4px">Vehicles</th><th style="padding:6px 4px;text-align:right">Estimate Value</th></tr>'+
-            days.map(d=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${raviEsc(d.dateKey||'')}</td><td style="padding:6px 4px">${d.count}</td><td style="padding:6px 4px;text-align:right;font-family:'Roboto Mono'">${inr(d.total||0)}</td></tr>`).join('')+
-            '</table>';
-        }
-      });
+      /* TODAY MEANS TODAY, AND IT IS INSTANT (Ravi 21-Jul-2026; folded in
+         14-Aug-2026 from a window.raviOpenSaKpi wrapper).
+         This used to fetch my_estimates_daywise over 180 days and then show
+         days[0] — the most recent day that HAS estimates, not necessarily today
+         — so a tile reading 0 could open a window listing an estimate from
+         15-Jul. The number on the tile is computed from RAVI_TODAY_EST_CACHE,
+         which is already on the phone and already filtered by workshop and role
+         at paint time, so the list under it now comes from the SAME array. Top
+         and inside can no longer disagree, and there is no round trip.
+         The full history is one tap away in the estimates register. */
+      const mine=window.RAVI_TODAY_EST_CACHE||[];
+      title.textContent = kind==='estvalue' ? "Today's Estimate Value" : 'My Estimates Today';
+      const histBtn='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" '
+        +'onclick="window.blBoot();if(typeof showView===\'function\')showView(\'billing\')">'
+        +'📅 All My Estimates — full history</button>';
+      if(!mine.length){
+        body.innerHTML=histBtn+'<div class="hint">No estimates prepared by you yet today.</div>';
+      } else if(kind==='estvalue'){
+        const total=mine.reduce((s,e)=>s+esEntryTotal(e),0);
+        body.innerHTML=histBtn+'<div class="ctlitem"><div><div class="big">'+mine.length
+          +' estimate'+(mine.length===1?'':'s')+' today</div><div class="small">Total value so far</div></div>'
+          +'<div><span class="badge done">'+inr(total)+'</span></div></div>';
+      } else {
+        body.innerHTML=histBtn+mine.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(e.reg||'')} · ${raviEsc(e.model||'')}</div>
+          <div class="small">${raviEsc(e.name||'')} · ${raviEsc(e.service||'')}</div></div><div><span class="badge done">${inr(esEntryTotal(e))}</span></div></div>`).join('');
+      }
     } else if(kind==='holdup' || kind==='approvals'){
       title.textContent = kind==='approvals' ? 'My Pending Approvals' : 'My Holdup Cases';
       let rows=[]; try{ rows=JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]'); }catch(e){}
@@ -11008,7 +11318,7 @@ function heroSoftPlaceholder(el, html){
      open. Tap a date, that day's entries open time-wise. Tap an entry, full detail
      with photos. Back link on every level. */
   window.GE_HIST=null;
-  function heroModal(){ return {modal:document.getElementById('ravi-kpi-modal'), body:document.getElementById('ravi-kpi-body'), title:document.getElementById('ravi-kpi-title')}; }
+  /* heroModal moved to top level — see SHARED SMALL HELPERS. */
   window.raviOpenGateHistory=function(){
     const m=heroModal(); if(!m.modal) return;
     m.title.textContent='All Gate Entries';
@@ -11094,25 +11404,16 @@ function heroSoftPlaceholder(el, html){
     }
   };
 
-  const oldOpenModule = openModule;
-  window.openModule = function(id){
-    if(id==='targets'){ placeholderToast('Targets'); return; }
-    if(id==='gateout'){ goBoot(); showView('gateout'); return; }
-    if(id==='billing'){ blBoot(); showView('billing'); return; }
-    if(id==='partfinder'){ pfBoot(); showView('partfinder'); return; }
-    if(id==='holdup' && isSAUser()){ huBoot(); showView('holdup'); return; }
-    if(id==='partsdesk'){ huBoot(); showView('holdup'); return; } // Parts Desk = parts-filtered Holdup (HU_IS_PARTS_PERSON auto-restricts)
-    oldOpenModule(id);
-  };
+  /* (an openModule wrapper used to sit here. Its gateout/billing/partfinder
+     branches did exactly what openModule already does — boot, then showView(id)
+     — and the other three are folded into openModule itself. Removed
+     14-Aug-2026.) */
 
-  const oldEsLoadGateEntries = esLoadGateEntries;
-  window.esLoadGateEntries = function(){
-    // PICK PERSISTENCE (Ravi 15-Jul): the background refresh was rebuilding the
-    // dropdown mid-estimate and showing "Select vehicle…" again. While a vehicle
-    // is picked, the list simply does not reload — it refreshes on New Estimate.
-    if(ES && (ES.gateId||ES.token)){ return; }
-    oldEsLoadGateEntries();
-  };
+  /* (an esLoadGateEntries wrapper used to sit here repeating the pick-persistence
+     guard. esLoadGateEntries already opens with exactly that guard — the comment
+     on it says the guard was moved into the function precisely because internal
+     callers bypassed the wrapper — so the wrapper was doing nothing. Removed
+     14-Aug-2026.) */
 
   // Capture the gate picker before the old anonymous listener. This preserves selection
   // and warns when a later token is selected before older pending tokens.
@@ -11121,10 +11422,19 @@ function heroSoftPlaceholder(el, html){
     const i=sel.value;
     if(i===''){ if(typeof esNewEstimate==='function') esNewEstimate(); else { ES.gateId=''; if(typeof esApplyPickLock==='function') esApplyPickLock(); } return; }
     const g=ES_GATE_ENTRIES[+i]; if(!g) return;
+    /* R66 (Ravi, 14-Aug-2026): "Remove the confirm dialog."
+       This popped a browser confirm() listing EVERY earlier unestimated token.
+       There are 1,056 pending, and fifteen vehicles are standing in front of one
+       advisor — the dialog was a wall between him and the work, and it blocked
+       the screen until he read a list nobody can read. The FIFO position is
+       still worth knowing, so it is shown as a line on the screen he can glance
+       at and ignore, not a door he has to open. */
     if(+i>0){
-      const earlier=ES_GATE_ENTRIES.slice(0,+i).map(x=>(x.token?x.token+' · ':'')+(x.reg||'')+' '+(x.model||'')).join('\n');
-      if(!confirm('Earlier pending token(s) are still not estimated:\n\n'+earlier+'\n\nYou can continue, but check why the earlier vehicle is skipped. Continue with this vehicle?')){
-        sel.value=''; if(typeof esNewEstimate==='function') esNewEstimate(); else { ES.gateId=''; if(typeof esApplyPickLock==='function') esApplyPickLock(); } return;
+      const msgEl=document.getElementById('es-msg');
+      if(msgEl){
+        msgEl.style.color='#b45309';
+        msgEl.textContent=(+i)+' vehicle'+(+i===1?'':'s')+' entered the gate before this one and '
+          +'are still not estimated.';
       }
     }
     // Full pick logic lives in ONE place now — form reveal, photos, service type,
@@ -11140,44 +11450,12 @@ function heroSoftPlaceholder(el, html){
     }, true);
   }
 
-  function probableRegs(reg){
-    const n=raviNormalizeReg(reg); if(!n) return [];
-    const pool=[];
-    try{ (JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]')||[]).forEach(r=>{ const x=raviNormalizeReg(r[HU_COLS.reg]||r['Reg No']||''); if(x) pool.push(x); }); }catch(e){}
-    try{ const last=getLastGood('report_today',{}); ((last&&last.gateEntries)||[]).forEach(g=>{ const x=raviNormalizeReg(g.reg||''); if(x) pool.push(x); }); ((last&&last.estimates)||[]).forEach(g=>{ const x=raviNormalizeReg(g.reg||''); if(x) pool.push(x); }); }catch(e){}
-    const unique=[...new Set(pool)];
-    function score(a,b){ let s=0; for(let i=0;i<Math.min(a.length,b.length);i++) if(a[i]===b[i]) s++; if(a.slice(-4)===b.slice(-4)) s+=4; if(a.slice(0,4)===b.slice(0,4)) s+=3; return s; }
-    return unique.map(x=>({x,score:score(n,x)})).filter(o=>o.score>=Math.max(5,Math.min(n.length,8))).sort((a,b)=>b.score-a.score).slice(0,5).map(o=>o.x);
-  }
-
-  const oldEsGenerate=esGenerate;
-  window.esGenerate=function(){
-    const reg=raviNormalizeReg(val('es-reg'));
-    const msg=document.getElementById('es-msg');
-    if(reg){
-      document.getElementById('es-reg').value=reg;
-      if(!raviValidReg(reg)){
-        const probs=probableRegs(reg);
-        const ptxt=probs.length?'\n\nProbable matching numbers:\n'+probs.join('\n'):'';
-        if(!confirm('Please check registration number before generating estimate.\n\nEntered: '+reg+'\n\nIt does not look like a valid Indian registration number.'+ptxt+'\n\nContinue anyway?')){
-          if(msg){ msg.style.color='var(--signal-d)'; msg.textContent='Estimate not generated. Correct registration number first.'; }
-          return;
-        }
-      } else {
-        const probs=probableRegs(reg).filter(x=>x!==reg);
-        if(probs.length && !confirm('Registration number check:\n\nEntered: '+reg+'\n\nSimilar numbers found in today/Holdup records:\n'+probs.join('\n')+'\n\nPlease compare with uploaded gate photo / vehicle plate. Continue?')) return;
-      }
-    }
-    oldEsGenerate();
-  };
-  const oldEsNewEstimate=esNewEstimate;
-  window.esNewEstimate=function(){
-    oldEsNewEstimate();
-    ES.gateId=''; ES.token=''; ES.location='';
-    const sel=document.getElementById('es-gate-pick'); if(sel) sel.value='';
-    if(typeof esApplyPickLock==='function') esApplyPickLock(); // compulsory pick returns
-    try{ esLoadGateEntries(); }catch(e){} // list refresh happens here, never mid-estimate
-  };
+  /* (probableRegs moved to top level — it is called from esGenerate in another
+     script block, which is unreachable from inside here. See SHARED SMALL
+     HELPERS.)
+     (the esGenerate wrapper that used to sit here is folded into esGenerate
+     itself — search "REGISTRATION NUMBER CHECK".)
+     (esNewEstimate wrapper 1 of 3 — folded into esNewEstimate itself, step 1.) */
 
   function attachRegHelpers(){
     ['ge-reg','es-reg'].forEach(id=>{
@@ -11197,36 +11475,9 @@ function heroSoftPlaceholder(el, html){
   };
   attachRegHelpers();
 
-  const oldGeSaveEntry=geSaveEntry;
-  window.geSaveEntry=function(){
-    const reg=raviNormalizeReg(val('ge-reg'));
-    document.getElementById('ge-reg').value=reg;
-    if(!raviValidReg(reg)){
-      const msg=document.getElementById('ge-msg'); if(msg){ msg.style.color='var(--signal-d)'; msg.textContent='Please enter a valid Indian vehicle registration number.'; }
-      raviShowRegHelp('ge-reg');
-      return;
-    }
-    oldGeSaveEntry();
-  };
-
-  // Holdup read-only / role-filter wrapper
-  const oldHuRender=huRender;
-  window.huRender=function(){
-    const view=document.getElementById('view-holdup');
-    // Rule (Ravi 16-Jul): an SA is a Sehgal employee — he sees ALL gate entries,
-    // but ONLY his own estimates and ONLY his own holdup. Same scoping rule as the
-    // estimate register (blIsScoped), so the two can never drift apart.
-    const restrict = isSAUser() && !isTopMgmtUser() && !isAdmin();
-    if(view) view.classList.toggle('readonly-holdup', restrict || !canEditHoldup());
-    if(restrict){
-      const original=HU_DATA;
-      HU_DATA=original.filter(raviAssignedToMe);
-      try{ oldHuRender(); } finally { HU_DATA=original; }
-    } else {
-      oldHuRender();
-    }
-    raviMarkActiveHoldupFilters();
-  };
+  /* (the geSaveEntry and huRender wrappers that used to sit here are folded into
+     those functions — search "The plate is normalised" and "WHOSE ROWS THESE
+     ARE". Removed 14-Aug-2026.) */
 
   window.raviMarkActiveHoldupFilters=function(){
     const ids=['hu-f-code','hu-f-type','hu-f-status','hu-f-sa','hu-f-days','hu-f-search'];
@@ -11557,6 +11808,21 @@ function blBuildFilters(){
   fill('bl-f-service',[...new Set(BL_DATA.map(e=>String(e.service||'')).filter(Boolean))]);
   const months=[...new Set(BL_DATA.map(e=>blMonthKey(e.dateKey)).filter(Boolean))].sort().reverse();
   fill('bl-f-month',months,m=>{ const d=new Date(m+'-01T00:00:00'); return isNaN(d)?m:d.toLocaleDateString('en-IN',{month:'long',year:'numeric'}); });
+  /* The line that says what this register is showing and what it is hiding.
+     (Folded in 14-Aug-2026 from a window.blBuildFilters wrapper.) Delivered
+     vehicles are dropped silently otherwise, and a silent drop is how "the
+     numbers don't match" starts. */
+  let note=document.getElementById('bl-delivered-note');
+  if(!note){
+    const info=document.getElementById('bl-info');
+    if(info && info.parentNode){
+      note=document.createElement('div'); note.id='bl-delivered-note'; note.className='bl-hidden-note';
+      info.parentNode.insertBefore(note, info.nextSibling);
+    }
+  }
+  if(note) note.textContent=(scoped?'Your estimates only':'All estimates, all advisors')
+    +' — month-wise and day-wise. Delivered/Clear vehicles found in Holdup are hidden automatically. Hidden now: '
+    +(window.RAVI_BL_HIDDEN_DELIVERED_COUNT||0)+'.';
   blMonthChanged(true);
 }
 function blMonthChanged(skipRender){
@@ -11573,121 +11839,10 @@ function blDevColor(p){ if(p===null) return '#6b7280'; const a=Math.abs(p); retu
 function blSetSa(name){ BL_SA_FILTER=(BL_SA_FILTER===name)?'':name; blRender(); }
 /* Tap a billing KPI tile -> narrow the list. Tapping the same tile again clears it. */
 function blSetView(v){ BL_VIEW=(BL_VIEW===v)?'':v; blRender(); }
-function blRender(){
-  const fWs=blVal('bl-f-ws'), fSa=blVal('bl-f-sa'), fSvc=blVal('bl-f-service'), fM=blVal('bl-f-month'), fD=blVal('bl-f-day'), fB=blVal('bl-f-billed');
-  const fS=blVal('bl-f-search').toLowerCase().trim();
-  let rows=BL_DATA.filter(e=>{
-    if(fWs && String(e.ws||'')!==fWs) return false;
-    if(fSa && String(e.empname||'')!==fSa) return false;
-    if(BL_SA_FILTER && String(e.empname||'')!==BL_SA_FILTER) return false;
-    if(fSvc && String(e.service||'')!==fSvc) return false;
-    if(fM && blMonthKey(e.dateKey)!==fM) return false;
-    if(fD && e.dateKey!==fD) return false;
-    const billed=Number(e.billed||0)>0;
-    if(fB==='billed' && !billed) return false;
-    if(fB==='unbilled' && billed) return false;
-    if(fB==='dev'){ const p=blDevPct(e); if(p===null||Math.abs(p)<=25) return false; }
-    if(fS){
-      const hay=(String(e.reg||'')+' '+String(e.name||'')+' '+String(e.jcNo||'')+' '+String(e.model||'')).toLowerCase();
-      if(!hay.includes(fS)) return false;
-    }
-    return true;
-  });
-  BL_ROWS_CURRENT=rows; // leakage panel computes from the SAME filtered set, so month/SA/type filters apply to it naturally
-  if(typeof BL_LEAK_OPEN!=='undefined'&&BL_LEAK_OPEN) blRenderLeakage();
-
-  // KPIs
-  const estTot=rows.reduce((s,e)=>s+Number(e.total||0),0);
-  const billedRows=rows.filter(e=>Number(e.billed||0)>0);
-  const billTot=billedRows.reduce((s,e)=>s+Number(e.billed||0),0);
-  const estOfBilled=billedRows.reduce((s,e)=>s+Number(e.total||0),0);
-  const devPct=estOfBilled>0?Math.round(((billTot-estOfBilled)/estOfBilled)*1000)/10:null;
-  const fmtL=v=>v>=100000?(Math.round(v/10000)/10)+' L':inr(v);
-  document.getElementById('bl-kpi-row').innerHTML=[
-    /* Ravi 26-Jul-2026: all six of these showed a number and did nothing when tapped.
-       Each one now filters the list underneath it. Value tiles drill to the same set
-       as the count tile beside them, so the number and the list always agree. */
-    {ic:'🧾',n:rows.length,label:'Estimates',color:'#2563eb',go:"blSetView('all')"},
-    {ic:'₹',n:fmtL(estTot),label:'Estimate Value',color:'#7c3aed',go:"blSetView('all')"},
-    {ic:'✅',n:billedRows.length,label:'Billed (matched)',color:'#16a34a',go:"blSetView('billed')"},
-    {ic:'💰',n:fmtL(billTot),label:'Billed Value',color:'#166534',go:"blSetView('billed')"},
-    {ic:'📉',n:rows.length-billedRows.length,label:'Unbilled / Pending',color:'#d97706',go:"blSetView('unbilled')"},
-    {ic:'⚖️',n:devPct===null?'—':(devPct>0?'+':'')+devPct+'%',label:'Overall Deviation',color:blDevColor(devPct),go:"blSetView('deviation')"}
-  ].map(k=>`<div class="hu-kpi-tile${k.go?' clickable':''}" style="--ktc:${k.color}${k.go?';cursor:pointer':''}" ${k.go?`onclick="${k.go}"`:''} ${k.go?'title="Tap to filter the list below"':''}><span class="kt-ic">${k.ic}</span><div class="kt-body"><div class="kt-n">${k.n}</div><div class="kt-label">${k.label}</div></div></div>`).join('');
-
-  // SA-wise summary strip (reports, not vehicle details — per SA-login idea)
-  const strip=document.getElementById('bl-sa-strip');
-  if(strip && !blIsScoped()){
-    const bySa={};
-    rows.forEach(e=>{ const n=String(e.empname||'—'); if(!bySa[n]) bySa[n]={c:0,est:0,bill:0,estB:0};
-      bySa[n].c++; bySa[n].est+=Number(e.total||0);
-      if(Number(e.billed||0)>0){ bySa[n].bill+=Number(e.billed||0); bySa[n].estB+=Number(e.total||0); } });
-    strip.style.display='flex';
-    strip.innerHTML='<span class="hu-slicer-label">SA-wise:</span>'+Object.entries(bySa).sort((a,b)=>b[1].est-a[1].est).map(([n,v])=>{
-      const p=v.estB>0?Math.round(((v.bill-v.estB)/v.estB)*100):null;
-      return `<button class="hu-sl-btn${BL_SA_FILTER===n?' active':''}" onclick="blSetSa('${n.replace(/'/g,"\\'")}')" title="Estimates ${inr(v.est)} · Billed ${inr(v.bill)}">${n} <span class="sl-count">${v.c}</span>${p===null?'':` <span style="color:${blDevColor(p)};font-weight:800">${p>0?'+':''}${p}%</span>`}</button>`;
-    }).join('');
-  } else if(strip) strip.style.display='none';
-
-  /* KPI-tile drill-down. (Ravi 26-Jul-2026) Applied here, AFTER the tiles have been
-     computed, so the tiles keep showing the full picture while the table narrows to
-     what you tapped. The tests match the tile arithmetic exactly. */
-  if(BL_VIEW==='billed')    rows=rows.filter(e=>Number(e.billed||0)>0);
-  else if(BL_VIEW==='unbilled') rows=rows.filter(e=>!(Number(e.billed||0)>0));
-  else if(BL_VIEW==='deviation') rows=rows.filter(e=>Number(e.billed||0)>0 && Number(e.billed)!==Number(e.total||0));
-  const vbar=document.getElementById('bl-viewbar');
-  if(vbar){
-    const names={billed:'Billed (matched)',unbilled:'Unbilled / Pending',deviation:'Estimate vs Billed differs'};
-    vbar.innerHTML = BL_VIEW&&names[BL_VIEW]
-      ? '<span class="hu-chip clear" onclick="blSetView(\'\')">\u2715 Showing: '+names[BL_VIEW]+' ('+rows.length+') \u00b7 tap to clear</span>' : '';
-    vbar.style.display = BL_VIEW&&names[BL_VIEW] ? 'flex' : 'none';
-  }
-
-  const wrap=document.getElementById('bl-table-wrap');
-  if(!rows.length){ wrap.innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)"><div style="font-size:32px;margin-bottom:8px">🔍</div><div style="font-weight:700">No estimates match the current filters</div></div>'; return; }
-
-  // Holdup badge: reg present in local holdup data & not delivered
-  let huRegs={};
-  try{ (JSON.parse(localStorage.getItem(HU_STORE_KEY)||'[]')).forEach(r=>{ const st=String(r['Holdup Status']||'').toUpperCase(); if(st!=='DELIVERED'&&st!=='CLEAR'){ const rg=String(r[HU_COLS.reg]||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(rg) huRegs[rg]=true; } }); }catch(e){}
-
-  const fmtDate=dk=>{ const d=new Date(dk+'T00:00:00'); return isNaN(d)?dk:d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}); };
-  if(window.innerWidth<=760){
-    wrap.innerHTML=rows.map(e=>{
-      const p=blDevPct(e), c=blDevColor(p), billed=Number(e.billed||0);
-      const inHu=huRegs[String(e.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,'')];
-      return `<div class="blm-card" style="border-left-color:${c}">
-        <div class="blm-top"><div><span class="blm-reg">${e.reg||'—'}</span><span class="blm-model"> · ${e.model||''}</span>${inHu?'<span class="blm-hu">HOLDUP</span>':''}</div>
-        <span class="blm-date">${fmtDate(e.dateKey)}</span></div>
-        <div class="blm-mid">${e.name||''} · ${e.service||''} · <b>${e.empname||''}</b> · ${e.ws||''}</div>
-        <div class="blm-amts"><span>Est <b>${inr(e.total||0)}</b></span><span>Billed <b style="color:${billed?'#166534':'#9ca3af'}">${billed?inr(billed):'—'}</b></span>
-        <span style="color:${c};font-weight:800">${p===null?'':(p>0?'+':'')+(p===null?'':p+'%')}</span></div>
-        ${e.jcNo?`<div class="blm-jc">JC ${e.jcNo}</div>`:''}
-      </div>`;
-    }).join('');
-    return;
-  }
-  wrap.innerHTML=`<table class="hu-excel-table"><thead><tr>
-    <th>Date</th><th>Reg No</th><th>Model</th><th>Customer</th><th>Service</th><th>SA</th><th>WS</th>
-    <th style="text-align:right">Estimate ₹</th><th style="text-align:right">Billed ₹</th><th style="text-align:right">Var ₹</th><th style="text-align:right">Dev %</th><th>JC Number</th><th>⛔</th>
-  </tr></thead><tbody>${rows.map(e=>{
-    const p=blDevPct(e), c=blDevColor(p), billed=Number(e.billed||0), varr=billed?billed-Number(e.total||0):null;
-    const inHu=huRegs[String(e.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,'')];
-    return `<tr>
-      <td style="white-space:nowrap;font-size:11px">${fmtDate(e.dateKey)}</td>
-      <td class="td-reg">${e.reg||'—'}</td>
-      <td style="font-size:12px;white-space:nowrap">${e.model||'—'}</td>
-      <td style="font-size:12px">${e.name||'—'}</td>
-      <td style="font-size:11px;white-space:nowrap">${e.service||'—'}</td>
-      <td style="font-size:11px;white-space:nowrap">${e.empname||'—'}</td>
-      <td style="font-size:11px">${e.ws||'—'}</td>
-      <td style="text-align:right;font-weight:700;white-space:nowrap">${inr(e.total||0)}</td>
-      <td style="text-align:right;font-weight:700;white-space:nowrap;color:${billed?'#166534':'#9ca3af'}">${billed?inr(billed):'—'}</td>
-      <td style="text-align:right;white-space:nowrap;color:${varr===null?'#9ca3af':varr>=0?'#166534':'#b91c1c'}">${varr===null?'—':(varr>0?'+':'')+inr(varr)}</td>
-      <td style="text-align:right;font-weight:800;color:${c}">${p===null?'—':(p>0?'+':'')+p+'%'}</td>
-      <td style="font-size:10px;color:var(--steel);white-space:nowrap">${e.jcNo||'—'}</td>
-      <td style="text-align:center">${inHu?'<span title="Vehicle currently in holdup" style="font-size:13px">⛔</span>':''}</td>
-    </tr>`; }).join('')}</tbody></table>`;
-}
+/* blRender: this top-level copy was dead — a later `window.blRender = function`
+   in the estimates-register block replaced it wholesale, so nothing ever called
+   these 115 lines. Confirmed live in Chrome before deleting, 14-Aug-2026.
+   The live one is in that block; edit it there. */
 
 /* --- Daily JC Summary upload: header row is the 3rd row of the DMS export --- */
 function blLocalDateStr(v){
@@ -12631,17 +12786,7 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      - If the Holdup sheet says the registration number is delivered/clear, hide that estimate.
        If the same reg still has another active holdup row, keep it visible. */
 
-  const OLD_CAN_USE = window.canUseModule;
-  window.canUseModule = function(m){
-    const cm = (typeof canonicalModule==='function') ? canonicalModule(m) : String(m||'');
-    if(cm==='BillingComparison'){
-      if(typeof isSAUser==='function' && isSAUser()) return true;
-      if(typeof isPartsPerson==='function' && isPartsPerson()) return true;
-      if(typeof isTopMgmtUser==='function' && isTopMgmtUser()) return true;
-      if(typeof hasModule==='function' && (hasModule('BillingComparison')||hasModule('Billing')||hasModule('ControlRoom')||hasModule('HoldupMonitor'))) return true;
-    }
-    return OLD_CAN_USE ? OLD_CAN_USE(m) : false;
-  };
+  /* (canUseModule wrapper 2 of 2 — folded into canUseModule itself.) */
 
   window.RAVI_BL_RAW_DATA = [];
   window.RAVI_BL_HU_DELIVERED = {};
@@ -12814,22 +12959,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     }).join('');
   }
 
-  const OLD_BL_BUILD_FILTERS=window.blBuildFilters;
-  window.blBuildFilters=function(){
-    if(OLD_BL_BUILD_FILTERS) OLD_BL_BUILD_FILTERS();
-    const note=document.getElementById('bl-delivered-note');
-    if(!note){
-      const info=document.getElementById('bl-info');
-      if(info && info.parentNode){
-        const d=document.createElement('div'); d.id='bl-delivered-note'; d.className='bl-hidden-note';
-        info.parentNode.insertBefore(d, info.nextSibling);
-      }
-    }
-    const el=document.getElementById('bl-delivered-note');
-    if(el){
-      el.textContent=(blIsScoped()?'Your estimates only':'All estimates, all advisors')+' — month-wise and day-wise. Delivered/Clear vehicles found in Holdup are hidden automatically. Hidden now: '+(window.RAVI_BL_HIDDEN_DELIVERED_COUNT||0)+'.';
-    }
-  };
+  /* (the blBuildFilters wrapper that used to sit here is folded into
+     blBuildFilters itself — search "what this register is showing".) */
 
   window.blBoot=function(){
     window.BL_SA_FILTER=''; window.BL_UNMATCHED=null;
@@ -12913,31 +13044,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
 
   /* Parts and SA quick links should no longer open today's-only popups. */
   window.raviOpenPartsEstimates=function(){ window.blBoot(); if(typeof showView==='function') showView('billing'); };
-  const OLD_RAVI_OPEN_SA_KPI=window.raviOpenSaKpi;
-  window.raviOpenSaKpi=function(kind){
-    if(kind==='estimates' || kind==='estvalue'){
-      // INSTANT, from today's already-loaded data — no new fetch, no 92/180-day pull.
-      // (Ravi 21-Jul: an estimate from 15-Jul was showing under "Today" because the old
-      // path opened a 92-day history view under the "Today" label. Now "Today" really
-      // means today, and is instant because the data is already in memory from the
-      // home-screen KPI calculation.)
-      const m=heroModal(); if(!m.modal) return;
-      const mine=window.RAVI_TODAY_EST_CACHE||[];
-      m.title.textContent = kind==='estvalue' ? "Today's Estimate Value" : 'My Estimates Today';
-      const histBtn='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="window.blBoot();if(typeof showView===\'function\')showView(\'billing\')">📅 All My Estimates — full history</button>';
-      if(!mine.length){ m.body.innerHTML=histBtn+'<div class="hint">No estimates prepared by you yet today.</div>'; m.modal.style.display='block'; return; }
-      if(kind==='estvalue'){
-        const total=mine.reduce((s,e)=>s+esEntryTotal(e),0);
-        m.body.innerHTML=histBtn+`<div class="ctlitem"><div><div class="big">${mine.length} estimate(s) today</div><div class="small">Total value so far</div></div><div><span class="badge done">${inr(total)}</span></div></div>`;
-      } else {
-        m.body.innerHTML=histBtn+mine.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(e.reg||'')} · ${raviEsc(e.model||'')}</div>
-          <div class="small">${raviEsc(e.name||'')} · ${raviEsc(e.service||'')}</div></div><div><span class="badge done">${inr(esEntryTotal(e))}</span></div></div>`).join('');
-      }
-      m.modal.style.display='block';
-      return;
-    }
-    if(OLD_RAVI_OPEN_SA_KPI) return OLD_RAVI_OPEN_SA_KPI(kind);
-  };
+  /* (the raviOpenSaKpi wrapper that used to sit here is folded into
+     raviOpenSaKpi itself — search "TODAY MEANS TODAY". Removed 14-Aug-2026.) */
 })();
 </script>
 
@@ -13519,13 +13627,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     } else if(bar){ bar.style.display='none'; }
   };
 
-  /* Entering the Gate Entry module always lands on a clean form. */
-  const OLD_GE_AFTER_CHECK = window.geAfterCheck;
-  window.geAfterCheck = function(){
-    const r = OLD_GE_AFTER_CHECK ? OLD_GE_AFTER_CHECK.apply(this, arguments) : undefined;
-    try{ geFreshForm(); }catch(e){}
-    return r;
-  };
+  /* (the geAfterCheck wrapper that used to sit here is folded into geAfterCheck
+     itself — search "always lands on a clean form") */
 
   /* ------------------------------------------------------------------- STAGE 6
      Only here — after plate AND chassis have both failed — is this a new vehicle,
@@ -13562,20 +13665,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   };
 
   /* ------------------------------------------------------------------ WIRING
-     The plate read now starts the instant the FRONT photo exists — it no longer
-     waits for the odometer. The odometer is read separately when that photo is
-     taken. Same number of images sent as before; the guard just stops waiting. */
-  const OLD_ON_PHOTO = window.geOnPhotoChange;
-  window.geOnPhotoChange = function(e, side){
-    const r = OLD_ON_PHOTO ? OLD_ON_PHOTO.apply(this, arguments) : undefined;
-    setTimeout(function(){
-      try{
-        if((side==='front'||side==='back') && !GE_ID.done) geIdentify(side);
-        if(side==='odo') geReadOdo();
-      }catch(err){}
-    }, 350);   // let the capture finish compressing into GE_PHOTOS first
-    return r;
-  };
+     (the geOnPhotoChange wrapper that used to sit here is folded into
+     geOnPhotoChange itself — search "READ THE PHOTO THAT WAS JUST STORED") */
 
   /* The purple button becomes a manual re-run of the same path. */
   /* The purple button is an explicit "try again", so it DOES clear the
@@ -13585,14 +13676,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     geIdentify('button'); geReadOdo();
   };
 
-  /* Clearing the photos resets the identification state too. */
-  const OLD_REMOVE = window.geRemovePhoto;
-  window.geRemovePhoto = function(side){
-    if(!side){ GE_ID.busy=false; GE_ID.plate=''; GE_ID.done=false; GE_ID.tried={}; geVinHide(); }
-    /* A replaced photo is a NEW photo, so that one slot may be read again. */
-    else if(GE_ID.tried) delete GE_ID.tried[side];
-    return OLD_REMOVE ? OLD_REMOVE.apply(this, arguments) : undefined;
-  };
+  /* (the geRemovePhoto wrapper that used to sit here is folded into
+     geRemovePhoto itself — search "Clearing a photo clears the identification") */
 
 })();
 </script>
@@ -13838,18 +13923,13 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     m.modal.style.display='block';
   };
 
-  /* Re-point the tile without touching how tiles are built. */
-  const OLD_RENDER_TILES = window.renderHomeTiles;
-  window.renderHomeTiles = function(){
-    const r = OLD_RENDER_TILES ? OLD_RENDER_TILES.apply(this, arguments) : undefined;
-    try{
-      document.querySelectorAll('[onclick*="raviOpenGateHistory()"]').forEach(function(node){
-        const txt=(node.textContent||'');
-        if(/Gate Entries Today/i.test(txt)) node.setAttribute('onclick','raviOpenGateToday()');
-      });
-    }catch(e){}
-    return r;
-  };
+  /* A renderHomeTiles wrapper used to sit here rewriting the "Gate Entries
+     Today" tile's onclick from raviOpenGateHistory() to raviOpenGateToday()
+     after every paint. The tile is now BUILT with raviOpenGateToday() (both
+     places that build it say so), and the only tile still wired to
+     raviOpenGateHistory is "All Entries — All days", whose text does not match
+     the wrapper's test — so it had become a no-op that ran on every home paint.
+     Removed 14-Aug-2026. */
 
   /* ------------------------------------------------------------ UPDATE STATUS
      "When did it update? When will it update?" was unanswerable, because nothing
@@ -14092,21 +14172,8 @@ function rtResolve(L, rates){
    3.  RATIO STRIP
    --------------------------------------------------------------------------- */
 var RT_MARKS=[{r:2,t:'2 : 1'},{r:1.5,t:'1.5 : 1'},{r:1,t:'1 : 1'}];
-function rtEnsureStrip(){
-  if(document.getElementById('rt-strip')) return true;
-  var live=document.querySelector('#es-form-view .live'); if(!live) return false;
-  var d=document.createElement('div'); d.id='rt-strip';
-  d.innerHTML='<div class="rt-top"><span id="rt-pl"></span><span class="rt-ratio" id="rt-rv">—</span></div>'
-    +'<div id="rt-bar"><div id="rt-fill"></div><div class="rt-mk" style="left:33.3%"></div>'
-    +'<div class="rt-mk" style="left:66.6%"></div></div>'
-    +'<div id="rt-next"></div>'
-    +'<div id="rt-actions">'
-    +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'\')">\uFF0B Add work by complaint</button>'
-    +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')" id="rt-sugbtn">Suggested labour</button>'
-    +'</div>';
-  live.parentNode.insertBefore(d, live.nextSibling);
-  return true;
-}
+/* rtEnsureStrip: this earlier copy was dead — a later top-level definition of the same
+   name overwrote it. Removed 14-Aug-2026; the live one is further down. */
 /* 0 -> 2:1 maps to the first third, 2:1 -> 1.5:1 the second, 1.5:1 -> 1:1 the last. */
 function rtPct(ratio){
   if(!isFinite(ratio)||ratio<=0) return 100;
@@ -14116,31 +14183,8 @@ function rtPct(ratio){
   if(ratio>1)  return 66.6+33.4*(1.5-ratio)/0.5;
   return 100;
 }
-function rtRenderStrip(){
-  if(!rtEnsureStrip()) return;
-  var strip=document.getElementById('rt-strip');
-  var c=null; try{ c=esComputeCurrent(); }catch(e){}
-  if(!c){ strip.style.display='none'; return; }
-  strip.style.display='block';
-  var parts=(+c.parts||0)+(+c.oil||0), lab=(+c.labour||0);
-  var ratio = lab>0 ? parts/lab : Infinity;
-  document.getElementById('rt-pl').innerHTML='Parts <b>'+rtMoney(parts)+'</b> &middot; Labour <b>'+rtMoney(lab)+'</b>';
-  var rv=document.getElementById('rt-rv');
-  rv.textContent = lab>0 ? (Math.round(ratio*10)/10)+' : 1' : (parts>0?'no labour':'—');
-  var pct=rtPct(ratio);
-  var col = ratio<=1 ? '#16a34a' : (ratio<=1.5 ? '#65a30d' : (ratio<=2 ? '#d97706' : '#dc2626'));
-  rv.style.color=col;
-  var f=document.getElementById('rt-fill'); f.style.width=pct+'%'; f.style.background=col;
-  var nx=document.getElementById('rt-next'), tgt=null;
-  for(var i=0;i<RT_MARKS.length;i++){ if(ratio>RT_MARKS[i].r){ tgt=RT_MARKS[i]; break; } }
-  if(!tgt) nx.innerHTML='At or beyond 1 : 1 &mdash; labour is carrying its share.';
-  else {
-    var need=Math.max(0, parts/tgt.r - lab);
-    nx.innerHTML='Next checkpoint <b>'+tgt.t+'</b> &middot; '+rtMoney(need)+' more labour';
-  }
-  var sb=document.getElementById('rt-sugbtn');
-  if(sb) sb.textContent = RT.ready ? 'Suggested labour' : 'Suggested labour';
-}
+/* rtRenderStrip: this earlier copy was dead — a later top-level definition of the same
+   name overwrote it. Removed 14-Aug-2026; the live one is further down. */
 
 /* ---------------------------------------------------------------------------
    4.  PANEL
@@ -14161,22 +14205,8 @@ function rtEnsurePanel(){
     RT_VIEW.q=this.value.trim(); rtDraw();
   });
 }
-function rtOpen(mode){
-  rtEnsurePanel();
-  RT_VIEW={mode:(mode==='suggest'?'suggest':'cat'), cat:'', cc:'', q:''};
-  var s=document.getElementById('rt-search'); if(s) s.value='';
-  document.getElementById('rt-panel').style.display='flex';
-  document.getElementById('rt-body').innerHTML='<div class="rt-empty">Loading billing tree\u2026</div>';
-  rtLoad(function(ok){
-    if(!ok){
-      document.getElementById('rt-body').innerHTML='<div class="rt-warn">The repair tree is not on the server yet. '
-        +'Upload the MD_Tree_* tabs to HeroMasterSheet and add Hotfix_RepairTree.gs, then tap \u21BB Sync Now. '
-        +'Everything else in the estimate works exactly as before.</div>';
-      return;
-    }
-    rtDraw();
-  });
-}
+/* rtOpen: this earlier copy was dead — a later top-level definition of the same
+   name overwrote it. Removed 14-Aug-2026; the live one is further down. */
 function rtClose(){ var p=document.getElementById('rt-panel'); if(p) p.style.display='none'; }
 
 function rtCrumb(){
@@ -14286,60 +14316,10 @@ function rtPartRow(p){
    rate), complaint-linked, not already on the estimate, cheapest-first until
    the next ratio checkpoint is met.
    --------------------------------------------------------------------------- */
-function rtSuggest(){
-  var m=rtModel(), rates=rtModelRates();
-  var have={}; (ES_ADDLAB||[]).forEach(function(x){ have[rtCode(x.code)]=1; });
-  var c=null; try{ c=esComputeCurrent(); }catch(e){}
-  var parts=c?((+c.parts||0)+(+c.oil||0)):0, lab=c?(+c.labour||0):0;
-  var lad=RT.ladder.filter(function(r){ return r[0]===m; });
-  var out=[], seen={};
-
-  if(lad.length){
-    ['Add to reach 2:1','Add to reach 1.5:1','Add to reach 1:1'].forEach(function(stage){
-      lad.filter(function(r){ return r[1]===stage; }).forEach(function(r){
-        var code=r[5]; if(have[code]||seen[code]) return; seen[code]=1;
-        var own=rates[code];
-        out.push({code:code, name:(own&&own.l)||r[6], rate:(own&&own.p>0)?own.p:(+r[7]||0),
-                  ev:(own&&own.p>0)?'G':'A', cc:r[2],
-                  reason:stage.replace('Add to reach','tested step to')+' \u00B7 '+r[3]});
-      });
-    });
-  }
-  if(out.length<8){
-    var pool=[];
-    RT.labour.forEach(function(L){
-      var code=L[0]; if(have[code]||seen[code]) return;
-      if(String(L[10]||'')) return;                       /* ZERO-RATE / AVOID */
-      if(!L[3]) return;                                    /* must carry a complaint */
-      var own=rates[code]; if(!own||own.p<=0) return;      /* GREEN only */
-      pool.push({code:code,name:own.l||L[1],rate:own.p,ev:'G',cc:L[3],
-                 reason:'exact model rate \u00B7 '+(L[2]||'')});
-    });
-    pool.sort(function(a,b){ return a.rate-b.rate; });
-    for(var i=0;i<pool.length && out.length<12;i++){ seen[pool[i].code]=1; out.push(pool[i]); }
-  }
-  return {list:out, parts:parts, lab:lab};
-}
-function rtSuggestHtml(){
-  var s=rtSuggest();
-  if(!s.list.length) return '<div class="rt-empty">Nothing further to suggest for this model.</div>';
-  var run=s.lab, h='';
-  h+='<div class="rt-sec">Suggested, in order</div>';
-  h+='<div class="rt-meta" style="margin-bottom:9px">Every line below is a genuine repair. Add only what the vehicle needs and the customer authorises.</div>';
-  h+=s.list.map(function(r){
-      run+=r.rate;
-      var ratio=run>0?s.parts/run:0;
-      var on=(ES_ADDLAB||[]).some(function(x){ return rtCode(x.code)===r.code; });
-      return '<div class="rt-row"><i class="rt-dot '+(r.ev==='G'?'rt-g':'rt-a')+'"></i>'
-        +'<div class="rt-main"><div class="rt-name">'+rtEsc(r.name)+'</div>'
-        +'<div class="rt-meta"><span class="rt-code">'+rtEsc(r.code)+'</span> \u00B7 '+rtEsc(r.reason)
-        +(run>0&&s.parts>0?' \u00B7 takes ratio to '+(Math.round(ratio*10)/10)+':1':'')+'</div></div>'
-        +'<div class="rt-amt">'+rtMoney(r.rate)+'</div>'
-        +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="rtAddLab(\''+r.code+'\',\''+rtEsc(r.cc||'')+'\',this)">'
-        +(on?'\u2713':'\uFF0B')+'</button></div>';
-    }).join('');
-  return h;
-}
+/* rtSuggest: this earlier copy was dead — a later top-level definition of the same
+   name overwrote it. Removed 14-Aug-2026; the live one is further down. */
+/* rtSuggestHtml: this earlier copy was dead — a later top-level definition of the same
+   name overwrote it. Removed 14-Aug-2026; the live one is further down. */
 
 /* ---------------------------------------------------------------------------
    6.  SEARCH
@@ -14472,36 +14452,12 @@ function rtAddPart(pn, btn){
 }
 
 /* ---------------------------------------------------------------------------
-   8.  WIRING  —  wrap, never replace
+   8.  WIRING
+   The three wrappers that used to sit here (esUpdateLive, esBoot, esNewEstimate)
+   are folded into those functions themselves — 14-Aug-2026. "Wrap, never
+   replace" was the rule that produced four stacked esNewEstimate definitions and
+   three esBoot definitions, which is what Ravi means by "no more wraps".
    --------------------------------------------------------------------------- */
-(function(){
-  var OLD_UPDATE = window.esUpdateLive;
-  if(typeof OLD_UPDATE==='function'){
-    window.esUpdateLive = function(){
-      var r; try{ r=OLD_UPDATE.apply(this, arguments); }finally{ try{ rtRenderStrip(); }catch(e){} }
-      return r;
-    };
-  }
-  var OLD_BOOT = window.esBoot;
-  if(typeof OLD_BOOT==='function'){
-    window.esBoot = function(){
-      var r=OLD_BOOT.apply(this, arguments);
-      setTimeout(function(){
-        try{ rtEnsureStrip(); rtRenderStrip(); }catch(e){}
-        if(!RT.ready && !RT.tried) rtLoad(function(){});     /* warm, silent */
-      }, 400);
-      return r;
-    };
-  }
-  var OLD_NEW = window.esNewEstimate;
-  if(typeof OLD_NEW==='function'){
-    window.esNewEstimate = function(){
-      var r=OLD_NEW.apply(this, arguments);
-      try{ rtClose(); rtRenderStrip(); }catch(e){}
-      return r;
-    };
-  }
-})();
 </script>
 <!-- ===================== END REPAIR TREE / REVENUE BUILDER ================= -->
 
@@ -14514,7 +14470,17 @@ function rtAddPart(pn, btn){
      Wholly additive. Overrides four existing functions by re-assignment at the
      end of the file (last-definition-wins), touches no markup above this block.
      Remove the block and the module reverts exactly to s34 behaviour.
-     ========================================================================== */
+
+     14-Aug-2026: this banner is an HTML comment (<!--) but was closed with the
+     JAVASCRIPT terminator */ instead of -->. So the comment never closed here;
+     it ran on to the next banner's close at "END ESTIMATE ACCURACY & UI (s35)",
+     swallowing the style and script tags below it. Everything in this block —
+     the odometer scan in the estimate, the model lock from records, the
+     part-fit hint, the grouped part list, the styled ratio strip and the
+     labour picker — has never executed in a browser. Proven live 14-Aug-2026:
+     esEnsureKmScan, esModelSrcLine, ES_MODEL_SRC and rtLabPicker were all
+     undefined, and esOnGatePick carried no model lock.
+     ========================================================================== -->
 <style>
   /* ---- 3 & 7: checkpoint card + labour picker, styled like the fluid build ---- */
   #rt-strip{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:#fff;
@@ -14721,57 +14687,7 @@ function esUnlockModel(){
    they are now in a separate, clearly-labelled group below the fitting ones.
    ========================================================================= */
 function esRenderPartDropdown(){
-  var cat=(typeof val==='function')?val('es-add-pcat'):'';
-  var sub=(typeof val==='function')?val('es-add-psub'):'';
-  var nm=document.getElementById('es-add-pname');
-  var amt=document.getElementById('es-add-pamt');
-  if(!nm) return;
-  if(!cat || !sub){ nm.innerHTML='<option value="">Select sub-category first\u2026</option>'; if(amt) amt.value=''; return; }
-
-  var all=((ES_PART_INDEX.cats[cat]||{})[sub]||[]);
-  var seen={};
-  all=all.filter(function(x){ var k=x.pn+'|'+x.l; if(seen[k]) return false; seen[k]=1; return true; });
-  all.sort(function(a,b){ return a.l>b.l?1:-1; });
-
-  var model=(typeof esCurrentModelUP==='function')?esCurrentModelUP():'';
-  var fit=[], other=[];
-  all.forEach(function(p){
-    if(esPartFitsModel(p)) fit.push(p); else other.push(p);
-  });
-
-  /* nm._items must stay index-aligned with the option values, across both groups */
-  var items=fit.concat(other);
-  nm._items=items;
-
-  function opt(p,i,warn){
-    var pr=p.price>0?(' \u2014 '+inr(p.price)):' \u2014 \u20B9 type';
-    return '<option value="'+i+'" data-price="'+p.price+'">'
-      +(warn?'\u26A0 ':'')+p.l+(p.pn?(' ['+p.pn+']'):'')+pr+'</option>';
-  }
-  var html='<option value="">Select part\u2026</option>';
-  if(fit.length){
-    html+='<optgroup label="Fits '+(model||'this model')+' \u2014 '+fit.length+'">';
-    fit.forEach(function(p,i){ html+=opt(p,i,false); });
-    html+='</optgroup>';
-  }
-  if(other.length){
-    html+='<optgroup label="Not listed for '+(model||'this model')+' \u2014 '+other.length+' (check before adding)">';
-    other.forEach(function(p,i){ html+=opt(p,fit.length+i,true); });
-    html+='</optgroup>';
-  }
-  if(!items.length) html='<option value="">No parts in this sub-category</option>';
-  nm.innerHTML=html;
-
-  nm.onchange=function(){
-    var it=(nm._items||[])[+nm.value];
-    if(!it){ if(amt){ amt.value=''; amt.readOnly=false; } esPartFitHint(''); return; }
-    if(amt){ amt.value = it.price>0 ? it.price : ''; amt.readOnly=false; }
-    esPartFitHint(esPartFitsModel(it) ? '' :
-      '\u26A0\uFE0F <b>'+String(it.l).replace(/</g,'&lt;')+'</b> is not on record as fitting '
-      +(model||'this model')+'. Check the part before adding it to the estimate.');
-  };
-  if(amt) amt.value='';
-  esPartFitHint('');
+  /* REMOVED R65 (Ravi, 14-Aug-2026) — the part dropdowns are gone. */
 }
 /* Same rule the old esPartMatchesModel used, minus the "no models = fits all"
    line. Kept as a separate name so the original stays intact for Show-all. */
@@ -14844,11 +14760,7 @@ function rtEnsureStrip(){
     +'<div class="rt-mk" style="left:33.3%"></div><div class="rt-mk" style="left:66.6%"></div></div>'
     +'<div id="rt-ticks"><span>2:1</span><span>1.5:1</span><span>1:1</span></div>'
     +'<div id="rt-next"></div>'
-    +'<div id="rt-actions">'
-    +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'\')">\uFF0B Add work by complaint</button>'
-    +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')">Suggested labour</button>'
-    +'<button type="button" class="rt-btn" onclick="esOpenLabPicker()">\u2315 Search labour</button>'
-    +'</div>';
+    +'';   /* R66: complaint / suggested-labour / search-labour buttons stripped */
   live.parentNode.insertBefore(d, live.nextSibling);
   return true;
 }
@@ -14919,63 +14831,10 @@ function esPickLab(code, btn){
    WIRING — wrap, never replace
    ========================================================================= */
 (function(){
-  /* model source is decided on gate pick; the customer-master answer wins */
-  var OLD_PICK=window.esOnGatePick;
-  if(typeof OLD_PICK==='function'){
-    window.esOnGatePick=function(g){
-      ES_MODEL_SRC={src:'', model:''};
-      var r=OLD_PICK.apply(this, arguments);
-      try{
-        esEnsureKmScan();
-        ES_MODEL_SRC={src:(g&&g.model)?'gate':'', model:(g&&g.model)||''};
-        esModelSrcLine();
-        if(g && g.reg && typeof heroCustLookup==='function'){
-          heroCustLookup(g.reg, function(res){
-            var v=(res&&res.found&&res.vehicle)||null;
-            /* customerFind returns lowercase `model`; the two title-case keys
-               below never existed in that response, so dm was always blank and
-               the DMS model lock could never engage. (Ravi 03-Aug-2026) */
-            var dm=v ? String(v.model||v['Model']||v['MODEL']||'').trim() : '';
-            if(!dm) return;                       /* no record model -> stays editable */
-            var sel=document.getElementById('es-model'), hit='';
-            for(var i=0;i<sel.options.length;i++){
-              var o=sel.options[i]; if(!o.value) continue;
-              if(o.value.toUpperCase()===dm.toUpperCase()){ hit=o.value; break; }
-              if(typeof heroOilKey==='function' && heroOilKey(o.value)===heroOilKey(dm)){ hit=o.value; }
-            }
-            if(!hit) return;                      /* record model not in the list -> editable */
-            if(sel.value!==hit){ sel.value=hit; sel.dispatchEvent(new Event('change')); }
-            ES_MODEL_SRC={src:'records', model:hit};
-            esModelSrcLine();
-          });
-        }
-      }catch(e){}
-      return r;
-    };
-  }
-  /* a fresh estimate clears the lock, the scan hint and the fit warning */
-  var OLD_NEW=window.esNewEstimate;
-  if(typeof OLD_NEW==='function'){
-    window.esNewEstimate=function(){
-      var r=OLD_NEW.apply(this, arguments);
-      try{
-        ES_MODEL_SRC={src:'', model:''};
-        var sel=document.getElementById('es-model');
-        if(sel){ sel.classList.remove('es-locked'); sel.removeAttribute('data-locked'); }
-        var s=document.getElementById('es-model-src'); if(s) s.style.display='none';
-        esKmHint(''); esPartFitHint('');
-      }catch(e){}
-      return r;
-    };
-  }
-  var OLD_BOOT=window.esBoot;
-  if(typeof OLD_BOOT==='function'){
-    window.esBoot=function(){
-      var r=OLD_BOOT.apply(this, arguments);
-      setTimeout(function(){ try{ esEnsureKmScan(); }catch(e){} }, 450);
-      return r;
-    };
-  }
+  /* (the esOnGatePick wrapper that used to sit here is folded into esOnGatePick
+     itself — search "THE RECORD MODEL WINS".)
+     (the esNewEstimate and esBoot wrappers that used to sit here are folded into
+     those functions themselves — 14-Aug-2026.) */
   try{ esEnsureKmScan(); }catch(e){}
 })();
 </script>
@@ -15376,7 +15235,14 @@ function rtSuggestHtml(){
            10307 | Sehgal PDI (10307)  | CHINCHWAD | PDI    | YES
            10307 | Sehgal PDI (10307)  | CHAKAN    | PDI    | YES
      A code may appear on more than one row when it serves more than one location.
-     ========================================================================== */
+
+     14-Aug-2026: same typo as the s35 banner — this HTML comment was closed with
+     the JavaScript */ instead of -->, so it ran on to the next banner's --> and
+     swallowed the whole block. Dealer scoping has never run: locBoot, locForCode,
+     huRowVisible, codeVisibleToUser and HU_CODE_TO_WS were all undefined in the
+     live app. Which means the Premia/PDI bug described above was written on
+     27-Jul-2026 and never actually reached anybody.
+     ========================================================================== -->
 <script>
 "use strict";
 
@@ -15551,7 +15417,13 @@ function locResolveForUser(){
      And rather than reason about it again, huDiag() prints what is actually in
      memory: rows received, codes present, what the map says for each, and
      whether the SA name survived hydration.
-     ========================================================================== */
+
+     14-Aug-2026: third instance of the same typo — HTML comment opened with <!--
+     and closed with the JavaScript */, so this block was swallowed too. huDiag
+     was undefined in the live app and huActiveRows was never wrapped, which
+     means point 2 above ("huRowVisible was written and never called") stayed
+     true for a second reason nobody could see.
+     ========================================================================== -->
 <script>
 "use strict";
 
