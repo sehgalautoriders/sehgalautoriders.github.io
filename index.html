@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 53;
-window.HERO_BUILD = 'R69-2026.08.17.2';
+window.HERO_BUILD = 'R69-2026.08.17.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2378,7 +2378,13 @@ body{background:var(--page);font-family:var(--font-ui)}
   .ins4{padding:6px 5px 12px}
   .ins4-kpis{grid-template-columns:repeat(5,minmax(58px,1fr));gap:4px}
   .ins4-kpi{padding:6px 4px}.ins4-kpi b{font-size:17px}.ins4-kpi span{font-size:10px}
-  .ins4 .c-exp,.ins4 .c-last{display:none}
+  .ins4 .c-exp,.ins4 .c-last,.ins4 .c-why{display:none}
+  .ins4-q{flex:1 0 100%;min-width:100%}
+  .ins4-listwrap{max-height:none;overflow:visible}
+  .ins4 #ins4-tbl{table-layout:fixed}
+  .ins4 #ins4-tbl col:nth-child(1){width:55%!important}
+  .ins4 #ins4-tbl col:nth-child(2){width:33%!important}
+  .ins4 #ins4-tbl col:nth-child(4){width:12%!important}
   .ins4-provider,.ins4-oc{font-size:12px}.ins4-oc small{font-size:10px}
 }
 </style>
@@ -2458,8 +2464,8 @@ function ins4BuildShell(root){
    +'<div class="ins4-pills" id="ins4-pills"></div>'
    +'<div class="ins4-body">'
    +'<div class="ins4-listwrap"><table class="tbl" id="ins4-tbl">'
-   +'<colgroup><col style="width:34%"><col style="width:22%"><col class="c-exp" style="width:15%"><col style="width:9%"><col class="c-last" style="width:10%"><col style="width:10%"></colgroup>'
-   +'<thead><tr><th>Customer</th><th>Reg No</th><th class="c-exp">Expiry</th><th>D</th><th class="c-last">Last</th><th>Why</th></tr></thead>'
+   +'<colgroup><col style="width:34%"><col style="width:22%"><col class="c-exp" style="width:15%"><col style="width:9%"><col class="c-last" style="width:10%"><col class="c-why" style="width:10%"></colgroup>'
+   +'<thead><tr><th>Customer</th><th>Reg No</th><th class="c-exp">Expiry</th><th>D</th><th class="c-last">Last</th><th class="c-why">Why</th></tr></thead>'
    +'<tbody id="ins4-tb"></tbody></table></div>'
    +'<div class="ins4-rail"><div class="ins4-railbox" id="ins4-rail">'
    +'<div class="ins4-note">Select a customer — their full picture docks here. The list never moves.</div>'
@@ -2580,7 +2586,7 @@ function ins4Render(stale){
       +'<td class="c-exp">'+raviEsc(exp)+'</td>'
       +'<td class="num '+ins4Sev(r.days_left)+'">'+d+'</td>'
       +'<td class="c-last">'+(last?'<span class="chip4" style="background:var(--th);color:var(--ink-2)">'+raviEsc(last)+'</span>':'')+'</td>'
-      +'<td style="font-size:12px;color:var(--ink-2)">'+raviEsc(r.why||'')+'</td>'
+      +'<td class="c-why" style="font-size:12px;color:var(--ink-2)">'+raviEsc(r.why||'')+'</td>'
       +'</tr>'
       +(!ins4Wide()&&INS4.sel===i?'<tr class="sel"><td colspan="6" style="white-space:normal;background:var(--zebra-label)"><div class="ins4-det">'+ins4DetailHtml(r)+'</div></td></tr>':'');
   }).join('');
@@ -6893,15 +6899,10 @@ function esCompose(){
     ES_COMPOSE_ERR=(res&&res.ok)?'':'the manual could not be read';
     esResetRemoved(); esRenderManual(); esRenderHistory(); esUpdateLive();
   };
-  const anon=function(){
-    fetch(SB_URL+'/rest/v1/rpc/estimate_compose',{method:'POST',
-      headers:{apikey:SB_ANON, Authorization:'Bearer '+SB_ANON, 'Content-Type':'application/json'},
-      body:JSON.stringify(args)})
-      .then(function(r){ return r.ok?r.json():null; }).then(done)
-      .catch(function(){ done(null); });
-  };
-  if(typeof sbRpc==='function') sbRpc('estimate_compose',args).then(done).catch(anon);
-  else anon();
+  /* R69.2: estimate history is customer data. The old publishable-key fallback
+     bypassed the signed-in organization; secure RPC failure now fails closed. */
+  if(typeof sbRpc==='function') sbRpc('estimate_compose',args).then(done).catch(function(){ done(null); });
+  else done(null);
 }
 
 
@@ -7776,15 +7777,9 @@ function esFetchAnchor(){
       ES_ANCHOR={key:key, data:(res&&res.ok)?res:null, loading:false};
       try{ esUpdateLive(); }catch(e){}
     };
-    const anonCall=function(){
-      fetch(SB_URL+'/rest/v1/rpc/estimate_anchor',{method:'POST',
-        headers:{apikey:SB_ANON, Authorization:'Bearer '+SB_ANON, 'Content-Type':'application/json'},
-        body:JSON.stringify(args)})
-        .then(r=>r.ok?r.json():null).then(done).catch(function(){ done(null); });
-    };
     if(typeof sbRpc==='function'){
-      sbRpc('estimate_anchor', args).then(done).catch(anonCall);
-    } else anonCall();
+      sbRpc('estimate_anchor', args).then(done).catch(function(){ done(null); });
+    } else done(null);
   }catch(e){}
 }
 function esAnchorFor_(regRaw){
@@ -11425,37 +11420,54 @@ function heroKpiFromCache(boxId){
      open. Tap a date, that day's entries open time-wise. Tap an entry, full detail
      with photos. Back link on every level. */
   window.GE_HIST=null;
+  window.geUniqueRows=function(rows){
+    const seen=new Set();
+    return (rows||[]).filter(function(g){
+      const id=String((g&&g.entryId)||'').trim();
+      const key=id?('ID:'+id):('LEGACY:'+[
+        g&&g.dateKey,g&&g.time,g&&g.location,g&&g.token,g&&g.reg
+      ].map(String).join('|'));
+      if(seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  };
   /* heroModal moved to top level — see SHARED SMALL HELPERS. */
   window.raviOpenGateHistory=function(){
     const m=heroModal(); if(!m.modal) return;
     m.title.textContent='All Gate Entries';
     heroViewPaint(m.body,'gate_history','<div class="hint">Loading…</div>');
     m.modal.style.display='block';
-    jget('gate_history', {days:45}, function(res){
-      if(!res || res.ok===false){ heroSoftPlaceholder(m.body,'<div class="hint">Could not load. If this repeats, the backend needs a redeploy.</div>'); return; }
-      const entries=res.entries||[];
-      if(!entries.length){ m.body.innerHTML='<div class="hint">No gate entries yet.</div>'; return; }
-      // Build months → dates → items
+    if(typeof sbRpc!=='function'){
+      heroSoftPlaceholder(m.body,'<div class="hint">Secure history requires a signed-in Supabase session.</div>'); return;
+    }
+    sbRpc('hero_gate_history_index',{}).then(function(res){
+      if(!res || res.ok===false){ throw new Error('history unavailable'); }
+      const days=Array.isArray(res.days)?res.days:[];
+      if(!days.length){ m.body.innerHTML='<div class="hint">No gate entries yet.</div>'; return; }
+      // The first call is counts only. Full names, mobiles and photos arrive
+      // only after the operator opens one date.
       const months=[], mIdx={};
-      entries.forEach(function(g){
-        const t=new Date(g.time);
-        const mKey=isNaN(t.getTime())?'Unknown':(t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2));
-        const mLbl=isNaN(t.getTime())?'Unknown':t.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
-        const dKey=isNaN(t.getTime())?(g.dateKey||'—'):t.toISOString().slice(0,10);
-        const dLbl=isNaN(t.getTime())?(g.dateKey||'—'):t.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'});
+      days.forEach(function(row){
+        const dKey=String(row.dateKey||'').slice(0,10);
+        const day=/^\d{4}-\d{2}-\d{2}$/.test(dKey)?new Date(dKey+'T12:00:00'):null;
+        const mKey=day&&!isNaN(day.getTime())?dKey.slice(0,7):'Unknown';
+        const mLbl=day&&!isNaN(day.getTime())?day.toLocaleDateString('en-IN',{month:'long',year:'numeric'}):'Unknown';
+        const dLbl=day&&!isNaN(day.getTime())?day.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'}):(dKey||'—');
         if(!(mKey in mIdx)){ mIdx[mKey]=months.length; months.push({key:mKey,label:mLbl,dates:[],dIdx:{}}); }
         const mo=months[mIdx[mKey]];
-        if(!(dKey in mo.dIdx)){ mo.dIdx[dKey]=mo.dates.length; mo.dates.push({key:dKey,label:dLbl,items:[]}); }
-        mo.dates[mo.dIdx[dKey]].items.push(g);
+        mo.dIdx[dKey]=mo.dates.length;
+        mo.dates.push({key:dKey,label:dLbl,count:Number(row.count||0),items:null,loading:false});
       });
       window.GE_HIST=months;
       geHistShowMonths();
+    }).catch(function(){
+      heroSoftPlaceholder(m.body,'<div class="hint">Secure history could not load. Sign in again, then retry.</div>');
     });
   };
   window.geHistShowMonths=function(){
     const m=heroModal(); m.title.textContent='All Gate Entries — Months';
     m.body.innerHTML=(window.GE_HIST||[]).map(function(mo,mi){
-      const total=mo.dates.reduce((s,d)=>s+d.items.length,0);
+      const total=mo.dates.reduce((s,d)=>s+(Array.isArray(d.items)?d.items.length:Number(d.count||0)),0);
       return '<div class="hero-drill-row" onclick="geHistShowDates('+mi+')"><div style="font-weight:800">🗓 '+raviEsc(mo.label)+'</div><div><span class="badge done">'+total+' entries</span> ›</div></div>';
     }).join('');
     heroViewSave(m.body,'gate_history');   // so re-opening paints instantly
@@ -11465,12 +11477,24 @@ function heroKpiFromCache(boxId){
     m.title.textContent=mo.label;
     m.body.innerHTML='<span class="hero-drill-back" onclick="geHistShowMonths()">‹ Back to months</span>'
       +mo.dates.map(function(d,di){
-        return '<div class="hero-drill-row" onclick="geHistShowDay('+mi+','+di+')"><div style="font-weight:800">'+raviEsc(d.label)+'</div><div><span class="badge done">'+d.items.length+'</span> ›</div></div>';
+        const n=Array.isArray(d.items)?d.items.length:Number(d.count||0);
+        return '<div class="hero-drill-row" onclick="geHistShowDay('+mi+','+di+')"><div style="font-weight:800">'+raviEsc(d.label)+'</div><div><span class="badge done">'+n+'</span> ›</div></div>';
       }).join('');
   };
   window.geHistShowDay=function(mi,di){
     const m=heroModal(); const mo=window.GE_HIST[mi]; const d=mo&&mo.dates[di]; if(!d) return;
     m.title.textContent=mo.label+' · '+d.label;
+    if(!Array.isArray(d.items)){
+      m.body.innerHTML='<span class="hero-drill-back" onclick="geHistShowDates('+mi+')">‹ Back to '+raviEsc(mo.label)+'</span><div class="hint">Loading this day…</div>';
+      if(d.loading) return; d.loading=true;
+      sbRpc('hero_gate_history_day',{p_date:d.key}).then(function(res){
+        d.loading=false;
+        if(!res||res.ok===false) throw new Error('day unavailable');
+        d.items=geUniqueRows(res.entries||[]); d.count=d.items.length;
+        geHistShowDay(mi,di);
+      }).catch(function(){ d.loading=false; m.body.innerHTML='<span class="hero-drill-back" onclick="geHistShowDates('+mi+')">‹ Back</span><div class="hint">Could not load this date. Sign in again and retry.</div>'; });
+      return;
+    }
     window.GE_HIST_DAY=d.items;
     m.body.innerHTML='<span class="hero-drill-back" onclick="geHistShowDates('+mi+')">‹ Back to '+raviEsc(mo.label)+'</span>'
       +d.items.map(function(g,idx){
@@ -13971,15 +13995,15 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
     if(typeof heroViewPaint==='function') heroViewPaint(m.body,'gate_today','<div class="hint">Loading…</div>');
     else m.body.innerHTML='<div class="hint">Loading…</div>';
     m.modal.style.display='block';
-    jget('gate_history', {days:2}, function(res){
-      if(!res || res.ok===false){
-        if(typeof heroSoftPlaceholder==='function') heroSoftPlaceholder(m.body,'<div class="hint">Could not load.</div>');
-        return;
-      }
+    if(typeof sbRpc!=='function'){
+      heroSoftPlaceholder(m.body,'<div class="hint">Secure history requires sign-in.</div>'); return;
+    }
+    const key=heroIstDay();
+    sbRpc('hero_gate_history_day',{p_date:key}).then(function(res){
+      if(!res || res.ok===false) throw new Error('today unavailable');
       /* R63: IST on both sides. The server's dateKey is Asia/Kolkata; comparing
          it against a UTC toISOString() day made "today" mean two different days
          between 00:00 and 05:30 IST. */
-      const key=heroIstDay();
       const isToday=function(g){
         if(g.dateKey) return String(g.dateKey).slice(0,10)===key;
         const t=new Date(g.time);
@@ -13987,8 +14011,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
         try{ return t.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'})===key; }
         catch(e){ return t.toISOString().slice(0,10)===key; }
       };
-      const all=(res.entries||[]).filter(isToday);
-      const rows=(typeof raviRowsAllowedForUser==='function')?raviRowsAllowedForUser(all,'ws'):all;
+      const all=geUniqueRows(res.entries||[]).filter(isToday);
+      const rows=(typeof raviRowsAllowedForUser==='function')?raviRowsAllowedForUser(all,'location'):all;
       const more='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="raviOpenGateHistory()">📅 All gate entries — full history</button>';
       if(!rows.length){ m.body.innerHTML=more+'<div class="hint">No gate entries yet today.</div>'; return; }
       m.body.innerHTML=more+rows.map(function(g,i){
@@ -13999,6 +14023,8 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
           +'<div><span class="badge done">'+raviEsc(g.token||hhmm)+'</span></div></div>';
       }).join('');
       if(typeof heroViewSave==='function') heroViewSave(m.body,'gate_today');
+    }).catch(function(){
+      if(typeof heroSoftPlaceholder==='function') heroSoftPlaceholder(m.body,'<div class="hint">Could not load secure Gate entries. Sign in again and retry.</div>');
     });
   };
 
@@ -16585,10 +16611,14 @@ function psDrillFind(){
 
 function psSaveScan(){
   const g=PS_LAST.guess||{};
-  if(PS_LAST&&Array.isArray(PS_LAST.ambiguous)&&PS_LAST.ambiguous.length>1 &&
-     !String((document.getElementById('ps-partno')||{}).value||'').trim()){
-    psStatus('Choose the correct printed part number before saving.','err');
-    psShowAmbiguous(PS_LAST.ambiguous); return;
+  if(PS_LAST&&Array.isArray(PS_LAST.ambiguous)&&PS_LAST.ambiguous.length>1){
+    const chosen=String((document.getElementById('ps-partno')||{}).value||'').toUpperCase().trim();
+    const options=PS_LAST.ambiguous.map(function(x){ return String(x||'').toUpperCase().trim(); });
+    if(!chosen||options.indexOf(chosen)<0){
+      psStatus('Choose one of the printed part-number options before saving.','err');
+      psShowAmbiguous(PS_LAST.ambiguous); return;
+    }
+    PS_LAST.ambiguous=[]; /* a typed exact option is also an explicit choice */
   }
   const extra={};
   Object.keys(PS_LAST.extra||{}).forEach((k,i)=>{
