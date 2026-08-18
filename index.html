@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 56;
-window.HERO_BUILD = 'R71-2026.08.17.6';
+window.HERO_RELEASE = 57;
+window.HERO_BUILD = 'R72-2026.08.17.7';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5646,7 +5646,7 @@ function esFindPriceLabour(label, modelName){
     /* A description match is not model evidence. The old scorer could choose a
        DESTINI row for VIDA because the description scored 100 while a model
        mismatch merely added zero. */
-    if(!heroTreeModelMatches(r['Model'], modelName||val('es-model'))) return;
+    if(!esModelOk_(r['Model'], modelName||val('es-model'))) return;
     const code=esLabCleanCode(r['Labour Code']);
     const desc=String(r['Labour Description']||'').trim();
     if(!code||!desc) return;
@@ -5671,7 +5671,7 @@ function esPriceLabourOptions(){
   // Manual Add Labour dropdown: direct DMS labour master only. No MD_VariableLabour.
   const byKey={};
   ES_PRICE_LAB.forEach(function(r){
-    if(!heroTreeModelMatches(r['Model'], val('es-model'))) return;
+    if(!esModelOk_(r['Model'], val('es-model'))) return;
     const code=esLabCleanCode(r['Labour Code']);
     const desc=String(r['Labour Description']||'').trim();
     if(!code||!desc||/_OLD$/i.test(code)) return;
@@ -5831,14 +5831,22 @@ const FAM={A:{name:'100-110cc Motorcycle',oil:'o1000',sched:'f4_6',paid:600},
   D:{name:'Scooter (up to 125cc)',oil:'s750',sched:'f5_3',paid:650},
   E:{name:'160-200cc Motorcycle',oil:'o1200',sched:'f4_6',paid:750},
   F:{name:'XOOM 160 Scooter',oil:'s800',sched:'f4_4',paid:700},
-  G:{name:'Premium (Karizma / Xpulse / 250R / 440)',oil:'syn',sched:'f3_6',paid:1300}};
+  G:{name:'Premium (Karizma / Xpulse / 250R / 440)',oil:'syn',sched:'f3_6',paid:1300},
+  /* R72: no oil bucket, because there is no engine oil. */
+  H:{name:'VIDA Electric Scooter',oil:null,sched:'ev15',paid:570}};
 const KNOWN_MODELS={'SPLENDOR +':'A','SPLENDOR+ XTEC':'A','SPLENDOR+ XTEC 2.0':'A','SPLENDOR PRO':'A','SPLENDOR ISMART':'A',
   'HF DELUXE':'A','HF 100':'A','PASSION +':'A','PASSION PRO':'A','PASSION XTEC':'A','CD DELUXE':'A',
   'SUPER SPLENDOR':'B','SUPER SPLENDOR XTEC':'B','GLAMOUR':'B','GLAMOUR XTEC':'B','GLAMOUR X':'C','XTREME 125R':'C',
   'PLEASURE+':'D','PLEASURE+ XTEC':'D','PLEASURE':'D','DESTINI 125':'D','DESTINI PRIME':'D','DESTINI 110':'D',
   'MAESTRO EDGE':'D','MAESTRO EDGE 125':'D','DUET':'D','XOOM':'D','XOOM 125':'D',
   'XTREME 160R':'E','XTREME 160R 4V':'E','XPULSE 200 4V':'E','XPULSE 200':'E','XTREME 200S':'E',
-  'XOOM 160':'F','KARIZMA XMR':'G','XPULSE 210':'G','XTREME 250R':'G','MAVRICK 440':'G','HARLEY X440':'G','H-D X440 T':'G'};
+  'XOOM 160':'F','KARIZMA XMR':'G','XPULSE 210':'G','XTREME 250R':'G','MAVRICK 440':'G','HARLEY X440':'G','H-D X440 T':'G',
+  /* R72 — the VIDA range, under BOTH spellings, because the gate writes the
+     short one ("V1 PLUS") and every Hero master writes the long one. */
+  'VIDA V1':'H','VIDA V1 PLUS':'H','VIDA V1 PRO':'H','VIDA V2 LITE':'H','VIDA V2 PLUS':'H',
+  'VIDA V2 PRO':'H','VIDA VX2 GO':'H','VIDA VX2 GO 3.4':'H','VIDA VX2 PLUS':'H','VIDA DIRT E K3':'H',
+  'V1':'H','V1 PLUS':'H','V1 PRO':'H','V2 LITE':'H','V2 PLUS':'H','V2 PRO':'H',
+  'VX2 GO':'H','VX2 GO 3.4':'H','VX2 PLUS':'H'};
 
 /* ===== HERO MODEL INCREMENTAL ESTIMATE PRICE MODEL (Ravi Excel, 07-Jul-2026) =====
    Two protections are used:
@@ -5961,7 +5969,23 @@ function esHasCommercialChange(){
   return ES_REMOVED.size>0 || Object.keys(ES_PRICE_OVERRIDES||{}).length>0 || Object.keys(ES_LINE_DISCOUNTS||{}).length>0 || ES_ADDLAB.length>0 || ES_ADDPART.length>0 || ES_DEMANDED.length>0;
 }
 
-function famFor(modelName){ const key=KNOWN_MODELS[String(modelName).toUpperCase()]; return FAM[key] || FAM['B']; }
+/* R72: the exact-string lookup is kept — it is the fastest and it is what the
+   table was written for — but a miss no longer drops straight to FAM['B'], a
+   125cc petrol motorcycle. It tries the normalised spelling first (so
+   "VIDA V1 PLUS", "V1 Plus" and "Vida-V1+" all land on the same family), and a
+   name the table has never seen at all is at least not called petrol if it
+   plainly is not. Falling through to B is why every VIDA was quoted on a 6,000
+   km oil ladder with four free coupons. */
+function famFor(modelName){
+  const raw=String(modelName||'').toUpperCase().trim();
+  let key=KNOWN_MODELS[raw];
+  if(!key){
+    const n=heroNormModel(raw);
+    for(const k in KNOWN_MODELS){ if(heroNormModel(k)===n){ key=KNOWN_MODELS[k]; break; } }
+  }
+  if(!key && /^VIDA/.test(raw)) key='H';
+  return FAM[key] || FAM['B'];
+}
 /* ===== MODEL-SPECIFIC OIL PRICING (Ravi 09-Jul, URGENT) ============================
    "Harley oil coming as ₹373 which is wrong." Root cause: oil price came from the coarse
    FAM table (7 buckets), so a ₹2500 Harley oil fell into the generic ₹373 bucket.
@@ -5983,6 +6007,45 @@ function heroTreeModelMatches(sourceModel, selectedModel){
   if(source===selected) return true;
   return Math.min(source.length,selected.length)>=5 &&
     (source.indexOf(selected)===0 || selected.indexOf(source)===0);
+}
+/* R72 (Ravi, 17-Aug-2026) — "the tree is not properly implemented."
+   THE SECOND HALF OF THE Rs 418 VIDA ESTIMATE, AND THE ONE THAT WAS ON SCREEN.
+
+   The gate records this scooter as "V1 PLUS". Hero's parts master, labour
+   master and owner manual all call it "VIDA V1 PLUS", and the database already
+   knows they are the same vehicle — model_normalize maps one to the other, and
+   estimate_compose used that map correctly: it found 202001 REGULAR SERVICE
+   (PAID) at Rs 570 on VIDA V1 PLUS and returned it.
+
+   Then this screen threw it away. heroTreeModelMatches is a strict identity
+   test — deliberately, because it is what stops a DESTINI part reaching a VIDA
+   estimate — and it was being asked to compare "VIDA V1 PLUS" against the raw
+   text sitting in the model box. Neither is a prefix of the other ("V1PLUS"
+   starts at character 5 of "VIDAV1PLUS"), so every composed line failed it and
+   printed as the line Ravi read on screen:
+       "Blocked: labour belongs to VIDA V1 PLUS, not V1 PLUS."
+   What survived was the consumable pack and the wash. Rs 354 + GST = Rs 418.
+
+   The strictness stays. What changes is WHAT the line is compared against: not
+   one raw string, but every name the composer already resolved for this exact
+   vehicle (model_names — asked, canonical, schedule, oil, parts, labour and
+   rules). A line still has to match a name this vehicle genuinely answers to;
+   it just no longer has to match the one the gate happened to type. */
+function esModelNames_(selectedModel){
+  const names=[selectedModel];
+  try{
+    const C=ES_COMPOSED;
+    /* Only this vehicle's own answer. A stale compose from the previous
+       customer must never widen the identity of the one on screen. */
+    if(C && heroTreeModelMatches(C.model_asked, selectedModel) && C.model_names)
+      C.model_names.forEach(function(n){ if(n) names.push(n); });
+  }catch(e){}
+  return names;
+}
+function esModelOk_(sourceModel, selectedModel){
+  return esModelNames_(selectedModel).some(function(n){
+    return heroTreeModelMatches(sourceModel, n);
+  });
 }
 function heroApplyOilMap(rows){
   if(!rows||!rows.length) return;
@@ -6021,7 +6084,14 @@ const REPAIR=[{l:'Front Brake Shoe (R/R)',p:190},{l:'Rear Brake Shoe (R/R)',p:19
 const SCHED={f4_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:12000,mo:14},{n:'IV',km:18000,mo:20}],pm:6},
   f5_3:{free:[{n:'I',km:750,mo:2},{n:'II',km:3000,mo:5},{n:'III',km:6000,mo:9},{n:'IV',km:9000,mo:12},{n:'V',km:12000,mo:15}],pm:3},
   f4_4:{free:[{n:'I',km:1000,mo:1},{n:'II',km:4000,mo:6},{n:'III',km:8000,mo:10},{n:'IV',km:12000,mo:14}],pm:4},
-  f3_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:12000,mo:14}],pm:6}};
+  f3_6:{free:[{n:'I',km:750,mo:2},{n:'II',km:6000,mo:8},{n:'III',km:12000,mo:14}],pm:6},
+  /* R72 — VIDA runs nothing like a petrol Hero. Three free services, not four
+     or five, and they are 1,000 / 7,500 / 15,000 km, after which it is every
+     15,000 km or 12 months. Source: Hero's own VIDA owner manual 15.c.
+     Until now famFor() fell through to FAM['B'] (a 125cc motorcycle) for every
+     VIDA, so the screen offered coupons IV and V that do not exist and put the
+     next service at 6,000 km on a scooter whose manual says 15,000. */
+  ev15:{free:[{n:'I',km:1000,mo:1},{n:'II',km:7500,mo:6},{n:'III',km:15000,mo:12}],pm:15}};
 
 // Labour dropdown is built dynamically in esRebuildLabDropdown() after master data loads
 
@@ -6091,9 +6161,13 @@ function esLoadLabourForSelectedModel(modelName){
   jget('labour_for_model',{model:modelName},function(res){
     if(req!==ES_LABOUR_REQ || val('es-model')!==modelName) return;
     /* The selected vehicle is the authority even if an old Apps Script cache,
-       alias or backend fallback returns another model. */
+       alias or backend fallback returns another model. R72: "the selected
+       vehicle" includes the names it is filed under in the masters — the gate
+       types "V1 PLUS" and Hero's labour master says "VIDA V1 PLUS", and
+       dropping every row on that spelling left the SA's Add-Labour list empty
+       on VIDA. */
     ES_PRICE_LAB=((res&&res.rows)||[]).filter(function(r){
-      return heroTreeModelMatches(r['Model'], modelName);
+      return esModelOk_(r['Model'], modelName);
     });
     ES_LABOUR_MODEL=modelName;
     esRebuildLabDropdown();
@@ -6238,10 +6312,26 @@ function esRenderVariable(){
    against the model's schedule — instead of always sitting on coupon I. The SA
    can still override; a manual pick is respected for the rest of that estimate. */
 let ES_STAGE_MANUAL=false;
+/* R72 — the coupon list is the MODEL'S coupon list.
+   The markup hardcodes I II III IV V and every vehicle got all five. A VIDA has
+   three free services (1,000 / 7,500 / 15,000 km) and a Splendor has four, so
+   the picker was offering coupons that do not exist and that the customer
+   cannot claim. Rebuilt from the model's own ladder, with the km printed beside
+   each one so the SA is choosing a service and not a roman numeral. */
+function esRebuildFreeStages_(modelName){
+  const sel=document.getElementById('es-freestage'); if(!sel) return;
+  const fam=famFor(modelName), sc=SCHED[fam.sched]; if(!sc) return;
+  const keep=sel.value;
+  sel.innerHTML=sc.free.map(function(s){
+    return '<option value="'+s.n+'">'+s.n+' · '+Number(s.km).toLocaleString('en-IN')+' km</option>';
+  }).join('');
+  if(sc.free.some(function(s){ return s.n===keep; })) sel.value=keep;
+}
 function esSuggestFreeStage(){
+  const modelName=val('es-model'); if(!modelName) return;
+  esRebuildFreeStages_(modelName);
   if(ES_STAGE_MANUAL) return;
   const sel=document.getElementById('es-freestage'); if(!sel) return;
-  const modelName=val('es-model'); if(!modelName) return;
   const fam=famFor(modelName), sc=SCHED[fam.sched]; if(!sc) return;
   const km=+val('es-km')||0, mo=esMonthsSince(val('es-dos'));
   let pick=sc.free[sc.free.length-1];
@@ -6264,6 +6354,11 @@ document.getElementById('es-model').addEventListener('change',()=>{
      beneath a newly selected model while the network request is in flight. */
   ES_COMPOSED=null; ES_COMPOSE_KEY=''; ES_COMPOSE_ERR='';
   try{ rtClose(); }catch(e){}
+  /* R72: the coupon list belongs to the vehicle, so it is rebuilt the moment
+     the vehicle changes — not only when the service type is switched to free.
+     Otherwise a Splendor's coupon IV stays on screen after a VIDA is picked. */
+  ES_STAGE_MANUAL=false;
+  try{ esRebuildFreeStages_(val('es-model')); }catch(e){}
   esLoadLabourForSelectedModel(val('es-model'));
   esEnsurePartsReady(); // preload parts now so Category is ready and fast when the SA reaches it
   try{ esLoadServiceDue(); }catch(e){}   // owner-manual due list
@@ -6419,7 +6514,7 @@ function esBuild(fam, dec, km, modelName){
   const C=ES_COMPOSED;
   if(C){
     (C.oil||[]).forEach(function(o){
-      if(!heroTreeModelMatches(C.model_oil, modelName)) return;
+      if(!esModelOk_(C.model_oil, modelName)) return;
       /* R70: tagged 'oil' rather than passed through as compose's generic
          'manual'. The oil comes from the model's own oil row, never from the
          parts tree, so it can never carry a complaint code — and printing
@@ -6430,7 +6525,7 @@ function esBuild(fam, dec, km, modelName){
                   stock_as_of:o.stock_as_of, why:o.why, src:'oil'});
     });
     (C.parts||[]).forEach(function(x){
-      if(!heroTreeModelMatches(x.from_model||C.model_parts, modelName)) return;
+      if(!esModelOk_(x.from_model||C.model_parts, modelName)) return;
       L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', cc:x.cc||'', stk:x.stock,
                     outlets:x.outlets, stock_as_of:x.stock_as_of, why:x.why,
                     src:x.src, fromModel:x.from_model});
@@ -6439,10 +6534,26 @@ function esBuild(fam, dec, km, modelName){
       L.parts.push({l:x.desc, p:+x.mrp||0, pn:x.pn||'', why:x.why, src:'consumable', stk:x.stock});
     });
     (C.labour||[]).forEach(function(l){
-      if(!heroTreeModelMatches(l.from_model||C.model_labour, modelName)) return;
+      /* R72 — a BORROWED RATE is not a foreign line, and the guard must not
+         read it as one. The composer takes the labour CODE from this vehicle's
+         own tree (302001 is BRAKE BLEEDING / FLUID REPLACEMENT on every Hero
+         ever built) and, only when this model has never billed that code, takes
+         the RUPEE FIGURE from the nearest model that has. from_model then names
+         where the rate came from — GLAMOUR XTEC — and the identity guard was
+         throwing the whole line out on the strength of it, which put the fix
+         straight back into the bug it was fixing. Allowed here ONLY because the
+         composer set rate_borrowed itself, and the line says so on screen with
+         its own RATE FROM chip. Parts are untouched: no part may ever arrive
+         from another vehicle, borrowed or otherwise. */
+      if(!l.rate_borrowed && !esModelOk_(l.from_model||C.model_labour, modelName)) return;
+      /* R72: a rule may now arrive as pure labour (VIDA Note-6, lubricate
+         handlebar & steering every 10,000 km — no part, real DMS code 307011).
+         It is neither fitment nor the service code, so it is priced, not free,
+         and it is not locked to a part the SA can delete out from under it. */
       const fit=(l.kind==='fitment');
       L.labour.push({l:l.desc, p:+l.amt||0, code:l.code||'', why:l.why, src:l.src,
-                     free:(!fit && !(+l.amt>0)),
+                     free:(!fit && l.kind!=='rule' && !(+l.amt>0)),
+                     _rateBorrowed:!!l.rate_borrowed, _fromModel:l.from_model||'',
                      _fromPart:fit?(l.for_desc||''):'', _fromPn:fit?(l.for_part||''):'',
                      _locked:fit});
     });
@@ -7355,21 +7466,22 @@ function esRenderManual(){
   const um=(C.unmapped||[]).slice();
   const selectedModel=String(C.model_asked||val('es-model')||'');
   (C.oil||[]).forEach(function(x){
-    if(!heroTreeModelMatches(C.model_oil, selectedModel)) um.push({
+    if(!esModelOk_(C.model_oil, selectedModel)) um.push({
       item:x.desc||'Engine oil',
       why:'Blocked: tree source '+(C.model_oil||'unknown')+' does not match '+selectedModel+'.'
     });
   });
   (C.parts||[]).forEach(function(x){
     const src=x.from_model||C.model_parts||'';
-    if(!heroTreeModelMatches(src, selectedModel)) um.push({
+    if(!esModelOk_(src, selectedModel)) um.push({
       item:x.desc||x.pn||'Part',
       why:'Blocked: part belongs to '+(src||'an unknown model')+', not '+selectedModel+'.'
     });
   });
   (C.labour||[]).forEach(function(x){
     const src=x.from_model||C.model_labour||'';
-    if(!heroTreeModelMatches(src, selectedModel)) um.push({
+    if(x.rate_borrowed) return;              /* R72: quoted, and labelled, not blocked */
+    if(!esModelOk_(src, selectedModel)) um.push({
       item:x.desc||x.code||'Labour',
       why:'Blocked: labour belongs to '+(src||'an unknown model')+', not '+selectedModel+'.'
     });
@@ -7718,6 +7830,14 @@ function esCodeHtml(x){
   /* The complaint number is only claimed where the tree actually links one.
      A service-labour line has no complaint behind it — the visit is the reason —
      so it says so instead of borrowing a code that would be wrong in DMS. */
+  /* R72 — say so when the RATE was not this model's own.
+     A Hero DMS labour code is the same job on every vehicle, so the code is
+     always right; the rupee figure beside it may have come from the nearest
+     model that has actually billed it, because this one never has. That is a
+     real fact about the number and the advisor is entitled to see it rather
+     than discover it at the billing desk. */
+  if(x._rateBorrowed && x._fromModel)
+    chips.push(esCodeChip_('RATE FROM', x._fromModel+' — this model has never billed this code', '#b45309'));
   if(x.cc) chips.push(esCodeChip_('COMPLAINT NO', x.cc, '#7c3aed'));
   else if(x.src==='service' || x.src==='washing' || x.src==='consumable' || x.src==='oil')
     chips.push(esCodeChip_('COMPLAINT NO', '— scheduled work, no complaint', '#94a3b8'));
@@ -7872,6 +7992,16 @@ function esNewEstimate(){
   const tt=document.getElementById('es-type-src'); if(tt) tt.textContent='';
   document.getElementById('es-model').value=''; document.getElementById('es-type').value=''; const pcat=document.getElementById('es-add-pcat'); if(pcat) pcat.value='';
   const exch=document.getElementById('es-express'); if(exch) exch.checked=false; // FIX: express fee no longer silently carries into the next estimate
+  /* R71: the express AMOUNT has to be cleared down too, not just the tick box.
+     Making the fee editable re-created the exact carry-over the line above was
+     written to stop: a Rs 500 priority typed for one vehicle sat in the box for
+     the next one, and the moment that advisor ticked express the previous
+     vehicle's figure was quoted. Back to the Rs 150 standard, box hidden. */
+  const exam=document.getElementById('es-express-amt'); if(exam) exam.value='150';
+  const exwr=document.getElementById('es-express-wrap'); if(exwr) exwr.style.display='none';
+  /* And the odometer scan: a reading offered but never confirmed on the last
+     vehicle must not be sitting there waiting for a tap on this one. */
+  ES_KM_PENDING=0; try{ esKmHint('',''); }catch(e){}
   document.getElementById('es-freestage-wrap').style.display='none';
   ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; ES_STAGE_MANUAL=false; esRenderUndoBtn&&esRenderUndoBtn(); esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
   ES_MODEL_CTX={reg:'',gateModel:''}; const emf=document.getElementById('es-model-flag'); if(emf){ emf.style.display='none'; emf.innerHTML=''; } const emm=document.getElementById('es-gate-photos'); if(emm){ emm.style.display='none'; }
@@ -14761,7 +14891,7 @@ function rtModelRates(){
   var map={};
   var selected=String((typeof val==='function'?val('es-model'):'')||'');
   (ES_PRICE_LAB||[]).forEach(function(r){
-    if(!heroTreeModelMatches(r['Model'], selected)) return;
+    if(!esModelOk_(r['Model'], selected)) return;
     var c=rtCode(r['Labour Code']); if(!c) return;
     var p=Number(String(r['Latest Rate (PreGST)']||r['Default Price']||0).replace(/[^0-9.]/g,''))||0;
     if(!map[c] || p>map[c].p) map[c]={p:p, l:String(r['Labour Description']||'').trim()};
