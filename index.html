@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 57;
-window.HERO_BUILD = 'R72-2026.08.17.7';
+window.HERO_RELEASE = 59;
+window.HERO_BUILD = 'R74-2026.08.21.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2349,488 +2349,1297 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
 body{background:var(--page);font-family:var(--font-ui)}
 </style>
 
-<style id="r63-ins4-css">
-/* ============ R69 INSURANCE RENEWAL WORKBENCH — all scoped .ins4 ============ */
-.ins4{max-width:1600px;margin:0 auto;padding:8px 10px 14px;font-family:var(--font-ui);color:var(--ink)}
-.ins4-head{display:flex;align-items:center;gap:10px;margin:2px 0 8px}
-.ins4-title{font-size:18px;font-weight:700}
-.ins4-title small{display:block;font-size:12px;font-weight:600;color:var(--ink-3);text-transform:none}
-.ins4-back{flex:0 0 auto;width:34px;height:34px;border:1px solid var(--rule-strong);border-radius:8px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:800;cursor:pointer}
-.ins4-classic{margin-left:auto;font:600 12px var(--font-ui);color:var(--ink-3);background:none;border:none;cursor:pointer;text-decoration:underline}
-/* KPI strip — mockup 5's header numbers as dashboard furniture */
-.ins4-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px}
-.ins4-kpi{border:1px solid var(--rule-strong);border-radius:6px;padding:7px 9px;background:var(--surface)}
-.ins4-kpi b{display:block;font-size:21px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
-.ins4-kpi span{font-size:11px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em}
-.ins4-kpi.k-info{background:var(--info-fill)} .ins4-kpi.k-warn{background:var(--warn-fill)}
-.ins4-kpi.k-ok{background:var(--ok-fill)} .ins4-kpi.k-th{background:var(--th)}
-/* scope pills + search */
-.ins4-pills{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-.ins4-pill{border:1px solid var(--rule-strong);background:var(--surface);color:var(--ink-2);font:700 12px var(--font-ui);padding:7px 11px;border-radius:16px;cursor:pointer}
-.ins4-pill.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.ins4-pill b{font-variant-numeric:tabular-nums}
-.ins4-q{flex:1;min-width:130px;display:flex;align-items:center;gap:6px;border:1px solid var(--rule-strong);border-radius:16px;background:var(--surface);padding:5px 10px}
-.ins4-q input{border:none;outline:none;flex:1;min-width:0;font:500 13px var(--font-ui);background:transparent;color:var(--ink)}
-/* layout: table + docked rail on wide screens (mockup 3), stacked on phone */
-.ins4-body{display:block}
-@media(min-width:1024px){ .ins4-body{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:10px;align-items:start} }
-.ins4-listwrap{border:1px solid var(--rule-strong);border-radius:6px;overflow:auto;background:var(--surface);max-height:calc(100vh - 250px)}
-.ins4-rail{display:none}
-@media(min-width:1024px){ .ins4-rail{display:block;position:sticky;top:8px} }
-.ins4-railbox{border:1px solid var(--rule-strong);border-radius:6px;background:var(--surface);padding:10px;max-height:calc(100vh - 250px);overflow:auto}
-/* severity cell (days-to-expiry) */
-.d-sev1{background:var(--sev1-fill)!important;color:var(--sev1)!important;font-weight:700}
-.d-sev2{background:var(--sev2-fill)!important;color:var(--sev2)!important;font-weight:700}
-.d-sev3{background:var(--sev3-fill)!important;color:var(--sev3)!important;font-weight:700}
-.d-sev4{background:var(--sev4-fill)!important;color:var(--sev4)!important;font-weight:700}
-/* skeleton — the no-spinner rule: the table's own geometry paints instantly */
-@keyframes ins4shim{0%{background-position:-200px 0}100%{background-position:200px 0}}
-.ins4-skel{height:10px;border-radius:3px;background:linear-gradient(90deg,#EEECE7 25%,#F7F5F1 50%,#EEECE7 75%);background-size:400px 100%;animation:ins4shim 1.2s infinite linear}
-/* detail (expansion on phone, rail on desktop) */
-.ins4-det h4{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--ink-2);margin:10px 0 4px;letter-spacing:.03em}
-.ins4-det .kv{display:grid;grid-template-columns:44% 56%;font-size:12.5px;border-top:1px solid var(--rule2)}
-.ins4-det .kv>div{padding:5px 6px}
-.ins4-det .kv>div:first-child{background:var(--zebra-label);color:var(--ink-2);font-weight:600}
-.ins4-det .kv .mono{font-family:'Roboto Mono',ui-monospace,monospace;font-size:12px}
-.ins4-acts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0 4px}
-.ins4-act{border:none;border-radius:6px;padding:11px 0;font:700 13px var(--font-ui);cursor:pointer;text-align:center;text-decoration:none;color:#fff}
-.ins4-act.call{background:var(--ok2)} .ins4-act.wa{background:#1D8F4E}
-/* outcome bar — the fixed 7-code vocabulary, always visible in the detail */
-.ins4-out{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 6px}
-.ins4-oc{flex:1 0 auto;min-width:44px;border:1.5px solid var(--rule-strong);background:var(--surface);border-radius:6px;padding:8px 4px;font:800 12px var(--font-ui);color:var(--ink-2);cursor:pointer;text-align:center}
-.ins4-oc small{display:block;font-size:8.5px;font-weight:600;margin-top:2px;text-transform:uppercase;letter-spacing:.02em}
-.ins4-oc.on{border-color:var(--ink);background:var(--ink);color:#fff}
-.ins4-follow{display:none;gap:6px;margin:6px 0}
-.ins4-follow input{flex:1;border:1px solid var(--rule-strong);border-radius:6px;padding:8px;font:500 13px var(--font-ui)}
-.ins4-prem{display:none;margin:6px 0}
-.ins4-prem input{width:100%;border:1px solid var(--rule-strong);border-radius:6px;padding:8px;font:500 13px var(--font-ui)}
-.ins4-save{width:100%;border:none;border-radius:6px;background:var(--brand);color:#fff;font:700 14px var(--font-ui);text-transform:uppercase;padding:12px 0;cursor:pointer;margin-top:4px}
-.ins4-save:disabled{opacity:.5}
-.ins4-save .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:ins4rot .7s infinite linear;vertical-align:-2px;margin-right:6px}
-@keyframes ins4rot{to{transform:rotate(360deg)}}
-.ins4-note{font-size:12px;color:var(--ink-3);margin-top:6px}
-.ins4-source{border:1px solid var(--rule2);border-radius:5px;background:var(--zebra-label);padding:7px 8px;font-size:12px;color:var(--ink-2);margin-bottom:8px}
-.ins4-source.stale{background:var(--warn-fill);color:var(--warn2);border-color:#D9B66F}
-.ins4-providers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:7px 0 10px}
-.ins4-provider{border:1px solid var(--rule-strong);border-radius:6px;background:var(--surface);color:var(--ink-2);padding:8px 5px;font:700 11px var(--font-ui);cursor:pointer;text-align:center}
-.ins4-provider:hover{border-color:var(--ink);color:var(--ink)}
-.ins4-history{border-left:2px solid var(--rule-strong);padding-left:8px;margin:6px 0 10px}
-.ins4-history>div{font-size:12px;line-height:1.35;margin:5px 0;color:var(--ink-2)}
-.ins4-queuebar{display:none;background:var(--warn-fill);color:var(--warn2);border:1px solid var(--rule-strong);border-radius:6px;padding:7px 10px;font:600 12px var(--font-ui);margin-bottom:8px}
-.ins4-queuebar button{float:right;border:1px solid var(--warn2);background:none;color:var(--warn2);border-radius:5px;font:700 11px var(--font-ui);padding:3px 10px;cursor:pointer}
-.ins4-toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--ink);color:#fff;font:600 13px var(--font-ui);padding:10px 16px;border-radius:8px;z-index:8000;opacity:0;transition:opacity .2s}
-.ins4-toast.show{opacity:1}
-@media(max-width:640px){
-  .ins4{padding:6px 5px 12px}
-  .ins4-kpis{grid-template-columns:repeat(5,minmax(58px,1fr));gap:4px}
-  .ins4-kpi{padding:6px 4px}.ins4-kpi b{font-size:17px}.ins4-kpi span{font-size:10px}
-  .ins4 .c-exp,.ins4 .c-last,.ins4 .c-why{display:none}
-  .ins4-q{flex:1 0 100%;min-width:100%}
-  .ins4-listwrap{max-height:none;overflow:visible}
-  .ins4 #ins4-tbl{table-layout:fixed}
-  .ins4 #ins4-tbl col:nth-child(1){width:55%!important}
-  .ins4 #ins4-tbl col:nth-child(2){width:33%!important}
-  .ins4 #ins4-tbl col:nth-child(4){width:12%!important}
-  .ins4-provider,.ins4-oc{font-size:12px}.ins4-oc small{font-size:10px}
+<style id="r73-ins5-css">
+/* ====================== R73 INSURANCE COCKPIT — all scoped .ins4 ===========
+   Rebuilt 20-Aug-2026 to Ravi's brief: "Correct the Insurance Screen UI. Make
+   it very modern and very attractive... Integrate whatsapp inside it... all of
+   the policy bazaar and all other aggregators... she should be able to
+   actively convert all the customers she has spoken to in the month and they
+   should be visible to her all the time."
+
+   Built to mockup 6.png (Dealership CRM Cockpit) and 5.png (KPI strip +
+   interaction rail) in Common\Design Mockups\Insurance\, and to the standing
+   rules: an APP FRAME not a scrolling page (only the table body and the rail
+   scroll), TABLE rows not cards, dense high-contrast type for -5 spectacles,
+   dd-mm-yyyy everywhere, and every press changes something on screen at once.
+   ========================================================================= */
+.ins4{--rail:430px;
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  background:var(--page);font-family:var(--font-ui);color:var(--ink);
+  z-index:60;overflow:hidden}
+.ins4 *{box-sizing:border-box}
+
+/* ---- header ------------------------------------------------------------ */
+.i5-top{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+  padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--rule-strong);
+  border-top:3px solid var(--brand)}
+.i5-mark{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--brand);
+  color:#fff;font:800 13px/30px var(--font-ui);text-align:center;letter-spacing:-.02em}
+.i5-back{width:32px;height:32px;flex:0 0 auto;border:1px solid var(--rule-strong);
+  border-radius:8px;background:var(--surface);color:var(--ink);font:800 17px/1 var(--font-ui);cursor:pointer}
+.i5-brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.i5-brand b{font-size:16px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.i5-brand i{font-style:normal;font-size:12px;font-weight:600;color:var(--ink-3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.i5-live{margin-left:auto;display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.i5-dot{width:8px;height:8px;border-radius:50%;background:var(--ok2);
+  box-shadow:0 0 0 3px rgba(15,122,61,.15)}
+.i5-dot.off{background:var(--warn2);box-shadow:0 0 0 3px rgba(168,93,0,.15)}
+.i5-ghost{border:1px solid var(--rule-strong);background:var(--surface);color:var(--ink-2);
+  border-radius:7px;font:700 11.5px var(--font-ui);padding:6px 10px;cursor:pointer;white-space:nowrap}
+.i5-ghost:hover{border-color:var(--ink);color:var(--ink)}
+
+/* ---- KPI cockpit strip -------------------------------------------------- */
+.i5-kpis{flex:0 0 auto;display:grid;grid-template-columns:repeat(9,1fr);gap:1px;
+  background:var(--rule-strong);border-bottom:1px solid var(--rule-strong)}
+.i5-kpi{background:var(--surface);padding:7px 9px;min-width:0;cursor:pointer;
+  border:none;text-align:left;font-family:var(--font-ui)}
+.i5-kpi:hover{background:var(--row-hover)}
+.i5-kpi b{display:block;font-size:20px;font-weight:800;line-height:1.05;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.i5-kpi span{display:block;font-size:9.5px;font-weight:700;color:var(--ink-2);
+  text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.i5-kpi.hot{background:var(--danger-fill)} .i5-kpi.hot b{color:var(--danger2)}
+.i5-kpi.warm{background:var(--warn-fill)} .i5-kpi.warm b{color:var(--warn2)}
+.i5-kpi.good{background:var(--ok-fill)}   .i5-kpi.good b{color:var(--ok2)}
+.i5-kpi.cool{background:var(--info-fill)} .i5-kpi.cool b{color:var(--info2)}
+
+/* ---- view tabs (the saved views of mockup 6) ---------------------------- */
+.i5-tabs{flex:0 0 auto;display:flex;align-items:center;gap:0;overflow-x:auto;
+  background:var(--th);border-bottom:1px solid var(--rule-strong);scrollbar-width:thin}
+.i5-tab{flex:0 0 auto;border:none;border-right:1px solid var(--rule2);background:transparent;
+  color:var(--ink-2);font:700 12px var(--font-ui);padding:9px 13px;cursor:pointer;
+  white-space:nowrap;border-bottom:3px solid transparent}
+.i5-tab:hover{background:var(--row-hover);color:var(--ink)}
+.i5-tab.on{background:var(--surface);color:var(--ink);border-bottom-color:var(--brand)}
+.i5-tab.fire.on{border-bottom-color:var(--danger2)}
+.i5-tab u{text-decoration:none;font-variant-numeric:tabular-nums;
+  background:var(--rule2);color:var(--ink-2);border-radius:9px;padding:1px 6px;margin-left:6px;font-size:11px}
+.i5-tab.on u{background:var(--ink);color:#fff}
+.i5-tab.fire.on u{background:var(--danger2)}
+.i5-tabsep{flex:0 0 auto;width:1px;height:20px;background:var(--rule-strong);margin:0 4px}
+
+/* ---- search / count bar ------------------------------------------------- */
+.i5-bar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 12px;
+  background:var(--surface);border-bottom:1px solid var(--rule-strong)}
+.i5-q{flex:1;min-width:120px;display:flex;align-items:center;gap:7px;
+  border:1px solid var(--rule-strong);border-radius:8px;background:var(--page);padding:6px 10px}
+.i5-q input{border:none;outline:none;flex:1;min-width:0;background:transparent;
+  font:600 13px var(--font-ui);color:var(--ink)}
+.i5-said{font:700 11.5px var(--font-ui);color:var(--ink-2);white-space:nowrap}
+.i5-note-bar{flex:0 0 auto;background:var(--danger-fill);color:var(--danger2);
+  border-bottom:1px solid var(--rule-strong);padding:5px 12px;font:700 12px var(--font-ui)}
+.i5-sync{flex:0 0 auto;display:none;background:var(--warn-fill);color:var(--warn2);
+  border-bottom:1px solid var(--rule-strong);padding:5px 12px;font:700 12px var(--font-ui)}
+.i5-sync button{float:right;border:1px solid var(--warn2);background:none;color:var(--warn2);
+  border-radius:5px;font:700 11px var(--font-ui);padding:2px 9px;cursor:pointer}
+
+/* ---- body: table + docked rail ------------------------------------------ */
+.i5-body{flex:1 1 auto;display:flex;min-height:0;overflow:hidden}
+.i5-list{flex:1 1 auto;min-width:0;overflow:auto;background:var(--surface)}
+.i5-rail{flex:0 0 var(--rail);width:var(--rail);border-left:1px solid var(--rule-strong);
+  background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.i5-railhead{flex:0 0 auto;padding:9px 11px;border-bottom:1px solid var(--rule-strong);background:var(--zebra-label)}
+.i5-railtabs{flex:0 0 auto;display:flex;border-bottom:1px solid var(--rule-strong);background:var(--th)}
+.i5-rt{flex:1;border:none;border-right:1px solid var(--rule2);background:transparent;
+  font:700 11px var(--font-ui);text-transform:uppercase;letter-spacing:.03em;
+  color:var(--ink-2);padding:8px 2px;cursor:pointer;border-bottom:2px solid transparent}
+.i5-rt.on{background:var(--surface);color:var(--ink);border-bottom-color:var(--brand)}
+.i5-railbody{flex:1 1 auto;overflow:auto;padding:10px 11px 16px}
+.i5-empty{padding:26px 14px;text-align:center;color:var(--ink-3);font:600 13px var(--font-ui)}
+
+/* ---- the table ---------------------------------------------------------- */
+#i5-tbl{border-collapse:collapse;width:100%;table-layout:fixed}
+#i5-tbl th{background:var(--th);color:var(--ink-2);font:800 10.5px/1.2 var(--font-ui);
+  text-transform:uppercase;letter-spacing:.05em;padding:7px 8px;text-align:left;
+  border-bottom:1px solid var(--rule-strong);border-right:1px solid var(--rule2);
+  position:sticky;top:0;z-index:3}
+#i5-tbl td{color:var(--ink);font:600 12.5px/1.3 var(--font-ui);padding:7px 8px;
+  border-bottom:1px solid var(--rule2);border-right:1px solid var(--rule2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
+#i5-tbl tr{cursor:pointer}
+#i5-tbl tr:hover td{background:var(--row-hover)}
+#i5-tbl tr.sel td{background:var(--row-selected);box-shadow:inset 3px 0 0 var(--brand)}
+#i5-tbl td .sub{display:block;font-size:11px;font-weight:600;color:var(--ink-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+#i5-tbl td .sub.i5-only-sm{display:none}
+#i5-tbl td.mono{font-family:'Roboto Mono',ui-monospace,monospace;font-size:12px;font-weight:600}
+.i5-due{display:inline-block;font:800 10.5px/1 var(--font-ui);padding:3px 6px;border-radius:3px;
+  text-transform:uppercase;letter-spacing:.03em}
+.i5-due.t0{background:var(--sev1-fill);color:var(--sev1)}
+.i5-due.t1{background:var(--sev2-fill);color:var(--sev2)}
+.i5-due.t2{background:var(--sev3-fill);color:var(--sev3)}
+.i5-due.t3{background:var(--sev4-fill);color:var(--sev4)}
+.i5-stage{display:inline-block;font:800 10px/1 var(--font-ui);padding:3px 6px;border-radius:3px;
+  text-transform:uppercase;letter-spacing:.03em;background:var(--th);color:var(--ink-2)}
+.i5-stage.won{background:var(--ok-fill);color:var(--ok2)}
+.i5-stage.quote{background:var(--info-fill);color:var(--info2)}
+.i5-stage.cb{background:var(--warn-fill);color:var(--warn2)}
+.i5-stage.lost{background:var(--danger-fill);color:var(--danger2)}
+.i5-hot{display:inline-block;font:800 9.5px/1 var(--font-ui);padding:3px 5px;border-radius:3px;
+  background:var(--danger2);color:#fff;margin-left:5px;letter-spacing:.04em}
+.i5-skel{height:9px;border-radius:3px;background:linear-gradient(90deg,#EEECE7 25%,#F7F5F1 50%,#EEECE7 75%);
+  background-size:400px 100%;animation:i5shim 1.2s infinite linear}
+@keyframes i5shim{0%{background-position:-200px 0}100%{background-position:200px 0}}
+
+/* ---- rail furniture ----------------------------------------------------- */
+.i5-name{font-size:15.5px;font-weight:800;line-height:1.2}
+.i5-sub{font-size:12px;font-weight:600;color:var(--ink-3);margin-top:2px}
+.i5-acts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:9px 0 4px}
+.i5-act{border:none;border-radius:7px;padding:11px 0;font:800 13px var(--font-ui);
+  cursor:pointer;text-align:center;text-decoration:none;color:#fff;display:block}
+.i5-act.call{background:var(--ok2)} .i5-act.wa{background:#1D8F4E}
+.i5-act.link{background:var(--info2)} .i5-act.quote{background:var(--brand)}
+.i5-act.dead{background:var(--rule-strong);color:var(--ink-disabled);cursor:not-allowed}
+.i5-h{font:800 10.5px var(--font-ui);text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ink-2);margin:14px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--rule-strong)}
+.i5-kv{display:grid;grid-template-columns:42% 58%;font-size:12.5px;border-bottom:1px solid var(--rule2)}
+.i5-kv>div{padding:5px 6px;overflow:hidden;text-overflow:ellipsis}
+.i5-kv>div:first-child{background:var(--zebra-label);color:var(--ink-2);font-weight:700}
+.i5-kv>div:last-child{font-weight:600}
+.i5-kv .mono{font-family:'Roboto Mono',ui-monospace,monospace;font-size:12px}
+.i5-miss{color:var(--ink-disabled);font-weight:600}
+.i5-tip{font-size:11.5px;font-weight:600;color:var(--ink-3);margin:6px 0 0;line-height:1.4}
+
+/* outcome vocabulary — one tap, seven codes */
+.i5-out{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:7px 0}
+.i5-oc{border:1.5px solid var(--rule-strong);background:var(--surface);border-radius:7px;
+  padding:7px 3px;font:800 12.5px var(--font-ui);color:var(--ink-2);cursor:pointer;text-align:center}
+.i5-oc small{display:block;font-size:8.5px;font-weight:700;margin-top:2px;
+  text-transform:uppercase;letter-spacing:.02em}
+.i5-oc:hover{border-color:var(--ink)}
+.i5-oc.on{border-color:var(--ink);background:var(--ink);color:#fff}
+.i5-oc.on.win{border-color:var(--ok2);background:var(--ok2)}
+.i5-oc.on.bad{border-color:var(--danger2);background:var(--danger2)}
+.i5-in{width:100%;border:1px solid var(--rule-strong);border-radius:7px;padding:9px;
+  font:600 13px var(--font-ui);color:var(--ink);background:var(--surface)}
+.i5-row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.i5-save{width:100%;border:none;border-radius:7px;background:var(--brand);color:#fff;
+  font:800 13.5px var(--font-ui);text-transform:uppercase;letter-spacing:.04em;
+  padding:12px 0;cursor:pointer;margin-top:8px}
+.i5-save:disabled{background:var(--rule-strong);color:var(--ink-disabled);cursor:not-allowed}
+.i5-spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.45);
+  border-top-color:#fff;border-radius:50%;animation:i5rot .7s infinite linear;vertical-align:-2px;margin-right:6px}
+@keyframes i5rot{to{transform:rotate(360deg)}}
+
+/* aggregators — the quote wall */
+.i5-aggs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:6px 0 2px}
+.i5-agg{border:1px solid var(--rule-strong);border-radius:7px;background:var(--surface);
+  padding:7px 3px;cursor:pointer;text-align:center;font-family:var(--font-ui)}
+.i5-agg:hover{border-color:var(--ink);background:var(--row-hover)}
+.i5-agg em{display:block;font-style:normal;font:800 12px/1 var(--font-ui);color:#fff;
+  width:26px;height:26px;border-radius:6px;margin:0 auto 4px;line-height:26px}
+.i5-agg span{display:block;font:700 10px var(--font-ui);color:var(--ink-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.i5-agg.best{border-color:var(--ok2);background:var(--ok-fill)}
+.i5-agg.best span{color:var(--ok2)}
+.i5-qtbl{width:100%;border-collapse:collapse;margin-top:6px}
+.i5-qtbl th{background:var(--th);font:800 9.5px var(--font-ui);text-transform:uppercase;
+  letter-spacing:.04em;color:var(--ink-2);padding:5px 6px;text-align:left;border-bottom:1px solid var(--rule-strong)}
+.i5-qtbl td{font:600 12px var(--font-ui);padding:5px 6px;border-bottom:1px solid var(--rule2)}
+.i5-qtbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+.i5-best{background:var(--ok-fill);border:1px solid var(--ok2);border-radius:7px;
+  padding:8px 10px;margin:7px 0;font:700 12.5px var(--font-ui);color:var(--ok2)}
+.i5-best b{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+
+/* WhatsApp composer */
+.i5-langs{display:flex;gap:5px;margin:2px 0 7px}
+.i5-lang{flex:1;border:1.5px solid var(--rule-strong);background:var(--surface);color:var(--ink-2);
+  border-radius:7px;padding:7px 0;font:800 12px var(--font-ui);cursor:pointer}
+.i5-lang.on{border-color:#1D8F4E;background:#1D8F4E;color:#fff}
+.i5-wabox{background:#E7FBE9;border:1px solid #B6E4BD;border-radius:10px 10px 10px 2px;
+  padding:9px 10px;font:600 12.5px/1.45 var(--font-ui);color:#0B3D1B;white-space:pre-wrap;
+  word-break:break-word;max-height:210px;overflow:auto}
+.i5-wata{width:100%;min-height:132px;border:1px solid var(--rule-strong);border-radius:8px;
+  padding:9px;font:600 12.5px/1.45 var(--font-ui);color:var(--ink);resize:vertical;background:var(--surface)}
+.i5-walog{border-left:2px solid #1D8F4E;padding-left:9px;margin-top:8px}
+.i5-walog div{font-size:11.5px;font-weight:600;color:var(--ink-2);margin:5px 0;line-height:1.35}
+
+/* activity timeline */
+.i5-tl{border-left:2px solid var(--rule-strong);padding-left:10px;margin:4px 0 6px}
+.i5-tl .ev{position:relative;margin:8px 0;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.i5-tl .ev:before{content:'';position:absolute;left:-15px;top:4px;width:8px;height:8px;
+  border-radius:50%;background:var(--rule-strong);border:2px solid var(--surface)}
+.i5-tl .ev.call:before{background:var(--ok2)} .i5-tl .ev.wa:before{background:#1D8F4E}
+.i5-tl .ev.note:before{background:var(--info2)} .i5-tl .ev.quote:before{background:var(--brand)}
+.i5-tl .ev b{color:var(--ink);font-weight:800}
+.i5-tl .ev i{font-style:normal;float:right;font-size:11px;color:var(--ink-3);font-weight:600}
+
+.i5-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);
+  color:#fff;font:700 13px var(--font-ui);padding:11px 18px;border-radius:9px;z-index:9000;
+  opacity:0;pointer-events:none;transition:opacity .18s}
+.i5-toast.show{opacity:1}
+
+/* ---- phone: the rail becomes a sheet over the list --------------------- */
+/* Under 1024 the rail becomes a full-screen sheet over the list, and the
+   columns that do not decide a call are dropped — never the expiry date, which
+   is the only thing that decides which customer she rings next. */
+@media(max-width:1023px){
+  .i5-kpis{grid-template-columns:repeat(5,1fr)}
+  .i5-kpi.k6,.i5-kpi.k7,.i5-kpi.k8,.i5-kpi.k9{display:none}
+  .i5-rail{position:fixed;inset:0;width:100%;flex:1 1 auto;z-index:70;
+    border-left:none;transform:translateY(100%);transition:transform .2s ease-out}
+  .i5-rail.open{transform:translateY(0)}
+  .i5-c4,.i5-c5,.i5-c6{display:none}
+}
+@media(max-width:760px){
+  .i5-hide-sm{display:none!important}
+  #i5-tbl td .sub.i5-only-sm{display:block}
+  .i5-c2,.i5-c7{display:none}
+  .i5-kpis{grid-template-columns:repeat(4,1fr)}
+  .i5-kpi.k5{display:none}
+  .i5-kpi b{font-size:17px} .i5-kpi span{font-size:9px}
+  .i5-brand{flex-direction:column;align-items:flex-start;gap:0;overflow:hidden}
+  .i5-brand b{font-size:14px;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .i5-brand i{font-size:11px}
+  .i5-top{gap:7px;padding:7px 9px}
+  .i5-out{grid-template-columns:repeat(4,1fr)}
+  #i5-tbl th,#i5-tbl td{padding:7px 6px}
 }
 </style>
 
 <script>
-/* ============ R69 ins4 — server-owned Insurance daily workbench ============
-   Supabase assigns at most 150 unique callable customers to this signed-in
-   SMRE: today, tomorrow, 2-7 days, then 8-15 days. Customer 360 is lazy and an
-   idempotency key makes an offline retry safe. */
-let INS4={scope:'queue',rows:[],counts:null,sel:-1,q:'',outcome:'',built:false,
-  saving:false,details:Object.create(null),countsAt:0,loadSeq:0};
-const INS4_OC=[
-  {c:'CB',code:'IP_CALLBACK', l:'Call back'},
-  {c:'NR',code:'NR_RINGING',  l:'No reply'},
-  {c:'NI',code:'LO_NOTINT',   l:'Not interested'},
-  {c:'QT',code:'IP_QUOTED',   l:'Quoted'},
-  {c:'RN',code:'WON_RENEWED', l:'Renewed'},
-  {c:'LT',code:'LO_DEALER',   l:'Lost to other'},
-  {c:'WN',code:'WR_NUMBER',   l:'Wrong number'}
+/* ============ R73 — the Insurance Cockpit ==================================
+   Ravi, 20-Aug-2026. Three things were wrong with the R69 workbench and all
+   three are repaired here, in the screen and in Postgres together:
+
+   1. A customer disappeared the moment an outcome was logged, and could never
+      be worked again that month. Migration 0053 adds insurance_my_month() and
+      widens insurance_log_outcome() so every customer she has SPOKEN TO this
+      month stays visible, and stays convertible, until the month ends.
+   2. The aggregators were four grey buttons at the bottom of a rail nobody
+      scrolled to. They are now a quote wall of thirteen, with the reg copied
+      to the clipboard on the way out and the quote she gets brought back INTO
+      the record (insurance_quotes), so "best quote" becomes a fact.
+   3. WhatsApp left the app. It now lives inside it: a composer with the three
+      languages, the message built from the real record, the approved-template
+      send through the one Pingmate gateway, and a wa.me fallback that always
+      works. Every send is a touch on the customer's own timeline.
+
+   Same-day expiry converts the most, so 'Due today' is the screen she lands
+   on, and today's rows carry the only red badge on the page.
+   ======================================================================== */
+
+let INS5={
+  view:'today', q:'', rows:[], counts:null, sel:-1, tab:'overview',
+  outcome:'', built:false, saving:false, details:Object.create(null),
+  countsAt:0, loadSeq:0, waLang:'en', waEdited:null, online:true, outbox:0
+};
+
+/* The seven outcomes. This vocabulary is fixed on the server (0049) — the
+   screen may never invent an eighth. */
+const I5_OC=[
+  {c:'CB',code:'IP_CALLBACK', l:'Call back', k:''},
+  {c:'QT',code:'IP_QUOTED',   l:'Quoted',    k:''},
+  {c:'RN',code:'WON_RENEWED', l:'Renewed',   k:'win'},
+  {c:'NR',code:'NR_RINGING',  l:'No reply',  k:''},
+  {c:'NI',code:'LO_NOTINT',   l:'Not int.',  k:'bad'},
+  {c:'LT',code:'LO_DEALER',   l:'Lost',      k:'bad'},
+  {c:'WN',code:'WR_NUMBER',   l:'Wrong no.', k:'bad'}
 ];
-function ins4CodeShort(status){
-  const s=String(status||'');
-  const hit=INS4_OC.find(o=>o.code===s);
-  if(hit) return hit.c;
-  if(/^NR_/.test(s)) return 'NR'; if(/^WON_/.test(s)) return 'RN';
-  if(/^IP_QUOT/.test(s)) return 'QT'; if(/^IP_/.test(s)) return 'CB';
-  if(/^LO_NOTINT/.test(s)) return 'NI'; if(/^LO_/.test(s)) return 'LT';
-  if(/^WR_/.test(s)) return 'WN';
-  return s?s.slice(0,2):'';
+
+/* The views. 'day' reads today's server-owned 150; 'month' reads everyone she
+   has touched since the 1st; 'book' searches all 74,865 customers. */
+const I5_VIEWS=[
+  {id:'today',    lbl:'Due today',   src:'day',   k:'today',           fire:true},
+  {id:'tomorrow', lbl:'Tomorrow',    src:'day',   k:'tomorrow'},
+  {id:'week',     lbl:'2–7 days',    src:'day',   k:'week'},
+  {id:'fortnight',lbl:'8–15 days',   src:'day',   k:'fortnight'},
+  {id:'queue',    lbl:'My 150',      src:'day',   k:'remaining'},
+  {sep:true},
+  {id:'callback', lbl:'Call-backs due', src:'month', k:'month_callbacks', fire:true},
+  {id:'open',     lbl:'Month · still open', src:'month', k:'month_open'},
+  {id:'quoted',   lbl:'Quoted',      src:'month', k:'month_quoted'},
+  {id:'won',      lbl:'Renewed',     src:'month', k:'month_won'},
+  {id:'all',      lbl:'Everyone I spoke to', src:'month', k:'month_worked'},
+  {sep:true},
+  {id:'book',     lbl:'Search all customers', src:'book'}
+];
+function i5View(id){ for(var i=0;i<I5_VIEWS.length;i++){ if(I5_VIEWS[i].id===id) return I5_VIEWS[i]; } return I5_VIEWS[0]; }
+
+/* The quote wall. heroinsurance.com is first and marked because it is the one
+   measured to return a real premium from the registration alone (08-Aug-2026);
+   the rest open their own two-wheeler landing page with the reg on the
+   clipboard, which is what she pastes into their first field. */
+const I5_AGG=[
+  {n:'Hero Insurance', s:'HI', c:'#D71920', u:'https://www.heroinsurance.com/two-wheeler-insurance', best:true},
+  {n:'PolicyBazaar',   s:'PB', c:'#0B5FFF', u:'https://www.policybazaar.com/motor-insurance/two-wheeler-insurance/'},
+  {n:'InsuranceDekho', s:'ID', c:'#0F7A3D', u:'https://www.insurancedekho.com/bike-insurance'},
+  {n:'Go Digit',       s:'GD', c:'#00204E', u:'https://www.godigit.com/bike-insurance'},
+  {n:'ACKO',           s:'AK', c:'#5C2D91', u:'https://www.acko.com/two-wheeler-insurance/'},
+  {n:'Coverfox',       s:'CF', c:'#12477A', u:'https://www.coverfox.com/two-wheeler-insurance/'},
+  {n:'Bajaj Allianz',  s:'BA', c:'#0B4DA2', u:'https://www.bajajallianz.com/two-wheeler-insurance-online.html'},
+  {n:'ICICI Lombard',  s:'IL', c:'#A85D00', u:'https://www.icicilombard.com/two-wheeler-insurance'},
+  {n:'HDFC ERGO',      s:'HE', c:'#B3001B', u:'https://www.hdfcergo.com/two-wheeler-insurance'},
+  {n:'TATA AIG',       s:'TA', c:'#1B3A6B', u:'https://www.tataaig.com/two-wheeler-insurance'},
+  {n:'SBI General',    s:'SB', c:'#5A2D82', u:'https://www.sbigeneral.in/two-wheeler-insurance'},
+  {n:'Reliance Gen.',  s:'RG', c:'#0F7A3D', u:'https://www.reliancegeneral.co.in/insurance/two-wheeler-insurance/two-wheeler-insurance.aspx'},
+  {n:'New India',      s:'NI', c:'#12477A', u:'https://www.newindia.co.in/portal/productDetail/two-wheeler-package-policy'}
+];
+
+/* ---------------------------------------------------------------------------
+   Small helpers
+   --------------------------------------------------------------------------- */
+function i5Esc(s){ return (typeof raviEsc==='function')?raviEsc(s==null?'':s)
+  : String(s==null?'':s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
+function i5Me(){ return (typeof USER!=='undefined'&&USER)?(USER.empno||''):''; }
+function i5MyName(){ return (typeof USER!=='undefined'&&USER)?(USER.personName||''):''; }
+function i5Outlet(){ var w=(typeof USER!=='undefined'&&USER)?String(USER.ws||''):'';
+  return (!w||w==='ALL')?'Chinchwad':w; }
+function i5Wide(){ return window.matchMedia && matchMedia('(min-width:1024px)').matches; }
+function i5N(n){ return (n==null||n==='')?'—':Number(n).toLocaleString('en-IN'); }
+function i5Rs(n){ return (n==null||n===''||!(Number(n)>0))?'—':('₹'+Number(n).toLocaleString('en-IN')); }
+/* Ravi reads dd-mm-yyyy. ISO stays in the payload and nowhere else. */
+function i5Date(iso){
+  var s=String(iso||'').slice(0,10).split('-');
+  return (s.length===3&&s[0].length===4)?(s[2]+'-'+s[1]+'-'+s[0]):(iso?String(iso):'—');
 }
-function ins4Me(){ return (typeof USER!=='undefined'&&USER)?(USER.empno||''):''; }
-function ins4MyName(){ return (typeof USER!=='undefined'&&USER)?(USER.personName||''):''; }
-function ins4Wide(){ return window.matchMedia && matchMedia('(min-width:1024px)').matches; }
-function ins4QueueKey(){ return 'ins4_queue:'+(ins4Me()||'signed-out'); }
-function ins4Uuid(){
-  if(window.crypto&&crypto.randomUUID) return crypto.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
-    const r=Math.random()*16|0,v=c==='x'?r:(r&3|8); return v.toString(16);
-  });
+function i5DateTime(iso){
+  if(!iso) return '';
+  var d=String(iso).slice(0,10), t=String(iso).slice(11,16);
+  return i5Date(d)+(t?(' '+t):'');
 }
-function ins4IstDatePlus(days){
-  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
-  const v={}; parts.forEach(p=>{ if(p.type!=='literal') v[p.type]=p.value; });
-  const d=new Date(Date.UTC(Number(v.year),Number(v.month)-1,Number(v.day)+Number(days||0)));
+function i5IstPlus(days){
+  var parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  var v={}; parts.forEach(function(p){ if(p.type!=='literal') v[p.type]=p.value; });
+  var d=new Date(Date.UTC(Number(v.year),Number(v.month)-1,Number(v.day)+Number(days||0)));
   return d.toISOString().slice(0,10);
 }
-function ins4Toast(msg){
-  let t=document.getElementById('ins4-toast');
-  if(!t){ t=document.createElement('div'); t.id='ins4-toast'; t.className='ins4-toast'; document.body.appendChild(t); }
+function i5Uuid(){
+  if(window.crypto&&crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    var r=Math.random()*16|0,v=c==='x'?r:(r&3|8); return v.toString(16); });
+}
+function i5Toast(msg){
+  var t=document.getElementById('i5-toast');
+  if(!t){ t=document.createElement('div'); t.id='i5-toast'; t.className='i5-toast'; document.body.appendChild(t); }
   t.textContent=msg; t.classList.add('show');
-  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200);
+  clearTimeout(t._h); t._h=setTimeout(function(){ t.classList.remove('show'); },2400);
+}
+function i5Mob(r){ return String(r&&r.mobile||'').replace(/\D/g,'').slice(-10); }
+function i5Stage(r){
+  var s=String(r&&r.last_status||'');
+  if(String(r&&r.converted||'')==='Y'||s==='WON_RENEWED') return {t:'Renewed',k:'won'};
+  if(s==='IP_QUOTED') return {t:'Quoted',k:'quote'};
+  if(s==='IP_CALLBACK') return {t:'Call back',k:'cb'};
+  if(s==='LO_NOTINT') return {t:'Not int.',k:'lost'};
+  if(s==='LO_DEALER') return {t:'Lost',k:'lost'};
+  if(s==='WR_NUMBER') return {t:'Wrong no.',k:'lost'};
+  if(s.indexOf('NR_')===0) return {t:'No reply',k:''};
+  return {t:'Not contacted',k:''};
 }
 
-function ins4Boot(){
-  const root=document.getElementById('ins4-root'); if(!root) throw new Error('no ins4 root');
-  const legacy=document.getElementById('ins3-root'); if(legacy) legacy.style.display='none';
-  root.style.display='block';
-  if(!INS4.built){ ins4BuildShell(root); INS4.built=true; }
-  /* last-good instantly, then reconcile — the no-spinner rule */
-  ins4PaintCachedThenLoad();
-  ins4DrainQueue();
-}
-function ins4Classic(){
-  const root=document.getElementById('ins4-root'); if(root) root.style.display='none';
-  if(typeof ins3Boot==='function'){ ins3Boot(); }
-}
-
-function ins4BuildShell(root){
-  root.innerHTML=
-   '<div class="ins4-head">'
-   +'<button class="ins4-back" onclick="showView(\'home\')">‹</button>'
-   +'<div class="ins4-title">Insurance Renewal CRM<small id="ins4-sub">'+raviEsc(ins4MyName())+' · your unique daily queue · maximum 150</small></div>'
-   +'<button class="ins4-classic" onclick="ins4Classic()">classic view</button>'
-   +'</div>'
-   +'<div class="ins4-queuebar" id="ins4-queuebar"></div>'
-   +'<div class="ins4-kpis" id="ins4-kpis"></div>'
-   +'<div class="ins4-pills" id="ins4-pills"></div>'
-   +'<div class="ins4-body">'
-   +'<div class="ins4-listwrap"><table class="tbl" id="ins4-tbl">'
-   +'<colgroup><col style="width:34%"><col style="width:22%"><col class="c-exp" style="width:15%"><col style="width:9%"><col class="c-last" style="width:10%"><col class="c-why" style="width:10%"></colgroup>'
-   +'<thead><tr><th>Customer</th><th>Reg No</th><th class="c-exp">Expiry</th><th>D</th><th class="c-last">Last</th><th class="c-why">Why</th></tr></thead>'
-   +'<tbody id="ins4-tb"></tbody></table></div>'
-   +'<div class="ins4-rail"><div class="ins4-railbox" id="ins4-rail">'
-   +'<div class="ins4-note">Select a customer — their full picture docks here. The list never moves.</div>'
-   +'</div></div>'
-   +'</div>';
-  ins4PaintKpis(); ins4PaintPills(); ins4Skeleton();
-}
-function ins4Skeleton(){
-  const tb=document.getElementById('ins4-tb'); if(!tb) return;
-  let h='';
-  for(let i=0;i<12;i++){
-    h+='<tr>'+'<td><div class="ins4-skel" style="width:'+(55+((i*17)%35))+'%"></div></td>'
-      +'<td><div class="ins4-skel" style="width:70%"></div></td>'
-      +'<td class="c-exp"><div class="ins4-skel" style="width:60%"></div></td>'
-      +'<td><div class="ins4-skel" style="width:40%"></div></td>'
-      +'<td class="c-last"><div class="ins4-skel" style="width:40%"></div></td>'
-      +'<td><div class="ins4-skel" style="width:60%"></div></td>'+'</tr>';
-  }
-  tb.innerHTML=h;
-}
-function ins4PaintKpis(){
-  const k=INS4.counts||{}; const el=document.getElementById('ins4-kpis'); if(!el) return;
-  const f=(n)=>(n==null?'—':Number(n).toLocaleString('en-IN'));
-  el.innerHTML=
-    '<div class="ins4-kpi k-info"><b>'+f(k.total)+'</b><span>Assigned</span></div>'
-   +'<div class="ins4-kpi k-warn"><b>'+f(k.remaining)+'</b><span>Remaining</span></div>'
-   +'<div class="ins4-kpi k-th"><b>'+f(k.calls)+'</b><span>Calls today</span></div>'
-   +'<div class="ins4-kpi k-th"><b>'+f(k.quotes)+'</b><span>Quotes</span></div>'
-   +'<div class="ins4-kpi k-ok"><b>'+f(k.won)+'</b><span>Closed today</span></div>';
-}
-function ins4PaintPills(){
-  const k=INS4.counts||{}; const el=document.getElementById('ins4-pills'); if(!el) return;
-  const p=(id,lbl,n)=>'<button class="ins4-pill'+(INS4.scope===id?' on':'')+'" onclick="ins4Scope(\''+id+'\')">'+lbl+(n!=null?' <b>'+n+'</b>':'')+'</button>';
-  el.innerHTML=
-    p('queue','MY 150',k.remaining)
-   +p('today','Today',k.today)
-   +p('tomorrow','Tomorrow',k.tomorrow)
-   +p('week','2–7 days',k.week)
-   +p('fortnight','8–15 days',k.fortnight)
-   +'<div class="ins4-q"><span>🔎</span><input id="ins4-qin" placeholder="Name / reg / mobile / chassis…" value="'+raviEsc(INS4.q)+'" oninput="ins4QSearch(this.value)"></div>';
-}
-function ins4Scope(s){ INS4.scope=s; INS4.q=''; INS4.sel=-1; ins4PaintPills(); ins4PaintCachedThenLoad(); }
-let INS4_QT=null;
-function ins4QSearch(v){
-  INS4.q=String(v||'');
-  clearTimeout(INS4_QT);
-  if(INS4.q.trim().length<3){
-    if(INS4.scope==='search'){ INS4.scope='queue'; INS4.sel=-1; ins4PaintPills(); ins4PaintCachedThenLoad(); }
-    return;
-  }
-  INS4_QT=setTimeout(function(){ INS4.scope='search'; ins4Load(); },350);
-}
-
-function ins4CacheKey(){ return 'ins4:r69:'+ins4Me()+':'+INS4.scope+':'+(INS4.scope==='search'?INS4.q.trim().toUpperCase():''); }
-function ins4PaintCachedThenLoad(){
-  try{
-    const raw=localStorage.getItem(ins4CacheKey());
-    if(raw){ const o=JSON.parse(raw); if(o&&o.rows){ INS4.rows=o.rows; ins4Render(true); } else ins4Skeleton(); }
-    else ins4Skeleton();
-  }catch(e){ ins4Skeleton(); }
-  ins4Load();
-}
-async function ins4Load(){
-  if(typeof sbRpc!=='function'){ ins4Classic(); return; }
-  const seq=++INS4.loadSeq;
-  try{
-    const needCounts=!INS4.counts||(Date.now()-INS4.countsAt>30000);
-    const [rows,counts]=await Promise.all([
-      sbRpc('insurance_my_queue',{p_scope:INS4.scope,p_q:INS4.q.trim()}),
-      needCounts?sbRpc('insurance_my_counts',{}):Promise.resolve(INS4.counts)
-    ]);
-    if(seq!==INS4.loadSeq) return;
-    INS4.rows=Array.isArray(rows)?rows:[];
-    if(counts){ INS4.counts=counts; INS4.countsAt=Date.now(); }
-    try{ localStorage.setItem(ins4CacheKey(), JSON.stringify({rows:INS4.rows,at:Date.now()})); }catch(e){}
-    const sub=document.getElementById('ins4-sub');
-    if(sub){
-      const src=INS4.counts&&INS4.counts.source_date;
-      sub.textContent=ins4MyName()+' · '+(INS4.counts&&INS4.counts.remaining!=null?INS4.counts.remaining:'—')+' remaining · source '+(src||'not reported');
-    }
-    ins4PaintKpis(); ins4PaintPills(); ins4Render(false);
-  }catch(e){
-    const msg=String(e&&e.message||e);
-    if(/not-signed-in|401/.test(msg)){
-      /* No Supabase session on this device — the classic Hub still works. */
-      ins4Toast('Sign-in session missing — opening classic view');
-      ins4Classic(); return;
-    }
-    if(!INS4.rows.length){
-      const tb=document.getElementById('ins4-tb');
-      if(tb) tb.innerHTML='<tr><td colspan="6" style="color:var(--danger2)">Could not load — still retrying. '+raviEsc(msg.slice(0,80))+'</td></tr>';
-    }
-    setTimeout(ins4Load, 8000);
-  }
-}
-
-function ins4Sev(d){
-  if(d==null) return 'd-sev4';
-  if(d<=0) return 'd-sev1';
-  if(d<=7) return 'd-sev2';
-  if(d<=21) return 'd-sev3';
-  return 'd-sev4';
-}
-function ins4Render(stale){
-  const tb=document.getElementById('ins4-tb'); if(!tb) return;
-  if(!INS4.rows.length){
-    tb.innerHTML='<tr><td colspan="6" style="color:var(--ink-3)">'+(stale?'Loading…':'Nothing in this list — the day’s work here is done. 🎉')+'</td></tr>';
-    return;
-  }
-  tb.innerHTML=INS4.rows.map(function(r,i){
-    const d=(r.days_left==null)?'—':r.days_left;
-    const ep=String(r.expiry||'').split('-');
-    const exp=ep.length===3?(ep[2]+'-'+ep[1]+'-'+ep[0]):'—';
-    const last=ins4CodeShort(r.last_status);
-    return '<tr id="ins4r-'+i+'" class="'+(INS4.sel===i?'sel':'')+'" onclick="ins4Pick('+i+')" style="cursor:pointer">'
-      +'<td><b>'+raviEsc(r.customer||'—')+'</b><div style="font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+raviEsc(r.model||'')+'</div></td>'
-      +'<td class="mono">'+raviEsc(r.reg_no||(r.chassis?('…'+String(r.chassis).slice(-6)):'—'))+'</td>'
-      +'<td class="c-exp">'+raviEsc(exp)+'</td>'
-      +'<td class="num '+ins4Sev(r.days_left)+'">'+d+'</td>'
-      +'<td class="c-last">'+(last?'<span class="chip4" style="background:var(--th);color:var(--ink-2)">'+raviEsc(last)+'</span>':'')+'</td>'
-      +'<td class="c-why" style="font-size:12px;color:var(--ink-2)">'+raviEsc(r.why||'')+'</td>'
-      +'</tr>'
-      +(!ins4Wide()&&INS4.sel===i?'<tr class="sel"><td colspan="6" style="white-space:normal;background:var(--zebra-label)"><div class="ins4-det">'+ins4DetailHtml(r)+'</div></td></tr>':'');
-  }).join('');
-  if(ins4Wide()){
-    const rail=document.getElementById('ins4-rail');
-    if(rail) rail.innerHTML=(INS4.sel>=0&&INS4.rows[INS4.sel])
-      ? '<div class="ins4-det">'+ins4DetailHtml(INS4.rows[INS4.sel])+'</div>'
-      : '<div class="ins4-note">Select a customer — their full picture docks here. The list never moves.</div>';
-  }
-}
-function ins4Pick(i){
-  INS4.sel=(INS4.sel===i)?-1:i; INS4.outcome='';
-  ins4Render(false);
-  if(INS4.sel===i&&INS4.rows[i]) ins4Load360(INS4.rows[i]);
-  if(ins4Wide()){
-    const row=document.getElementById('ins4r-'+i);
-    if(row&&row.scrollIntoView) row.scrollIntoView({block:'nearest'});
-  }
-}
-
-async function ins4Load360(r){
-  const key=String(r&&r.book_id||''); if(!key||INS4.details[key]) return;
-  INS4.details[key]={loading:true}; ins4Render(false);
-  try{
-    const d=await sbRpc('insurance_customer_360',{p_book_id:key});
-    INS4.details[key]=d&&d.ok?d:{error:'No history returned'};
-  }catch(e){ INS4.details[key]={error:String(e&&e.message||e).slice(0,100)}; }
-  const cur=INS4.rows[INS4.sel]; if(cur&&String(cur.book_id||'')===key) ins4Render(false);
-}
-const INS4_AGG={
-  'PolicyBazaar':'https://www.policybazaar.com/motor-insurance/two-wheeler-insurance/',
-  'Go Digit':'https://www.godigit.com/bike-insurance',
-  'InsuranceDekho':'https://www.insurancedekho.com/bike-insurance',
-  'Coverfox':'https://www.coverfox.com/two-wheeler-insurance/'
-};
-function ins4Agg(name,i){
-  const r=INS4.rows[Number(i)]; if(!r) return;
-  const reg=String(r.reg_no||'').trim();
-  if(reg&&navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(reg).catch(function(){});
-  const url=name==='Direct renewal'&&r.renewal_link?r.renewal_link:INS4_AGG[name];
-  if(url){ window.open(url,'hero-insurance-quote'); ins4Toast(reg?'Registration copied · opening '+name:'Opening '+name); }
-}
-function ins4HistoryHtml(r){
-  const d=INS4.details[String(r.book_id||'')];
-  if(!d) return '<div class="ins4-note">Select once to load this customer’s policy and call history.</div>';
-  if(d.loading) return '<div class="ins4-note">Loading this customer’s history…</div>';
-  if(d.error) return '<div class="ins4-note" style="color:var(--danger2)">'+raviEsc(d.error)+'</div>';
-  const policies=Array.isArray(d.policies)?d.policies:[];
-  const activity=Array.isArray(d.activity)?d.activity:[];
-  let h='<div class="ins4-history">';
-  h+=policies.slice(0,3).map(function(p){ return '<div><b>'+raviEsc(p.insurer||'Policy')+'</b> · '+raviEsc(p.policy_no||'number unavailable')+' · '+raviEsc(p.expiry||'expiry unavailable')+'</div>'; }).join('');
-  h+=activity.slice(0,6).map(function(a){ return '<div><b>'+raviEsc(ins4CodeShort(a.status)||a.status||'Call')+'</b> · '+raviEsc(String(a.at||'').slice(0,10))+(a.reason?' · '+raviEsc(a.reason):'')+'</div>'; }).join('');
-  if(!policies.length&&!activity.length) h+='<div>No previous policy/call history found on the server.</div>';
-  return h+'</div>';
-}
-
-function ins4WaText(r){
-  const nm=(r.customer||'').split(' ')[0]||'';
-  const when=(r.days_left==null)?'soon':(r.days_left<0?('expired '+Math.abs(r.days_left)+' days ago'):(r.days_left===0?'expiring TODAY':('expiring in '+r.days_left+' days')));
-  const outlet=(typeof USER!=='undefined'&&USER&&(USER.workshop||USER.ws||USER.workshopName))||(r.city||'Sehgal Autoriders');
-  return 'Namaste '+nm+' ji! 🙏 This is '+ins4MyName().split(' ')[0]+' from Sehgal Autoriders (Hero), '+outlet+'. '
-    +'The insurance of your '+(r.model||'two-wheeler')+' ('+(r.reg_no||'')+') is '+when+'. '
-    +'We renew it the same day at the best price, with full claim support. Shall I WhatsApp you the quote?';
-}
-function ins4DetailHtml(r){
-  const oc=INS4_OC.map(o=>'<div class="ins4-oc'+(INS4.outcome===o.c?' on':'')+'" onclick="ins4Outcome(\''+o.c+'\')">'+o.c+'<small>'+o.l+'</small></div>').join('');
-  const tomorrow=ins4IstDatePlus(1);
-  const mob=String(r.mobile||'').replace(/\D/g,'').slice(-10);
-  const lastBill=(r.last_bill&&Number(r.last_bill)>0)?('₹'+Number(r.last_bill).toLocaleString('en-IN')):'—';
-  const idx=INS4.rows.indexOf(r);
-  const source=String(r.source_imported_at||'').slice(0,10);
-  const sourceAge=source?Math.floor((Date.parse(ins4IstDatePlus(0)+'T00:00:00Z')-Date.parse(source+'T00:00:00Z'))/86400000):null;
-  const providerBtns=Object.keys(INS4_AGG).map(n=>'<button class="ins4-provider" onclick="ins4Agg(\''+n+'\','+idx+')">'+n+'</button>').join('')
-    +(r.renewal_link?'<button class="ins4-provider" onclick="ins4Agg(\'Direct renewal\','+idx+')">Direct renewal</button>':'');
-  return ''
-   +'<div style="display:flex;align-items:baseline;gap:8px"><b style="font-size:15px">'+raviEsc(r.customer||'—')+'</b>'
-   +(String(r.temp||'').toUpperCase().indexOf('HOT')===0?'<span class="chip4" style="background:var(--danger-fill);color:var(--danger2)">HOT</span>':'')
-   +'</div>'
-   +'<div class="ins4-acts">'
-   +(mob?'<a class="ins4-act call" href="tel:+91'+mob+'">📞 Call</a>':'<span class="ins4-act call" style="opacity:.4">📞 No number</span>')
-   +(mob?'<a class="ins4-act wa" target="_blank" rel="noopener" href="https://wa.me/91'+mob+'?text='+encodeURIComponent(ins4WaText(r))+'">💬 WhatsApp</a>':'<span class="ins4-act wa" style="opacity:.4">💬 —</span>')
-   +'</div>'
-   +'<div class="ins4-source'+(sourceAge!=null&&sourceAge>1?' stale':'')+'">Server source: '+raviEsc(source||'date unavailable')+(sourceAge!=null?' · '+sourceAge+' day'+(sourceAge===1?'':'s')+' old':'')+'</div>'
-   +'<h4>Vehicle &amp; policy</h4>'
-   +'<div class="kv"><div>Reg no</div><div class="mono">'+raviEsc(r.reg_no||'—')+'</div></div>'
-   +'<div class="kv"><div>Model</div><div>'+raviEsc(r.model||'—')+'</div></div>'
-   +'<div class="kv"><div>Chassis</div><div class="mono">'+raviEsc(r.chassis||'—')+'</div></div>'
-   +'<div class="kv"><div>Expiry</div><div>'+raviEsc(r.expiry||'—')+' ('+(r.days_left==null?'—':r.days_left+'d')+')</div></div>'
-   +'<div class="kv"><div>Insurer</div><div>'+raviEsc(r.insurer||'—')+'</div></div>'
-   +'<div class="kv"><div>Policy no</div><div class="mono">'+raviEsc(r.policy_no||'—')+'</div></div>'
-   +'<div class="kv"><div>Policy type</div><div>'+raviEsc(r.policy_type||'—')+'</div></div>'
-   +'<div class="kv"><div>Last bill (service)</div><div>'+lastBill+'</div></div>'
-   +'<div class="kv"><div>City</div><div>'+raviEsc(r.city||'—')+'</div></div>'
-   +'<h4>Get / compare quote</h4>'
-   +'<div class="ins4-providers">'+providerBtns+'</div>'
-   +'<h4>Calls so far</h4>'
-   +'<div class="kv"><div>Calls</div><div>'+(r.calls||0)+(r.owner_name?' · '+raviEsc(r.owner_name):'')+'</div></div>'
-   +'<div class="kv"><div>Last outcome</div><div>'+raviEsc(ins4CodeShort(r.last_status)||'—')+(r.premium_quoted?' · quoted ₹'+Number(r.premium_quoted).toLocaleString('en-IN'):'')+'</div></div>'
-   +'<div class="kv"><div>Next follow-up</div><div>'+raviEsc(r.next_follow_up||'—')+'</div></div>'
-   +'<h4>Customer 360 history</h4>'+ins4HistoryHtml(r)
-   +'<h4>Log this call</h4>'
-   +'<div class="ins4-out">'+oc+'</div>'
-   +'<div class="ins4-follow" id="ins4-follow"><input type="date" id="ins4-fdate" value="'+tomorrow+'"><input type="time" id="ins4-ftime" value="11:00"></div>'
-   +'<div class="ins4-prem" id="ins4-prem"><input type="number" id="ins4-pamt" placeholder="Premium quoted (₹)"></div>'
-   +'<div class="ins4-prem" id="ins4-reason" style="display:none"><input type="text" id="ins4-rtext" placeholder="Why? (one line)"></div>'
-   +'<button class="ins4-save" id="ins4-savebtn" onclick="ins4Save()" disabled>Log outcome</button>'
-   +'<div class="ins4-note">One tap = one outcome. CB books the follow-up; QT records the premium. The row leaves the queue only when the customer is settled.</div>';
-}
-function ins4Outcome(c){
-  INS4.outcome=c;
-  const det=ins4Wide()?document.getElementById('ins4-rail'):document.getElementById('ins4-tb');
-  if(det){
-    det.querySelectorAll('.ins4-oc').forEach(el=>el.classList.toggle('on', el.textContent.indexOf(c)===0));
-    const f=det.querySelector('#ins4-follow'), p=det.querySelector('#ins4-prem'), rr=det.querySelector('#ins4-reason'), sb=det.querySelector('#ins4-savebtn');
-    if(f) f.style.display=(c==='CB')?'flex':'none';
-    if(p) p.style.display=(c==='QT'||c==='RN')?'block':'none';
-    if(rr) rr.style.display=(c==='NI'||c==='LT')?'block':'none';
-    if(sb) sb.disabled=false;
-  }
-}
-function ins4Save(){
-  const i=INS4.sel, r=INS4.rows[i]; if(!r||!INS4.outcome||INS4.saving) return;
-  const det=ins4Wide()?document.getElementById('ins4-rail'):document.getElementById('ins4-tb');
-  const oc=INS4_OC.find(o=>o.c===INS4.outcome); if(!oc) return;
-  const g=(id)=>{ const el=det&&det.querySelector('#'+id); return el?el.value:''; };
-  const follow=(INS4.outcome==='CB')?(g('ins4-fdate')||null):null;
-  const prem=(INS4.outcome==='QT'||INS4.outcome==='RN')?(Number(g('ins4-pamt'))||null):null;
-  const reason=(INS4.outcome==='NI'||INS4.outcome==='LT')?String(g('ins4-rtext')||'').slice(0,140):'';
-  const payload={p_book_id:r.book_id, p_outcome:oc.code, p_reason:reason,
-    p_premium:prem, p_follow:follow, p_idempotency_key:ins4Uuid()};
-  if(!payload.p_book_id){ ins4Toast('This row has no server identity — refresh the queue'); return; }
-  INS4.saving=true;
-  const sb=det&&det.querySelector('#ins4-savebtn');
-  if(sb){ sb.innerHTML='<span class="spin"></span>Saving'; sb.disabled=true; }
-
-  /* Optimistic: the state on screen moves NOW; a failed write queues + rolls on retry. */
-  r.last_status=oc.code; r.calls=(r.calls||0)+1;
-  r.next_follow_up=follow||r.next_follow_up; if(prem) r.premium_quoted=prem;
-  const k=INS4.counts||{};
-  k.calls=(k.calls||0)+1; if(INS4.outcome==='QT') k.quotes=(k.quotes||0)+1;
-  if(INS4.outcome==='RN'){ k.won=(k.won||0)+1; }
-  k.remaining=Math.max(0,(k.remaining||0)-1);
-  ins4PaintKpis();
-
-  const finish=function(){
-    INS4.saving=false; INS4.outcome='';
-    INS4.rows.splice(i,1); INS4.sel=-1;
-    ins4Render(false);
-  };
-  const legacyTrail=function(){
-    if(!r.reg_no) return;
+/* ---------------------------------------------------------------------------
+   IndexedDB — her day and her month, on the device, capped exactly the way the
+   real day is capped. 150 rows for a day view, 400 for the month, and an
+   outbox so a lift with no signal never loses an outcome. R47 turned the old
+   6,875-row download off for good; nothing here re-opens it.
+   --------------------------------------------------------------------------- */
+const I5_DB='hero-ins5', I5_DBV=1, I5_CAP_DAY=150, I5_CAP_MONTH=400;
+var _i5db=null;
+function i5Db(){
+  if(_i5db) return _i5db;
+  _i5db=new Promise(function(res){
+    if(!window.indexedDB){ res(null); return; }
     try{
-      jgetRaw('inscrm2_save',{reg:(r.reg_no||''), customer:(r.customer||''), mobile:(r.mobile||''),
-        expiry:'', by:ins4Me(), byName:ins4MyName(), status:oc.code,
-        remarks:reason, premium:prem||'', called:'1'}, function(){}, 30000);
-    }catch(e){}
-  };
-  sbRpc('insurance_log_outcome', payload).then(function(res){
-    if(!(res&&res.ok)) throw new Error((res&&res.error)||'save failed');
-    legacyTrail();
-    ins4Toast('Saved — '+oc.l);
-    finish();
-  }).catch(function(e){
-    /* Keep the work: queue it, keep the optimistic state, drain later. */
-    try{
-      const q=JSON.parse(localStorage.getItem(ins4QueueKey())||'[]');
-      q.push({payload:payload, legacy:{reg:r.reg_no||'',customer:r.customer||'',mobile:r.mobile||''}, at:Date.now()});
-      localStorage.setItem(ins4QueueKey(), JSON.stringify(q));
-    }catch(_){}
-    ins4Toast('Saved on this phone — will sync');
-    ins4QueueBar();
-    finish();
+      var rq=indexedDB.open(I5_DB,I5_DBV);
+      rq.onupgradeneeded=function(){
+        var db=rq.result;
+        if(!db.objectStoreNames.contains('cache')) db.createObjectStore('cache');
+        if(!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox',{keyPath:'id'});
+      };
+      rq.onsuccess=function(){ res(rq.result); };
+      rq.onerror=function(){ res(null); };
+    }catch(e){ res(null); }
+  });
+  return _i5db;
+}
+function i5Put(store,val,key){
+  return i5Db().then(function(db){
+    if(!db) return null;
+    return new Promise(function(res){
+      try{
+        var tx=db.transaction(store,'readwrite'), os=tx.objectStore(store);
+        (key===undefined?os.put(val):os.put(val,key));
+        tx.oncomplete=function(){ res(true); }; tx.onerror=function(){ res(null); };
+      }catch(e){ res(null); }
+    });
   });
 }
-function ins4QueueBar(){
-  const el=document.getElementById('ins4-queuebar'); if(!el) return;
-  let q=[]; try{ q=JSON.parse(localStorage.getItem(ins4QueueKey())||'[]'); }catch(e){}
-  if(!q.length){ el.style.display='none'; return; }
+function i5Get(store,key){
+  return i5Db().then(function(db){
+    if(!db) return null;
+    return new Promise(function(res){
+      try{
+        var rq=db.transaction(store).objectStore(store).get(key);
+        rq.onsuccess=function(){ res(rq.result||null); }; rq.onerror=function(){ res(null); };
+      }catch(e){ res(null); }
+    });
+  });
+}
+function i5All(store){
+  return i5Db().then(function(db){
+    if(!db) return [];
+    return new Promise(function(res){
+      try{
+        var out=[], rq=db.transaction(store).objectStore(store).openCursor();
+        rq.onsuccess=function(e){ var c=e.target.result; if(c){ out.push(c.value); c.continue(); } else res(out); };
+        rq.onerror=function(){ res([]); };
+      }catch(e){ res([]); }
+    });
+  });
+}
+function i5Del(store,key){
+  return i5Db().then(function(db){
+    if(!db) return null;
+    return new Promise(function(res){
+      try{
+        var tx=db.transaction(store,'readwrite'); tx.objectStore(store).delete(key);
+        tx.oncomplete=function(){ res(true); }; tx.onerror=function(){ res(null); };
+      }catch(e){ res(null); }
+    });
+  });
+}
+function i5CacheKey(){ return i5Me()+'|'+INS5.view+'|'+(INS5.q.trim().toUpperCase()); }
+function i5Cap(){ return i5View(INS5.view).src==='day'?I5_CAP_DAY:I5_CAP_MONTH; }
+
+/* ---------------------------------------------------------------------------
+   Boot / shell
+   --------------------------------------------------------------------------- */
+/* The cockpit is position:fixed and owns the whole screen, so the page behind
+   it must not scroll. showView() already hides #view-insurance on the way out,
+   but body{overflow} is ours to put back — leaving it locked was exactly the
+   R63 trap where one screen froze the next. Patched additively, once. */
+function i5NavHook(){
+  if(window.__i5NavHook) return; window.__i5NavHook=true;
+  var orig=window.showView;
+  if(typeof orig!=='function') return;
+  window.showView=function(name){
+    if(name!=='insurance'){
+      document.body.style.overflow='';
+      var r=document.getElementById('ins4-root'); if(r) r.style.display='none';
+    }
+    return orig.apply(this, arguments);
+  };
+}
+function ins4Boot(){                              /* the name openModule calls */
+  var root=document.getElementById('ins4-root'); if(!root) throw new Error('no ins4 root');
+  var legacy=document.getElementById('ins3-root'); if(legacy) legacy.style.display='none';
+  i5NavHook();
+  root.style.display='flex';
+  document.body.style.overflow='hidden';
+  if(!INS5.built){ i5BuildShell(root); INS5.built=true; }
+  i5PaintCachedThenLoad();
+  i5Drain();
+}
+function ins4Classic(){
+  var root=document.getElementById('ins4-root'); if(root) root.style.display='none';
+  document.body.style.overflow='';
+  if(typeof ins3Boot==='function'){ ins3Boot(); }
+}
+function i5Close(){
+  var root=document.getElementById('ins4-root'); if(root) root.style.display='none';
+  document.body.style.overflow='';
+  if(typeof showView==='function') showView('home');
+}
+
+function i5BuildShell(root){
+  root.innerHTML=
+    '<div class="i5-top">'
+     +'<button class="i5-back" onclick="i5Close()" title="Back to home">‹</button>'
+     +'<div class="i5-mark">SA</div>'
+     +'<div class="i5-brand"><b>Insurance Renewal CRM</b>'
+     +'<i id="i5-who">'+i5Esc(i5MyName())+' · '+i5Esc(i5Outlet())+'</i></div>'
+     +'<div class="i5-live">'
+       +'<span class="i5-dot" id="i5-dot"></span>'
+       +'<span class="i5-said i5-hide-sm" id="i5-src">loading…</span>'
+       +'<button class="i5-ghost" onclick="i5Reload(true)">↻ Refresh</button>'
+       +'<button class="i5-ghost i5-hide-sm" onclick="i5Csv()">Export</button>'
+       +'<button class="i5-ghost i5-hide-sm" onclick="ins4Classic()">Classic</button>'
+     +'</div>'
+    +'</div>'
+    +'<div class="i5-kpis" id="i5-kpis"></div>'
+    +'<div class="i5-tabs" id="i5-tabs"></div>'
+    +'<div class="i5-note-bar" id="i5-hint"></div>'
+    +'<div class="i5-sync" id="i5-sync"></div>'
+    +'<div class="i5-bar">'
+      +'<div class="i5-q"><span>🔎</span><input id="i5-qin" autocomplete="off" '
+      +'placeholder="Name · registration · mobile · chassis" oninput="i5Search(this.value)"></div>'
+      +'<span class="i5-said" id="i5-count">—</span>'
+    +'</div>'
+    +'<div class="i5-body">'
+      +'<div class="i5-list"><table id="i5-tbl">'
+      +'<colgroup><col style="width:26%"><col class="i5-c2" style="width:17%"><col class="i5-c3" style="width:13%">'
+      +'<col class="i5-c4" style="width:15%"><col class="i5-c7" style="width:13%"><col class="i5-c5" style="width:8%">'
+      +'<col class="i5-c6" style="width:8%"></colgroup>'
+      +'<thead><tr><th>Customer</th><th class="i5-c2">Vehicle</th><th class="i5-c3">Insurance due</th>'
+      +'<th class="i5-c4">Policy</th><th class="i5-c7">Stage</th><th class="i5-c5">Calls</th>'
+      +'<th class="i5-c6">Follow-up</th></tr></thead>'
+      +'<tbody id="i5-tb"></tbody></table></div>'
+      +'<div class="i5-rail" id="i5-rail">'
+        +'<div class="i5-railhead" id="i5-railhead"></div>'
+        +'<div class="i5-railtabs" id="i5-railtabs"></div>'
+        +'<div class="i5-railbody" id="i5-railbody"></div>'
+      +'</div>'
+    +'</div>';
+  i5PaintKpis(); i5PaintTabs(); i5PaintHint(); i5Skeleton(); i5PaintRail();
+}
+
+/* ---------------------------------------------------------------------------
+   Header furniture
+   --------------------------------------------------------------------------- */
+function i5PaintKpis(){
+  var k=INS5.counts||{}, el=document.getElementById('i5-kpis'); if(!el) return;
+  var conv=(k.month_worked>0)?Math.round((Number(k.month_won||0)*100)/Number(k.month_worked))+'%':'—';
+  var tile=function(cls,n,lbl,view,pos){
+    return '<button class="i5-kpi '+cls+' k'+pos+'"'+(view?(' onclick="i5Go(\''+view+'\')"'):'')+'>'
+      +'<b>'+n+'</b><span>'+lbl+'</span></button>';
+  };
+  el.innerHTML=
+     tile('hot', i5N(k.today),        'Due today',   'today',1)
+    +tile('warm',i5N(k.remaining),    'Of my 150',   'queue',2)
+    +tile('',    i5N(k.calls),        'Calls today', '',     3)
+    +tile('',    i5N(k.connected),    'Connected',   '',     4)
+    +tile('cool',i5N(k.quotes),       'Quotes today','',     5)
+    +tile('good',i5N(k.won),          'Renewed today','',    6)
+    +tile('',    i5N(k.month_worked), 'Spoken · month','all',7)
+    +tile('warm',i5N(k.month_open),   'Still open',  'open', 8)
+    +tile('good',conv,                'Converted · month','won',9);
+}
+function i5PaintTabs(){
+  var k=INS5.counts||{}, el=document.getElementById('i5-tabs'); if(!el) return;
+  el.innerHTML=I5_VIEWS.map(function(v){
+    if(v.sep) return '<span class="i5-tabsep"></span>';
+    var n=(v.k&&k[v.k]!=null)?('<u>'+i5N(k[v.k])+'</u>'):'';
+    return '<button class="i5-tab'+(INS5.view===v.id?' on':'')+(v.fire?' fire':'')
+      +'" onclick="i5Go(\''+v.id+'\')">'+i5Esc(v.lbl)+n+'</button>';
+  }).join('');
+}
+function i5PaintHint(){
+  var el=document.getElementById('i5-hint'); if(!el) return;
+  var v=i5View(INS5.view), h='';
+  if(v.id==='today')      h='⚡ Same-day expiry converts the most — clear this list first. Every row here loses cover tonight.';
+  else if(v.id==='callback') h='⏰ She promised to call these back. A kept call-back is the cheapest renewal there is.';
+  else if(v.src==='month') h='📅 Everyone you have spoken to since '+i5Date((INS5.counts||{}).month_from)+'. They stay here, and stay convertible, all month.';
+  else if(v.id==='book')  h='🔎 The whole customer book. Type at least 3 letters of a name, registration, mobile or chassis.';
+  if(!h){ el.style.display='none'; return; }
   el.style.display='block';
-  el.innerHTML='⏳ '+q.length+' outcome'+(q.length===1?'':'s')+' waiting to sync <button onclick="ins4DrainQueue(true)">Retry now</button>';
+  el.style.background = (v.id==='today')?'var(--danger-fill)':(v.id==='callback'?'var(--warn-fill)':'var(--info-fill)');
+  el.style.color      = (v.id==='today')?'var(--danger2)'   :(v.id==='callback'?'var(--warn2)'    :'var(--info2)');
+  el.textContent=h;
 }
-async function ins4DrainQueue(manual){
-  let q=[]; try{ q=JSON.parse(localStorage.getItem(ins4QueueKey())||'[]'); }catch(e){}
-  if(!q.length){ ins4QueueBar(); return; }
-  const rest=[];
-  for(const item of q){
-    try{
-      const res=await sbRpc('insurance_log_outcome', item.payload);
-      if(!(res&&res.ok)) throw new Error('nope');
-      try{ if(item.legacy.reg) jgetRaw('inscrm2_save',{reg:item.legacy.reg, customer:item.legacy.customer, mobile:item.legacy.mobile,
-        expiry:'', by:ins4Me(), byName:ins4MyName(), status:item.payload.p_outcome,
-        remarks:item.payload.p_reason||'', premium:item.payload.p_premium||'', called:'1'}, function(){}, 30000); }catch(e){}
-    }catch(e){ rest.push(item); }
+function i5SyncBar(){
+  var el=document.getElementById('i5-sync'); if(!el) return;
+  i5All('outbox').then(function(q){
+    INS5.outbox=q.length;
+    if(!q.length){ el.style.display='none'; return; }
+    el.style.display='block';
+    el.innerHTML='⏳ '+q.length+' outcome'+(q.length===1?'':'s')+' saved on this phone, waiting for signal'
+      +'<button onclick="i5Drain(true)">Send now</button>';
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   Loading
+   --------------------------------------------------------------------------- */
+function i5Go(view){
+  if(!view) return;
+  INS5.view=view; INS5.sel=-1; INS5.outcome=''; INS5.waEdited=null;
+  var qin=document.getElementById('i5-qin');
+  if(view!=='book' && qin && INS5.q){ INS5.q=''; qin.value=''; }
+  i5PaintTabs(); i5PaintHint(); i5PaintRail();
+  i5PaintCachedThenLoad();
+}
+var _i5qt=null;
+function i5Search(v){
+  INS5.q=String(v||'');
+  clearTimeout(_i5qt);
+  var need=(INS5.view==='book')?3:2;
+  if(INS5.q.trim().length && INS5.q.trim().length<need) return;
+  _i5qt=setTimeout(function(){ INS5.sel=-1; i5PaintRail(); i5Load(); },320);
+}
+function i5Reload(manual){
+  INS5.countsAt=0;
+  i5Load().then(function(){ if(manual) i5Toast('Refreshed from the server'); });
+}
+function i5PaintCachedThenLoad(){
+  /* Last-good first, then reconcile (the no-spinner rule). IndexedDB can
+     answer AFTER the network on a fast connection, so the cache path must
+     never repaint over rows the server has already delivered. */
+  INS5.painted=false;
+  i5Skeleton();
+  var seq=INS5.loadSeq;
+  i5Get('cache', i5CacheKey()).then(function(o){
+    if(INS5.painted||seq!==INS5.loadSeq) return;
+    if(o&&o.rows&&o.rows.length){ INS5.rows=o.rows; i5Render(true); }
+  }).catch(function(){});
+  return i5Load();
+}
+function i5Fetch(v,q){
+  if(v.src==='day')   return sbRpc('insurance_my_queue',{p_scope:(q?'search':v.id), p_q:q});
+  if(v.src==='month') return sbRpc('insurance_my_month',{p_scope:(q?'search':v.id), p_q:q});
+  return q?sbRpc('insurance_search_all',{p_q:q}):Promise.resolve([]);
+}
+function i5Load(){
+  if(typeof sbRpc!=='function'){ ins4Classic(); return Promise.resolve(); }
+  var seq=++INS5.loadSeq, v=i5View(INS5.view), q=INS5.q.trim();
+  var need=!INS5.counts||(Date.now()-INS5.countsAt>25000);
+  return Promise.all([
+    i5Fetch(v,q),
+    need?sbRpc('insurance_my_counts',{}):Promise.resolve(INS5.counts)
+  ]).then(function(res){
+    if(seq!==INS5.loadSeq) return;
+    INS5.rows=Array.isArray(res[0])?res[0].slice(0,i5Cap()):[];
+    if(res[1]){ INS5.counts=res[1]; INS5.countsAt=Date.now(); }
+    INS5.online=true;
+    i5Put('cache',{rows:INS5.rows,at:Date.now()},i5CacheKey());
+    i5PaintKpis(); i5PaintTabs(); i5PaintHint(); i5Render(false); i5Head();
+  }).catch(function(e){
+    if(seq!==INS5.loadSeq) return;
+    var msg=String(e&&e.message||e);
+    if(/not-signed-in|401/.test(msg)){
+      i5Toast('Sign-in session missing — opening the classic screen');
+      ins4Classic(); return;
+    }
+    INS5.online=false; i5Head();
+    if(!INS5.rows.length){
+      var tb=document.getElementById('i5-tb');
+      if(tb) tb.innerHTML='<tr><td colspan="7" style="white-space:normal;color:var(--danger2);padding:16px">'
+        +'Could not reach the server — still trying. '+i5Esc(msg.slice(0,90))+'</td></tr>';
+    }
+    setTimeout(function(){ if(seq===INS5.loadSeq) i5Load(); },8000);
+  });
+}
+function i5Head(){
+  var d=document.getElementById('i5-dot'), s=document.getElementById('i5-src');
+  if(d) d.className='i5-dot'+(INS5.online?'':' off');
+  if(s){
+    var src=(INS5.counts||{}).source_date;
+    s.textContent=INS5.online?('book of '+i5Date(src)):'offline — showing what is on this device';
   }
-  try{ localStorage.setItem(ins4QueueKey(), JSON.stringify(rest)); }catch(e){}
-  ins4QueueBar();
-  if(manual) ins4Toast(rest.length?('Still '+rest.length+' waiting'):'All synced ✓');
+  var w=document.getElementById('i5-who');
+  if(w) w.textContent=i5MyName()+' · '+i5Outlet();
 }
+
+/* ---------------------------------------------------------------------------
+   The table
+   --------------------------------------------------------------------------- */
+function i5Skeleton(){
+  var tb=document.getElementById('i5-tb'); if(!tb) return;
+  var h='';
+  for(var i=0;i<16;i++){
+    h+='<tr>'
+      +'<td><div class="i5-skel" style="width:'+(58+((i*13)%32))+'%"></div></td>'
+      +'<td><div class="i5-skel" style="width:74%"></div></td>'
+      +'<td class="i5-c3"><div class="i5-skel" style="width:62%"></div></td>'
+      +'<td class="i5-c4"><div class="i5-skel" style="width:70%"></div></td>'
+      +'<td><div class="i5-skel" style="width:56%"></div></td>'
+      +'<td class="i5-c5"><div class="i5-skel" style="width:34%"></div></td>'
+      +'<td class="i5-c6"><div class="i5-skel" style="width:52%"></div></td>'
+      +'</tr>';
+  }
+  tb.innerHTML=h;
+  var c=document.getElementById('i5-count'); if(c) c.textContent='loading…';
+}
+function i5DueCell(r){
+  var d=r.days_left;
+  if(d==null) return '<span class="i5-due t3">no date</span>';
+  var cls=(d<=0)?'t0':(d===1?'t1':(d<=7?'t2':'t3'));
+  var txt=(d<0)?('expired '+Math.abs(d)+'d'):(d===0?'TODAY':(d===1?'TOMORROW':(d+' days')));
+  return '<span class="i5-due '+cls+'">'+txt+'</span><span class="sub">'+i5Date(r.expiry)+'</span>';
+}
+function i5Render(stale){
+  var tb=document.getElementById('i5-tb'); if(!tb) return;
+  if(!stale) INS5.painted=true;
+  var cnt=document.getElementById('i5-count');
+  if(!INS5.rows.length){
+    var v=i5View(INS5.view);
+    var msg = stale ? 'Loading…'
+      : (v.id==='book' && INS5.q.trim().length<3) ? 'Type at least 3 letters to search all customers.'
+      : (INS5.q.trim()) ? 'Nobody matches “'+i5Esc(INS5.q.trim())+'” in this list.'
+      : (v.src==='month') ? 'Nothing in this list yet this month. Work today’s queue and they will collect here.'
+      : 'Nothing left in this list — the day’s work here is done. 🎉';
+    tb.innerHTML='<tr><td colspan="7" class="i5-empty" style="white-space:normal">'+msg+'</td></tr>';
+    if(cnt) cnt.textContent=stale?'':'0 customers';
+    return;
+  }
+  if(cnt) cnt.textContent=INS5.rows.length+' customer'+(INS5.rows.length===1?'':'s')
+    +(INS5.rows.length>=i5Cap()?(' · capped at '+i5Cap()):'');
+  tb.innerHTML=INS5.rows.map(function(r,i){
+    var st=i5Stage(r), mob=i5Mob(r);
+    var hot=String(r.temp||'').toUpperCase().indexOf('HOT')===0?'<span class="i5-hot">HOT</span>':'';
+    var ident=(r.reg_no?i5Esc(r.reg_no):('⋯'+i5Esc(String(r.chassis||'').slice(-6))));
+    return '<tr id="i5r-'+i+'" class="'+(INS5.sel===i?'sel':'')+'" onclick="i5Pick('+i+')">'
+      +'<td><b>'+i5Esc(r.customer||'—')+'</b>'+hot
+        +'<span class="sub">'+(mob?('📞 '+mob):'<span class="i5-miss">no mobile</span>')+'</span>'
+        /* the phone drops the vehicle and stage columns, so both fold in here */
+        +'<span class="sub i5-only-sm"><span class="i5-stage '+st.k+'">'+st.t+'</span> '
+        +ident+' · '+i5Esc(r.model||'—')+'</span></td>'
+      +'<td class="mono i5-c2">'+(r.reg_no?i5Esc(r.reg_no):'<span class="i5-miss">no reg</span>')
+        +'<span class="sub" style="font-family:var(--font-ui)">'+i5Esc(r.model||'—')
+        +(r.reg_no?'':(' · ⋯'+i5Esc(String(r.chassis||'').slice(-6))))+'</span></td>'
+      +'<td class="i5-c3">'+i5DueCell(r)+'</td>'
+      +'<td class="i5-c4">'+(r.insurer?i5Esc(r.insurer):(r.policy_no?'':'<span class="i5-miss">—</span>'))
+        +'<span class="sub">'+(r.policy_no?i5Esc(r.policy_no):'')+'</span></td>'
+      +'<td class="i5-c7"><span class="i5-stage '+st.k+'">'+st.t+'</span>'
+        +(r.premium_quoted?('<span class="sub">'+i5Rs(r.premium_quoted)+'</span>'):'')+'</td>'
+      +'<td class="i5-c5" style="font-variant-numeric:tabular-nums">'+(r.calls||0)+'</td>'
+      +'<td class="i5-c6">'+(r.next_follow_up?i5Date(r.next_follow_up):'—')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+function i5Pick(i){
+  INS5.sel=i; INS5.outcome=''; INS5.waEdited=null; INS5.tab='overview';
+  i5Render(false); i5PaintRail();
+  var rail=document.getElementById('i5-rail');
+  if(rail && !i5Wide()) rail.classList.add('open');
+  var row=document.getElementById('i5r-'+i);
+  if(row&&row.scrollIntoView) row.scrollIntoView({block:'nearest'});
+  var r=INS5.rows[i];
+  if(r&&r.book_id) i5Load360(r);
+}
+function i5RailClose(){
+  var rail=document.getElementById('i5-rail'); if(rail) rail.classList.remove('open');
+  INS5.sel=-1; i5Render(false); i5PaintRail();
+}
+function i5Load360(r){
+  var key=String(r&&r.book_id||''); if(!key) return;
+  if(INS5.details[key]&&!INS5.details[key].error) return;
+  INS5.details[key]={loading:true};
+  sbRpc('insurance_customer_360',{p_book_id:key}).then(function(d){
+    INS5.details[key]=(d&&d.ok)?d:{error:'No history returned'};
+  }).catch(function(e){
+    INS5.details[key]={error:String(e&&e.message||e).slice(0,110)};
+  }).then(function(){
+    var cur=INS5.rows[INS5.sel];
+    if(cur&&String(cur.book_id||'')===key) i5PaintRail();
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   The docked customer rail
+   --------------------------------------------------------------------------- */
+const I5_TABS=[['overview','Overview'],['quote','Quote'],['wa','WhatsApp'],['activity','Activity'],['notes','Notes']];
+function i5Tab(t){ INS5.tab=t; i5PaintRail(); }
+function i5PaintRail(){
+  var head=document.getElementById('i5-railhead'),
+      tabs=document.getElementById('i5-railtabs'),
+      body=document.getElementById('i5-railbody');
+  if(!head||!tabs||!body) return;
+  var r=INS5.rows[INS5.sel];
+  if(!r){
+    head.innerHTML='<div class="i5-name">No customer open</div>'
+      +'<div class="i5-sub">Tap a row — the full picture docks here and the list never moves.</div>';
+    tabs.innerHTML=''; body.innerHTML='<div class="i5-empty">Her day starts at the top of “Due today”.</div>';
+    return;
+  }
+  var st=i5Stage(r), mob=i5Mob(r);
+  head.innerHTML=
+     '<div style="display:flex;align-items:flex-start;gap:8px">'
+    +'<div style="flex:1;min-width:0">'
+      +'<div class="i5-name">'+i5Esc(r.customer||'—')
+      +(String(r.temp||'').toUpperCase().indexOf('HOT')===0?'<span class="i5-hot">HOT</span>':'')+'</div>'
+      +'<div class="i5-sub">'+i5Esc(r.model||'—')+' · '
+      +(r.reg_no?i5Esc(r.reg_no):'<span class="i5-miss">no registration</span>')
+      +' &nbsp;<span class="i5-stage '+st.k+'">'+st.t+'</span></div>'
+    +'</div>'
+    +'<button class="i5-ghost" onclick="i5RailClose()">✕</button>'
+    +'</div>';
+  tabs.innerHTML=I5_TABS.map(function(t){
+    return '<button class="i5-rt'+(INS5.tab===t[0]?' on':'')+'" onclick="i5Tab(\''+t[0]+'\')">'+t[1]+'</button>';
+  }).join('');
+  body.innerHTML =
+      INS5.tab==='quote'    ? i5QuoteTab(r)
+    : INS5.tab==='wa'       ? i5WaTab(r)
+    : INS5.tab==='activity' ? i5ActivityTab(r)
+    : INS5.tab==='notes'    ? i5NotesTab(r)
+    : i5OverviewTab(r, mob);
+  body.scrollTop=0;
+}
+
+function i5OverviewTab(r,mob){
+  var d=INS5.details[String(r.book_id||'')]||{};
+  var b=d.book||{};
+  var kv=function(k,v,mono){
+    return '<div class="i5-kv"><div>'+k+'</div><div'+(mono?' class="mono"':'')+'>'
+      +(v?i5Esc(v):'<span class="i5-miss">not on file</span>')+'</div></div>';
+  };
+  var call=mob?('<a class="i5-act call" href="tel:+91'+mob+'" onclick="i5Touch(\'CALL_OPENED\',\'phone\')">📞 Call '+mob+'</a>')
+               :'<span class="i5-act dead">📞 No number</span>';
+  var wa=mob?('<button class="i5-act wa" onclick="i5Tab(\'wa\')">💬 WhatsApp</button>')
+            :'<span class="i5-act dead">💬 No number</span>';
+  var renew=r.renewal_link
+    ?('<button class="i5-act link" onclick="i5Renew()">🔗 Renew now (Hero link)</button>')
+    :'<span class="i5-act dead" title="This customer has no MISP renewal link on file">🔗 No direct link</span>';
+  return ''
+   +'<div class="i5-acts">'+call+wa+'</div>'
+   +'<div class="i5-acts">'+renew+'<button class="i5-act quote" onclick="i5Tab(\'quote\')">₹ Get quote</button></div>'
+   +'<div class="i5-h">This renewal</div>'
+   +'<div class="i5-kv"><div>Expires</div><div><b>'+i5Date(r.expiry)+'</b> '
+     +(r.days_left==null?'':('('+(r.days_left<0?(Math.abs(r.days_left)+' days ago'):(r.days_left===0?'today':r.days_left+' days'))+')'))+'</div></div>'
+   +kv('Registration',r.reg_no,true)
+   +kv('Model',r.model)
+   +kv('Chassis',r.chassis,true)
+   +kv('Current insurer',r.insurer)
+   +kv('Policy no',r.policy_no,true)
+   +kv('Policy type',r.policy_type)
+   +kv('City',r.city)
+   +'<div class="i5-h">This customer at our workshop</div>'
+   +kv('Last service',b.last_service_date?i5Date(b.last_service_date):'')
+   +kv('Next service due',b.next_service_due?i5Date(b.next_service_due):'')
+   +kv('Last bill',(r.last_bill&&Number(r.last_bill)>0)?i5Rs(r.last_bill):'')
+   +kv('Loyalty',b.loyalty)
+   +kv('Bought on',b.date_of_sale?i5Date(b.date_of_sale):'')
+   +'<div class="i5-h">Where this stands</div>'
+   +'<div class="i5-kv"><div>Calls so far</div><div>'+(r.calls||0)
+     +(r.owner_name?(' · '+i5Esc(r.owner_name)):'')+'</div></div>'
+   +'<div class="i5-kv"><div>Last outcome</div><div>'+i5Stage(r).t
+     +(r.last_call?(' · '+i5DateTime(r.last_call)):'')+'</div></div>'
+   +'<div class="i5-kv"><div>Premium quoted</div><div>'+i5Rs(r.premium_quoted)+'</div></div>'
+   +'<div class="i5-kv"><div>Follow-up booked</div><div>'+(r.next_follow_up?i5Date(r.next_follow_up):'—')+'</div></div>'
+   +i5LogBlock(r);
+}
+
+/* The log block — one tap is one outcome, and the screen moves before the
+   network does (rule 8: instant visible feedback). */
+function i5LogBlock(r){
+  var oc=I5_OC.map(function(o){
+    return '<button class="i5-oc '+o.k+(INS5.outcome===o.c?' on':'')+'" onclick="i5Outcome(\''+o.c+'\')">'
+      +o.c+'<small>'+o.l+'</small></button>';
+  }).join('');
+  return ''
+   +'<div class="i5-h">Log this call</div>'
+   +'<div class="i5-out">'+oc+'</div>'
+   +'<div id="i5-follow" style="display:none;margin:6px 0">'
+     +'<div class="i5-row2"><input class="i5-in" type="date" id="i5-fdate" value="'+i5IstPlus(1)+'">'
+     +'<input class="i5-in" type="time" id="i5-ftime" value="11:00"></div></div>'
+   +'<div id="i5-prem" style="display:none;margin:6px 0">'
+     +'<input class="i5-in" type="number" inputmode="numeric" id="i5-pamt" placeholder="Premium quoted to the customer (₹)"></div>'
+   +'<div id="i5-reason" style="display:none;margin:6px 0">'
+     +'<input class="i5-in" type="text" id="i5-rtext" maxlength="140" placeholder="In one line — why?"></div>'
+   +'<button class="i5-save" id="i5-savebtn" onclick="i5Save()" disabled>Save outcome</button>'
+   +'<div class="i5-tip">CB books the call-back. QT records the premium. RN closes it as renewed. '
+   +'Whatever you press, this customer stays on “Everyone I spoke to” for the whole month — you can come back and convert them any day.</div>';
+}
+function i5Outcome(c){
+  INS5.outcome=c;
+  var body=document.getElementById('i5-railbody'); if(!body) return;
+  var btns=body.querySelectorAll('.i5-oc');
+  for(var i=0;i<btns.length;i++){
+    var on=btns[i].textContent.indexOf(c)===0;
+    btns[i].classList.toggle('on',on);
+  }
+  var f=body.querySelector('#i5-follow'), p=body.querySelector('#i5-prem'),
+      rr=body.querySelector('#i5-reason'), sb=body.querySelector('#i5-savebtn');
+  if(f)  f.style.display =(c==='CB')?'block':'none';
+  if(p)  p.style.display =(c==='QT'||c==='RN')?'block':'none';
+  if(rr) rr.style.display=(c==='NI'||c==='LT')?'block':'none';
+  if(sb) sb.disabled=false;
+}
+function i5Save(){
+  var i=INS5.sel, r=INS5.rows[i];
+  if(!r||!INS5.outcome||INS5.saving) return;
+  var oc=null; for(var z=0;z<I5_OC.length;z++){ if(I5_OC[z].c===INS5.outcome) oc=I5_OC[z]; }
+  if(!oc) return;
+  var body=document.getElementById('i5-railbody');
+  var g=function(id){ var el=body&&body.querySelector('#'+id); return el?el.value:''; };
+  var follow=(INS5.outcome==='CB')?(g('i5-fdate')||null):null;
+  var prem=(INS5.outcome==='QT'||INS5.outcome==='RN')?(Number(g('i5-pamt'))||null):null;
+  var reason=(INS5.outcome==='NI'||INS5.outcome==='LT')?String(g('i5-rtext')||'').slice(0,140):'';
+  if(!r.book_id){ i5Toast('This row has no server identity — press Refresh'); return; }
+  var payload={p_book_id:r.book_id, p_outcome:oc.code, p_reason:reason,
+    p_premium:prem, p_follow:follow, p_idempotency_key:i5Uuid()};
+
+  INS5.saving=true;
+  var sb=body&&body.querySelector('#i5-savebtn');
+  if(sb){ sb.innerHTML='<span class="i5-spin"></span>Saving'; sb.disabled=true; }
+
+  /* Optimistic — the counters and the row move now; the network catches up. */
+  r.last_status=oc.code; r.calls=(r.calls||0)+1; r.last_call=new Date().toISOString();
+  r.next_follow_up=follow||r.next_follow_up;
+  if(prem) r.premium_quoted=prem;
+  if(oc.code==='WON_RENEWED') r.converted='Y';
+  var k=INS5.counts||(INS5.counts={});
+  k.calls=(k.calls||0)+1;
+  if(oc.code!=='NR_RINGING'&&oc.code!=='WR_NUMBER') k.connected=(k.connected||0)+1;
+  if(INS5.outcome==='QT') k.quotes=(k.quotes||0)+1;
+  if(INS5.outcome==='RN'){ k.won=(k.won||0)+1; k.month_won=(k.month_won||0)+1; }
+  if(i5View(INS5.view).src==='day'){ k.remaining=Math.max(0,(k.remaining||0)-1);
+    var vv=i5View(INS5.view); if(vv.k&&vv.k!=='remaining'&&k[vv.k]!=null) k[vv.k]=Math.max(0,k[vv.k]-1); }
+  k.month_worked=(k.month_worked||0)+((r._counted)?0:1); r._counted=true;
+  i5PaintKpis(); i5PaintTabs();
+
+  var done=function(){
+    INS5.saving=false; INS5.outcome='';
+    /* On a day view the row has been worked and leaves; on a month view she is
+       still working the same person, so it stays and simply re-renders. */
+    if(i5View(INS5.view).src==='day'){ INS5.rows.splice(i,1); INS5.sel=-1; i5RailClose(); }
+    else { INS5.details[String(r.book_id||'')]=null; i5Load360(r); i5PaintRail(); }
+    i5Render(false);
+    i5Put('cache',{rows:INS5.rows,at:Date.now()},i5CacheKey());
+  };
+  sbRpc('insurance_log_outcome',payload).then(function(res){
+    if(!(res&&res.ok)) throw new Error((res&&res.error)||'save failed');
+    i5LegacyTrail(r,oc,reason,prem);
+    i5Toast('Saved — '+oc.l+(res.in_queue?'':' (from your month list)'));
+    done();
+  }).catch(function(){
+    i5Put('outbox',{id:payload.p_idempotency_key, payload:payload, at:Date.now(),
+      legacy:{reg:r.reg_no||'',customer:r.customer||'',mobile:i5Mob(r),status:oc.code,
+              reason:reason,premium:prem}});
+    i5Toast('Saved on this phone — it will sync by itself');
+    i5SyncBar(); done();
+  });
+}
+/* The old sheet trail is still what the Insurance Board reads for its own
+   history. Written after the real save, never instead of it. */
+function i5LegacyTrail(r,oc,reason,prem){
+  if(!r.reg_no||typeof jgetRaw!=='function') return;
+  try{
+    jgetRaw('inscrm2_save',{reg:r.reg_no||'', customer:r.customer||'', mobile:i5Mob(r),
+      expiry:'', by:i5Me(), byName:i5MyName(), status:oc.code,
+      remarks:reason||'', premium:prem||'', called:'1'}, function(){}, 30000);
+  }catch(e){}
+}
+function i5Drain(manual){
+  return i5All('outbox').then(function(q){
+    if(!q.length){ i5SyncBar(); if(manual) i5Toast('Nothing waiting'); return; }
+    var chain=Promise.resolve(), left=0;
+    q.forEach(function(item){
+      chain=chain.then(function(){
+        return sbRpc('insurance_log_outcome',item.payload).then(function(res){
+          if(!(res&&res.ok)) throw new Error('no');
+          if(item.legacy&&item.legacy.reg&&typeof jgetRaw==='function'){
+            try{ jgetRaw('inscrm2_save',{reg:item.legacy.reg, customer:item.legacy.customer,
+              mobile:item.legacy.mobile, expiry:'', by:i5Me(), byName:i5MyName(),
+              status:item.legacy.status, remarks:item.legacy.reason||'',
+              premium:item.legacy.premium||'', called:'1'},function(){},30000); }catch(e){}
+          }
+          return i5Del('outbox',item.id);
+        }).catch(function(){ left++; });
+      });
+    });
+    return chain.then(function(){
+      i5SyncBar();
+      if(manual) i5Toast(left?(left+' still waiting for signal'):'All synced ✓');
+      if(!left) i5Reload(false);
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   QUOTE tab — the aggregators, and the quote she brings back
+   --------------------------------------------------------------------------- */
+function i5Touch(kind,channel,detail){
+  var r=INS5.rows[INS5.sel]; if(!r||!r.book_id) return;
+  try{ sbRpc('insurance_touch_log',{p_book_id:r.book_id,p_kind:kind,
+    p_channel:channel||'',p_detail:detail||''}).catch(function(){}); }catch(e){}
+}
+function i5Copy(txt){
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt); }catch(e){}
+}
+function i5Agg(idx){
+  var a=I5_AGG[Number(idx)], r=INS5.rows[INS5.sel]; if(!a||!r) return;
+  var reg=String(r.reg_no||'').trim();
+  if(reg) i5Copy(reg);
+  window.open(a.u,'hero-insurance-quote','noopener');
+  i5Touch('QUOTE_OPENED',a.n,reg);
+  i5Toast(reg?(reg+' copied · opening '+a.n):('Opening '+a.n));
+}
+function i5Renew(){
+  var r=INS5.rows[INS5.sel]; if(!r||!r.renewal_link) return;
+  window.open(r.renewal_link,'hero-insurance-renew','noopener');
+  i5Touch('LINK_OPENED','misp',String(r.reg_no||''));
+  i5Toast('Opening the customer’s own Hero renewal link');
+}
+function i5QuoteTab(r){
+  var d=INS5.details[String(r.book_id||'')]||{};
+  var quotes=Array.isArray(d.quotes)?d.quotes:[];
+  var best=null;
+  quotes.forEach(function(q){ if(Number(q.premium)>0&&(best==null||Number(q.premium)<Number(best.premium))) best=q; });
+  var wall=I5_AGG.map(function(a,i){
+    return '<button class="i5-agg'+(a.best?' best':'')+'" onclick="i5Agg('+i+')" title="'+i5Esc(a.n)+'">'
+      +'<em style="background:'+a.c+'">'+a.s+'</em><span>'+i5Esc(a.n)+'</span></button>';
+  }).join('');
+  var tbl = quotes.length
+    ? ('<table class="i5-qtbl"><thead><tr><th>Insurer</th><th>Where</th><th style="text-align:right">Premium</th><th>When</th></tr></thead><tbody>'
+       +quotes.map(function(q){
+          return '<tr><td>'+i5Esc(q.insurer)+(q.cover?('<span class="sub"> '+i5Esc(q.cover)+'</span>'):'')+'</td>'
+            +'<td>'+i5Esc(q.source||'—')+'</td>'
+            +'<td class="num"><b>'+i5Rs(q.premium)+'</b></td>'
+            +'<td>'+i5Date(String(q.at||'').slice(0,10))+'</td></tr>';
+        }).join('')
+       +'</tbody></table>')
+    : '<div class="i5-tip">No quote captured for this customer yet. Open a site above, then type what it said into the three boxes below — that is what turns this panel into a real comparison.</div>';
+  return ''
+   +'<div class="i5-h">Compare the market — reg is copied when you tap</div>'
+   +'<div class="i5-aggs">'+wall+'</div>'
+   +'<div class="i5-tip">'+(r.reg_no
+       ? ('Registration <b>'+i5Esc(r.reg_no)+'</b> goes to the clipboard on every tap. Hero Insurance returns a real premium from the registration alone — answer <b>Bundled 1+5</b> and give the OD expiry date, never “Not sure”, or the no-claim bonus is thrown away and the price triples.')
+       : 'This customer has no registration on file, so the sites cannot be pre-filled. Use the chassis '+i5Esc(r.chassis||'—')+' on their own portal.')+'</div>'
+   +(r.renewal_link?'<button class="i5-act link" style="margin-top:8px" onclick="i5Renew()">🔗 Open their own Hero renewal link</button>':'')
+   +'<div class="i5-h">Best quote on record</div>'
+   +(best?('<div class="i5-best"><b>'+i5Rs(best.premium)+'</b> &nbsp;'+i5Esc(best.insurer)
+          +(best.source?(' · via '+i5Esc(best.source)):'')+'</div>')
+        :'<div class="i5-tip">Nothing recorded yet.</div>')
+   +tbl
+   +'<div class="i5-h">Record a quote you just got</div>'
+   +'<div class="i5-row2" style="margin-bottom:6px">'
+     +'<input class="i5-in" id="i5-qins" list="i5-inslist" placeholder="Insurer">'
+     +'<input class="i5-in" id="i5-qprem" type="number" inputmode="numeric" placeholder="Premium ₹">'
+   +'</div>'
+   +'<datalist id="i5-inslist">'
+     +['HDFC ERGO','ICICI Lombard','Bajaj Allianz','TATA AIG','SBI General','Reliance General','New India Assurance','Go Digit','ACKO','United India','Oriental','National Insurance','Cholamandalam','Liberty General','Shriram General']
+        .map(function(x){ return '<option value="'+x+'">'; }).join('')
+   +'</datalist>'
+   +'<div class="i5-row2" style="margin-bottom:6px">'
+     +'<input class="i5-in" id="i5-qidv" type="number" inputmode="numeric" placeholder="IDV ₹ (optional)">'
+     +'<select class="i5-in" id="i5-qcov"><option value="">Cover…</option>'
+       +'<option value="COMP">Comprehensive</option><option value="TP+OD">TP + OD</option>'
+       +'<option value="OD">Own damage only</option><option value="TP">Third party only</option></select>'
+   +'</div>'
+   +'<input class="i5-in" id="i5-qsrc" list="i5-srclist" placeholder="Where did this quote come from?" style="margin-bottom:6px">'
+   +'<datalist id="i5-srclist">'+I5_AGG.map(function(a){ return '<option value="'+i5Esc(a.n)+'">'; }).join('')+'</datalist>'
+   +'<button class="i5-save" id="i5-qsave" onclick="i5QuoteSave()">Save this quote</button>';
+}
+function i5QuoteSave(){
+  var r=INS5.rows[INS5.sel]; if(!r||!r.book_id) return;
+  var body=document.getElementById('i5-railbody');
+  var g=function(id){ var el=body&&body.querySelector('#'+id); return el?String(el.value||'').trim():''; };
+  var ins=g('i5-qins'), prem=Number(g('i5-qprem'))||null;
+  if(!ins){ i5Toast('Which insurer gave this quote?'); return; }
+  var btn=body&&body.querySelector('#i5-qsave');
+  if(btn){ btn.innerHTML='<span class="i5-spin"></span>Saving'; btn.disabled=true; }
+  sbRpc('insurance_quote_save',{p_book_id:r.book_id, p_insurer:ins, p_premium:prem,
+    p_source:g('i5-qsrc'), p_idv:(Number(g('i5-qidv'))||null), p_cover:g('i5-qcov'),
+    p_ncb:null, p_notes:''}).then(function(res){
+      if(!(res&&res.ok)) throw new Error('save failed');
+      i5Toast('Quote saved'+(res.best?(' · best is now ₹'+Number(res.best).toLocaleString('en-IN')):''));
+      INS5.details[String(r.book_id)]=null; i5Load360(r);
+    }).catch(function(e){
+      i5Toast('Could not save the quote — '+String(e&&e.message||e).slice(0,50));
+      if(btn){ btn.textContent='Save this quote'; btn.disabled=false; }
+    });
+}
+
+/* ---------------------------------------------------------------------------
+   WHATSAPP tab — inside the app
+   The approved-template send goes through the ONE Pingmate gateway
+   (Hotfix_WhatsApp.gs -> waSend), which honours the opt-out list and writes
+   WhatsAppLog. The wa.me route is her own phone and always works, including
+   when a customer is outside the 24-hour session window.
+   --------------------------------------------------------------------------- */
+const I5_WA={
+  en:'Namaste {name} ji 🙏\nThis is {me} from Sehgal Autoriders (Hero), {outlet}.\n\nYour {veh} insurance {when}.\n{quote}We renew it the same day — best price, full claim support, and cashless repair at our own workshop.\n\nShall I send you the payment link?',
+  hi:'नमस्ते {name} जी 🙏\nमैं {me}, सहगल ऑटोराइडर्स (Hero), {outlet} से बोल रही हूँ।\n\nआपकी {veh} का बीमा {when}।\n{quote}हम उसी दिन रिन्यू कर देते हैं — बेस्ट प्राइस, पूरा क्लेम सपोर्ट, और हमारे वर्कशॉप में कैशलेस रिपेयर।\n\nक्या मैं पेमेंट लिंक भेज दूँ?',
+  mr:'नमस्कार {name} जी 🙏\nमी {me}, सहगल ऑटोरायडर्स (Hero), {outlet} इथून बोलत आहे.\n\nतुमच्या {veh} चा विमा {when}.\n{quote}आम्ही त्याच दिवशी रिन्यू करून देतो — बेस्ट प्राइस, पूर्ण क्लेम सपोर्ट आणि आमच्या वर्कशॉपमध्ये कॅशलेस दुरुस्ती.\n\nपेमेंट लिंक पाठवू का?'
+};
+const I5_WHEN={
+  en:{gone:'expired {n} days ago',today:'expires TODAY',tom:'expires tomorrow',in:'expires in {n} days',none:'is due for renewal'},
+  hi:{gone:'{n} दिन पहले समाप्त हो चुका है',today:'आज समाप्त हो रहा है',tom:'कल समाप्त हो रहा है',in:'{n} दिन में समाप्त हो रहा है',none:'रिन्यू होना है'},
+  mr:{gone:'{n} दिवसांपूर्वी संपला आहे',today:'आज संपत आहे',tom:'उद्या संपत आहे',in:'{n} दिवसांत संपत आहे',none:'रिन्यू करायचा आहे'}
+};
+function i5WaWhen(r,lang){
+  var w=I5_WHEN[lang]||I5_WHEN.en, d=r.days_left;
+  if(d==null) return w.none;
+  if(d<0)  return w.gone.replace('{n}',Math.abs(d));
+  if(d===0) return w.today;
+  if(d===1) return w.tom;
+  return w.in.replace('{n}',d);
+}
+function i5WaText(r,lang){
+  var d=INS5.details[String(r.book_id||'')]||{};
+  var quotes=Array.isArray(d.quotes)?d.quotes:[], best=null;
+  quotes.forEach(function(q){ if(Number(q.premium)>0&&(best==null||Number(q.premium)<Number(best.premium))) best=q; });
+  var qline='';
+  if(best) qline=(lang==='en'
+      ? ('Our best quote for you: ₹'+Number(best.premium).toLocaleString('en-IN')+' ('+best.insurer+').\n')
+      : ('आपके लिए बेस्ट कोटेशन: ₹'+Number(best.premium).toLocaleString('en-IN')+' ('+best.insurer+')।\n'));
+  return (I5_WA[lang]||I5_WA.en)
+    .replace('{name}',(String(r.customer||'').split(' ')[0]||'Sir/Madam'))
+    .replace('{me}',(String(i5MyName()).split(' ')[0]||'Sehgal'))
+    .replace('{outlet}',i5Outlet())
+    .replace('{veh}',(r.model||'two-wheeler')+(r.reg_no?(' ('+r.reg_no+')'):''))
+    .replace('{when}',i5WaWhen(r,lang))
+    .replace('{quote}',qline);
+}
+function i5WaLang(l){
+  INS5.waLang=l; INS5.waEdited=null; i5PaintRail();
+}
+function i5WaEdit(v){ INS5.waEdited=String(v||''); i5WaPreview(); }
+function i5WaPreview(){
+  var pv=document.getElementById('i5-wapv'); if(!pv) return;
+  var r=INS5.rows[INS5.sel]; if(!r) return;
+  pv.textContent=(INS5.waEdited!=null)?INS5.waEdited:i5WaText(r,INS5.waLang);
+}
+function i5WaBody(){
+  var r=INS5.rows[INS5.sel]; if(!r) return '';
+  return (INS5.waEdited!=null)?INS5.waEdited:i5WaText(r,INS5.waLang);
+}
+function i5WaTab(r){
+  var mob=i5Mob(r);
+  var d=INS5.details[String(r.book_id||'')]||{};
+  var touches=(Array.isArray(d.touches)?d.touches:[]).filter(function(t){ return String(t.kind||'').indexOf('WA_')===0; });
+  var txt=i5WaBody();
+  var langs=[['en','English'],['hi','हिंदी'],['mr','मराठी']].map(function(l){
+    return '<button class="i5-lang'+(INS5.waLang===l[0]?' on':'')+'" onclick="i5WaLang(\''+l[0]+'\')">'+l[1]+'</button>';
+  }).join('');
+  if(!mob){
+    return '<div class="i5-h">WhatsApp</div><div class="i5-tip">This customer has no usable mobile number on file, '
+      +'so nothing can be sent. Log the outcome as <b>WN — wrong number</b> so she stops appearing in the queue.</div>';
+  }
+  return ''
+   +'<div class="i5-h">Language</div>'
+   +'<div class="i5-langs">'+langs+'</div>'
+   +'<div class="i5-h">What the customer will read</div>'
+   +'<div class="i5-wabox" id="i5-wapv">'+i5Esc(txt)+'</div>'
+   +'<div class="i5-h">Edit it if you want</div>'
+   +'<textarea class="i5-wata" id="i5-wata" oninput="i5WaEdit(this.value)">'+i5Esc(txt)+'</textarea>'
+   +'<div class="i5-acts" style="grid-template-columns:1fr">'
+     +'<button class="i5-act wa" onclick="i5WaOpen()">💬 Open WhatsApp with this message</button>'
+   +'</div>'
+   +'<div class="i5-acts" style="grid-template-columns:1fr 1fr">'
+     +'<button class="i5-act link" onclick="i5WaGateway()">📤 Send from the Sehgal number</button>'
+     +'<button class="i5-act quote" onclick="i5WaCopy()">📋 Copy message</button>'
+   +'</div>'
+   +'<div class="i5-tip">“Open WhatsApp” uses your own phone and sends exactly what is written above — nothing is sent until you press send there. '
+   +'“Send from the Sehgal number” goes out through the dealership WhatsApp gateway on the approved renewal template, which needs a registration on file and honours the do-not-disturb list.</div>'
+   +'<div class="i5-h">Already sent to this customer</div>'
+   +(touches.length
+      ? ('<div class="i5-walog">'+touches.map(function(t){
+          return '<div><b>'+(t.kind==='WA_SENT'?'Sent':'Opened')+'</b> · '+i5DateTime(t.at)
+            +(t.channel?(' · '+i5Esc(t.channel)):'')+(t.by?(' · '+i5Esc(t.by)):'')+'</div>';
+        }).join('')+'</div>')
+      : '<div class="i5-tip">Nothing sent yet.</div>');
+}
+function i5WaOpen(){
+  var r=INS5.rows[INS5.sel]; if(!r) return;
+  var mob=i5Mob(r); if(!mob) return;
+  window.open('https://wa.me/91'+mob+'?text='+encodeURIComponent(i5WaBody()),'_blank','noopener');
+  i5Touch('WA_OPENED','wa.me',INS5.waLang);
+  i5Toast('WhatsApp opened — press send there');
+}
+function i5WaCopy(){ i5Copy(i5WaBody()); i5Toast('Message copied'); }
+function i5WaGateway(){
+  var r=INS5.rows[INS5.sel]; if(!r) return;
+  var mob=i5Mob(r);
+  if(!r.reg_no){ i5Toast('The gateway needs a registration — use “Open WhatsApp” for this customer'); return; }
+  if(typeof jgetRaw!=='function'){ i5Toast('Gateway unavailable on this device — use “Open WhatsApp”'); return; }
+  i5Toast('Sending from the Sehgal number…');
+  jgetRaw('ins_renew_wa',{reg:r.reg_no, lang:INS5.waLang, mobile:mob, owner:i5Me()},
+    function(res){
+      if(res&&res.ok&&res.sent){
+        i5Touch('WA_SENT','pingmate',INS5.waLang);
+        i5Toast('Sent to '+(res.to||mob));
+        INS5.details[String(r.book_id||'')]=null; i5Load360(r);
+      }else{
+        var why=(res&&(res.error||res.skipped))||'the gateway did not confirm a send';
+        i5Toast('Not sent — '+String(why).slice(0,70));
+      }
+    }, 30000);
+}
+
+/* ---------------------------------------------------------------------------
+   ACTIVITY + NOTES
+   --------------------------------------------------------------------------- */
+function i5ActivityTab(r){
+  var d=INS5.details[String(r.book_id||'')];
+  if(!d) return '<div class="i5-tip">Opening this customer’s history…</div>';
+  if(d.loading) return '<div class="i5-tip">Loading this customer’s history…</div>';
+  if(d.error) return '<div class="i5-tip" style="color:var(--danger2)">'+i5Esc(d.error)+'</div>';
+  var evs=[];
+  (d.activity||[]).forEach(function(a){
+    var st=i5Stage({last_status:a.status});
+    evs.push({at:a.at,k:'call',t:'<b>'+st.t+'</b>'+(a.reason?(' — '+i5Esc(a.reason)):'')
+      +(a.premium?(' · '+i5Rs(a.premium)):'')+(a.by?(' <span style="color:var(--ink-3)">'+i5Esc(a.by)+'</span>'):'')});
+  });
+  (d.touches||[]).forEach(function(t){
+    var lbl={WA_SENT:'WhatsApp sent',WA_OPENED:'WhatsApp opened',CALL_OPENED:'Call dialled',
+             QUOTE_OPENED:'Quote site opened',LINK_OPENED:'Renewal link opened',
+             NOTE:'Note added',SMS_OPENED:'SMS opened'}[t.kind]||t.kind;
+    evs.push({at:t.at,k:(String(t.kind).indexOf('WA_')===0?'wa':(t.kind==='NOTE'?'note':'quote')),
+      t:'<b>'+lbl+'</b>'+(t.channel?(' · '+i5Esc(t.channel)):'')});
+  });
+  (d.quotes||[]).forEach(function(q){
+    evs.push({at:q.at,k:'quote',t:'<b>Quote '+i5Rs(q.premium)+'</b> · '+i5Esc(q.insurer)
+      +(q.source?(' via '+i5Esc(q.source)):'')});
+  });
+  evs.sort(function(a,b){ return String(b.at||'').localeCompare(String(a.at||'')); });
+  var pol=(d.policies||[]);
+  return ''
+   +'<div class="i5-h">Policies on file</div>'
+   +(pol.length
+      ? pol.map(function(p){
+          return '<div class="i5-kv"><div>'+i5Esc(p.insurer||'Policy')+'</div><div>'
+            +'<span class="mono">'+i5Esc(p.policy_no||'—')+'</span><br>'
+            +i5Esc(p.policy_type||'')+' · to '+i5Date(p.expiry)+'</div></div>';
+        }).join('')
+      : '<div class="i5-tip">No policy document matched this chassis in the renewal book.</div>')
+   +'<div class="i5-h">Everything that has happened — latest first</div>'
+   +(evs.length
+      ? ('<div class="i5-tl">'+evs.slice(0,40).map(function(e){
+          return '<div class="ev '+e.k+'"><i>'+i5DateTime(e.at)+'</i>'+e.t+'</div>';
+        }).join('')+'</div>')
+      : '<div class="i5-tip">Nothing recorded on this customer yet — you are the first.</div>');
+}
+function i5NotesTab(r){
+  var d=INS5.details[String(r.book_id||'')]||{};
+  var rem=Array.isArray(d.remarks)?d.remarks:[];
+  return ''
+   +'<div class="i5-h">Add a note</div>'
+   +'<textarea class="i5-wata" id="i5-note" style="min-height:88px" placeholder="What did the customer actually say? Price too high, wants comprehensive, husband decides, calls back after salary…"></textarea>'
+   +'<button class="i5-save" id="i5-notesave" onclick="i5NoteSave()">Save note</button>'
+   +'<div class="i5-tip">A note is not a call — it does not touch your call count or move the customer out of any list.</div>'
+   +'<div class="i5-h">Notes on this customer — latest first</div>'
+   +(rem.length
+      ? ('<div class="i5-tl">'+rem.map(function(n){
+          return '<div class="ev note"><i>'+i5DateTime(n.at)+'</i>'+i5Esc(n.text)
+            +(n.by?(' <span style="color:var(--ink-3)">— '+i5Esc(n.by)+'</span>'):'')+'</div>';
+        }).join('')+'</div>')
+      : '<div class="i5-tip">No notes yet.</div>');
+}
+function i5NoteSave(){
+  var r=INS5.rows[INS5.sel]; if(!r||!r.book_id) return;
+  var body=document.getElementById('i5-railbody');
+  var el=body&&body.querySelector('#i5-note');
+  var txt=el?String(el.value||'').trim():'';
+  if(!txt){ i5Toast('Type the note first'); return; }
+  var btn=body&&body.querySelector('#i5-notesave');
+  if(btn){ btn.innerHTML='<span class="i5-spin"></span>Saving'; btn.disabled=true; }
+  sbRpc('insurance_note_add',{p_book_id:r.book_id,p_text:txt}).then(function(res){
+    if(!(res&&res.ok)) throw new Error('failed');
+    i5Toast('Note saved');
+    INS5.details[String(r.book_id)]=null; i5Load360(r);
+  }).catch(function(e){
+    i5Toast('Could not save — '+String(e&&e.message||e).slice(0,50));
+    if(btn){ btn.textContent='Save note'; btn.disabled=false; }
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   Export — the same rows she is looking at, dd-mm-yyyy, latest first
+   --------------------------------------------------------------------------- */
+function i5Csv(){
+  if(!INS5.rows.length){ i5Toast('Nothing to export in this list'); return; }
+  var cell=function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; };
+  var L=[['Customer','Mobile','Registration','Model','Insurance due','Days left',
+          'Insurer','Policy no','Stage','Calls','Premium quoted','Follow-up'].map(cell).join(',')];
+  INS5.rows.forEach(function(r){
+    L.push([r.customer,i5Mob(r),r.reg_no,r.model,i5Date(r.expiry),r.days_left,
+            r.insurer,r.policy_no,i5Stage(r).t,r.calls||0,r.premium_quoted||'',
+            r.next_follow_up?i5Date(r.next_follow_up):''].map(cell).join(','));
+  });
+  var blob=new Blob(['﻿'+L.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='Insurance-'+INS5.view+'-'+i5IstPlus(0).split('-').reverse().join('-')+'.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500);
+  i5Toast('Downloaded '+INS5.rows.length+' rows');
+}
+
+window.addEventListener('online', function(){ INS5.online=true; i5Head(); i5Drain(); });
+window.addEventListener('offline',function(){ INS5.online=false; i5Head(); });
 </script>
 
 
@@ -7839,7 +8648,14 @@ function esCodeHtml(x){
   if(x._rateBorrowed && x._fromModel)
     chips.push(esCodeChip_('RATE FROM', x._fromModel+' — this model has never billed this code', '#b45309'));
   if(x.cc) chips.push(esCodeChip_('COMPLAINT NO', x.cc, '#7c3aed'));
-  else if(x.src==='service' || x.src==='washing' || x.src==='consumable' || x.src==='oil')
+  /* R72 follow-up: 'express' and 'rule' join this list. Express is a priority
+     charge on the job, and a rule line is the owner manual's own scheduled
+     instruction (VIDA Note-6, lubricate steering every 10,000 km) — neither is
+     raised against a customer complaint, so amber "not linked in the tree" was
+     flagging a gap that does not exist and training the eye to ignore the
+     amber that does matter. */
+  else if(x.src==='service' || x.src==='washing' || x.src==='consumable'
+       || x.src==='oil' || x.src==='express' || x.src==='rule')
     chips.push(esCodeChip_('COMPLAINT NO', '— scheduled work, no complaint', '#94a3b8'));
   else if(x.pn||x.code||x._noPn||x._noCode)
     chips.push(esCodeChip_('COMPLAINT NO', '— not linked in the tree', '#b45309'));
@@ -16862,6 +17678,8 @@ function psDecodeFromText(){
   const rawEl=document.getElementById('ps-raw'); if(!rawEl) return;
   const raw=rawEl.value||'';
   const aux=(PS_LAST&&PS_LAST.aux)||{};
+  /* Read BEFORE PS_LAST.guess is replaced below, or it is always undefined. */
+  const priorFrag=String((PS_LAST&&PS_LAST.guess&&PS_LAST.guess.fragment)||'');
   const g=psParseVision_({fullTextAnnotation:raw.trim()?{text:raw}:null,
                           webDetection:aux.web, labelAnnotations:aux.labels});
   if(aux.barcode){
@@ -16871,10 +17689,24 @@ function psDecodeFromText(){
   }
   PS_LAST.guess=g; PS_LAST.extra=g.extra&&typeof g.extra==='object'?g.extra:{};
   PS_LAST.fullText=raw;
-  document.getElementById('ps-partno').value=String(g.part_no||'');
-  document.getElementById('ps-desc').value=String(g.description||g.part_guess||'');
-  document.getElementById('ps-mrp').value=String(g.mrp||'').replace(/[₹,\s]/g,'');
-  document.getElementById('ps-barcode').value=String(g.barcode||'');
+  /* R74 — A RE-DECODE MAY FILL A FIELD, NEVER EMPTY ONE.
+     This pass re-derives every field from the raw text alone. On Ravi's
+     21-Aug label it ran after the server answer and blanked DESCRIPTION and
+     MRP, because the raw text no longer carried those two lines — so the
+     screen showed less than the app actually knew. A decode that finds
+     nothing has found nothing; it has not discovered that the old value was
+     wrong. The operator can still clear any field by hand. */
+  const psPut=function(id,val){
+    const el=document.getElementById(id); if(!el) return;
+    const v=String(val==null?'':val);
+    if(v||!el.value) el.value=v;
+  };
+  psPut('ps-partno',g.part_no||'');
+  psPut('ps-desc',g.description||g.part_guess||'');
+  psPut('ps-mrp',String(g.mrp||'').replace(/[₹,\s]/g,''));
+  psPut('ps-barcode',g.barcode||'');
+  /* Carry the fragment across a re-decode so the narrowing search keeps it. */
+  if(!g.fragment && priorFrag) g.fragment=priorFrag;
   const xw=document.getElementById('ps-extra-wrap');
   const keys=Object.keys(PS_LAST.extra);
   xw.innerHTML=keys.length?('<div style="font-size:10.5px;font-weight:800;color:#0f766e;margin:4px 0">EXTRA FIELDS FOUND ON THE LABEL (new columns in the sheet)</div>'+keys.map((k,i)=>`<div class="fld"><label>${raviEsc(k)}</label><input id="ps-extra-${i}" value="${raviEsc(String(PS_LAST.extra[k]))}"></div>`).join('')):'';
@@ -16903,12 +17735,18 @@ function psApplyIdentified_(j,barcode){
   const g={label_found:!!(raw||nums.length),part_no:nums.length===1?nums[0]:'',
     description:(r.part_name&&String(r.part_name).toLowerCase()!=='unknown')?String(r.part_name):'',
     mrp:r.printed_mrp==null?'':String(r.printed_mrp),barcode:String(barcode||''),extra:{},
+    /* R74: the half of a part number that WAS legible. The server now sends
+       "376......." rather than throwing the whole number away because the rest
+       is under scratched polythene — it is the strongest narrowing key on the
+       label and fragment_parts() is built to take it. */
+    fragment:String(r.number_fragment||''),
     part_guess:String(r.part_name||''),probable_models:[],confidence_percent:0};
   if(!g.part_no&&nums.length===0&&g.barcode&&/[A-Z]/i.test(g.barcode)&&/\d/.test(g.barcode)) g.part_no=g.barcode.toUpperCase();
   if(r.category) g.extra.CATEGORY=String(r.category);
   if(r.brand) g.extra.BRAND=String(r.brand);
   if(r.condition) g.extra.CONDITION=String(r.condition);
   if(r.count_guess) g.extra['VISIBLE COUNT']=String(r.count_guess);
+  if(g.fragment&&!g.part_no) g.extra['NUMBER FRAGMENT']=g.fragment;
   if(nums.length>1) g.extra['PART NUMBER OPTIONS']=nums.join(' | ');
   const provider=String(r.provider||'unknown');
   const tried=j&&j.diag&&j.diag.tree?String(j.diag.tree):provider;
@@ -17232,7 +18070,31 @@ function psParseVision_(resp){
       });
       return best;
     };
-    g.description=(centralLines?pickDesc(centralLines):'')||pickDesc(lines);
+    /* R74 — THE LABEL'S OWN DESCRIPTION LINE WINS.
+       pickDesc() rejects any line containing a colon, which is sound for
+       address and MRP furniture but rejects the single most useful line on a
+       Hero label: "DESCRIPTION : COVER UNDER CASE". The printed field beats
+       any line we guess at, so read it first and fall back to pickDesc.
+       (Ravi, 21-Aug-2026: "I can see cover upper case directly.") */
+    const pickField=function(list,re){
+      let v='';
+      list.forEach(function(ln){
+        const m=String(ln).match(re);
+        if(m&&m[1]&&!v) v=m[1].trim().replace(/\s{2,}.*$/,'');
+      });
+      return v;
+    };
+    const descField=pickField(lines,/^\s*(?:PART\s*)?(?:DESCRIPTION|DESC|PART\s*NAME)\s*[:\-]\s*(.+)$/i);
+    g.description=descField||(centralLines?pickDesc(centralLines):'')||pickDesc(lines);
+    /* The printed part-number line, even when only partly legible, is the
+       strongest narrowing key on the label — keep it as a fragment so
+       fragment_parts() can use it. Never a guess: only characters present. */
+    if(!g.part_no){
+      const pnField=pickField(lines,/^\s*PART\s*(?:NO|NUMBER)\.?\s*[:\-]\s*(.+)$/i);
+      const frag=String(pnField||'').toUpperCase().replace(/[^A-Z0-9.]/g,'.')
+        .replace(/\.{2,}/g,'.').replace(/^\.+|\.+$/g,'');
+      if(frag.replace(/\./g,'').length>=2) g.fragment=frag;
+    }
     /* Nothing on the label is ever lost: full raw text goes to one column */
     g.extra['LABEL FULL TEXT']=lines.join(' | ').slice(0,500);
     return g;
@@ -17498,13 +18360,9 @@ function psDrillShow(g){
     el.style.cssText='margin:8px 0;padding:10px 12px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;color:#78350f;font-size:12.5px;line-height:1.5';
     anchor.parentNode.insertBefore(el, anchor.nextSibling);
     el.innerHTML=''
-      +'<div style="font-weight:800;margin-bottom:6px">🧭 No number confirmed — let\'s narrow it down together:</div>'
-      +'<div style="margin-bottom:6px"><b>1.</b> Pull the part OUT of the box and '
-      +'<button class="btn ghost sm" onclick="psPickPhoto(\'camera\')">📷 photo the bare part</button></div>'
-      +'<div style="margin-bottom:6px"><b>2.</b> Look for an <b>embossed / cast number</b> on the part itself '
-      +'(near the centre, an edge, or a mounting face) and '
-      +'<button class="btn ghost sm" onclick="document.getElementById(\'ps-partno\').focus()">⌨ type it above</button></div>'
-      +'<div><b>3.</b> Or tell me whatever you CAN see + what it looks like:</div>'
+      +'<div style="font-weight:800;margin-bottom:6px">🧭 No full number read — these are the closest parts in the masters:</div>'
+      +'<div id="ps-drill-hits" style="margin:6px 0"></div>'
+      +'<div style="font-weight:800;margin:10px 0 2px">Not it? Add anything else you can see:</div>'
       +'<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'
       +'<input id="ps-drill-frag" placeholder="Visible characters IN ORDER — e.g. 41..KCC..940, ..940S, just an S…" style="flex:1;min-width:200px;font-size:12.5px;padding:6px;border:1px solid #d6c58a;border-radius:7px;text-transform:uppercase">'
       +'</div>'
@@ -17512,7 +18370,12 @@ function psDrillShow(g){
       +'<select id="ps-drill-model" style="flex:1;min-width:130px;font-size:12.5px;padding:6px;border:1px solid #d6c58a;border-radius:7px"><option value="">Any model</option></select>'
       +'<input id="ps-drill-q" placeholder="e.g. rear sprocket 43 teeth, clutch plate…" style="flex:2;min-width:170px;font-size:12.5px;padding:6px;border:1px solid #d6c58a;border-radius:7px">'
       +'<button class="btn ghost sm" onclick="psDrillFind()">Find candidates</button></div>'
-      +'<div id="ps-drill-hits" style="margin-top:6px"></div>';
+      +'<div style="font-weight:800;margin:10px 0 2px">Still not it? Get a better look at the part:</div>'
+      +'<div style="margin-bottom:6px"><b>1.</b> Pull the part OUT of the box and '
+      +'<button class="btn ghost sm" onclick="psPickPhoto(\'camera\')">📷 photo the bare part</button></div>'
+      +'<div style="margin-bottom:6px"><b>2.</b> Look for an <b>embossed / cast number</b> on the part itself '
+      +'(near the centre, an edge, or a mounting face) and '
+      +'<button class="btn ghost sm" onclick="document.getElementById(\'ps-partno\').focus()">⌨ type it above</button></div>';
     const qi=el.querySelector('#ps-drill-q');
     if(qi) qi.addEventListener('keydown',function(e){ if(e.key==='Enter') psDrillFind(); });
   }
@@ -17521,6 +18384,23 @@ function psDrillShow(g){
   /* Seed the search box with whatever the AI thought it saw */
   const qi=document.getElementById('ps-drill-q');
   if(qi && !qi.value && g && g.part_guess && g.part_guess!=='unknown') qi.value=g.part_guess;
+  /* R74 — SEARCH WITH WHAT WE ALREADY READ, DO NOT WAIT TO BE ASKED.
+     (Ravi, 21-Aug-2026: "I can see cover upper case directly... why is it not
+     able to find out from this much also.")
+     Until today this panel typed the description into a box, drew a Find
+     candidates button beside it, and then stopped — the operator was asked to
+     go and pull the part out of the box while the app was already holding the
+     answer. On his label the description alone ("cover under case") narrows
+     55,681 parts to the eleven 37614* rows. So: seed the fragment too, and
+     run the search immediately. A press is for CHANGING the search, never for
+     starting the one we could already run. */
+  const fi=document.getElementById('ps-drill-frag');
+  if(fi && !fi.value && g && g.fragment) fi.value=g.fragment;
+  const canAuto=!!((fi&&fi.value.trim())||(qi&&qi.value.trim()));
+  if(canAuto){
+    if(hits) hits.innerHTML='<span style="color:#92700c">Searching the masters with what was read…</span>';
+    setTimeout(psDrillFind,0);
+  }
   if(SB_ON && !PS_MODELS){
     sbRpc('ps_models',{}).then(function(list){
       PS_MODELS=Array.isArray(list)?list:[];
@@ -17548,12 +18428,20 @@ function psDrillFind(){
     if(!out) return;
     const rows=Array.isArray(list)?list:[];
     if(!rows.length){ out.innerHTML='<span style="color:#b45309">Nothing close in the masters — save with the photo and description; it can be named later.</span>'; return; }
-    out.innerHTML=rows.slice(0,8).map(function(r){
-      return '<div style="margin-top:4px"><a href="#" onclick="psTakePart(\''+String(r.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800">'+raviEsc(r.part)+'</a>'
-        +' · '+raviEsc(r.desc||'')
-        +(r.mrp!=null?' · ₹'+raviEsc(String(r.mrp)):'')
-        +' <span style="color:#92700c;font-size:11px">('+raviEsc(r.source||'')+')</span></div>';
-    }).join('');
+    /* One record per line, aligned columns, near-black ink — a table, not a
+       deck. Tapping the number fills it in above. */
+    out.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<tr style="color:#78350f;font-weight:800;text-align:left">'
+      +'<th style="padding:2px 6px 4px 0">PART NO</th><th style="padding:2px 6px 4px 0">DESCRIPTION</th>'
+      +'<th style="padding:2px 0 4px 0;text-align:right">MRP</th></tr>'
+      +rows.slice(0,10).map(function(r){
+        return '<tr style="border-top:1px solid #fde68a">'
+          +'<td style="padding:3px 6px 3px 0;white-space:nowrap"><a href="#" onclick="psTakePart(\''+String(r.part).replace(/'/g,"\\'")+'\');return false" style="font-weight:800;color:#7c2d12">'+raviEsc(r.part)+'</a></td>'
+          +'<td style="padding:3px 6px 3px 0;color:#1c1917">'+raviEsc(r.desc||'')+'</td>'
+          +'<td style="padding:3px 0;text-align:right;white-space:nowrap;color:#1c1917">'+(r.mrp!=null&&String(r.mrp)!==''?'₹'+raviEsc(String(r.mrp)):'—')+'</td></tr>';
+      }).join('')
+      +'</table>'
+      +'<div style="color:#92700c;font-size:11px;margin-top:4px">'+rows.length+' match'+(rows.length===1?'':'es')+' · tap a number to use it · source: '+raviEsc(String((rows[0]||{}).source||''))+'</div>';
   }).catch(function(e){ if(out) out.innerHTML='Search failed: '+raviEsc(String(e.message||e).slice(0,100)); });
 }
 
