@@ -109,6 +109,11 @@
   #drill td.no button { background: none; border: 0; padding: 0; font: inherit; font-weight: 800; color: #7c2d12; text-decoration: underline; cursor: pointer; }
   #drill td.mrp { text-align: right; white-space: nowrap; }
   #drill .note { color: #92700c; font-size: 11.5px; margin-top: 5px; }
+  #drill .hint { color: #92700c; font-size: 11.5px; margin-top: 4px; }
+  #drill #dBare { flex: 1; background: var(--dark); color: #fff; border: 0; border-radius: 6px; padding: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  #drill #dSave { background: var(--red); color: #fff; border: 0; border-radius: 6px; padding: 11px 16px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+  #drill .est { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #fff; border: 1px solid #e7d9a6; }
+  #drill .est b { font-size: 17px; }
 
   #toast { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 20px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 9; }
 </style>
@@ -602,9 +607,13 @@ async function buildResult(body, barcode) {
       ['Note', 'Saved for checking — maybe a newer part or another brand.'],
       ...engineRows(body, ai.provider),
     ])
-    /* R75: not-in-master is NOT a confirmed number. Narrow it with the
-       fragment the engine kept and the description the label printed. */
-    drillShow({ fragment: ai.number_fragment || '', desc: ai.part_name })
+    /* R76: not-in-master is NOT a confirmed number. Seed the panel with the
+       number that WAS read — drillSearch() blurs and shortens it until the
+       master answers, which is the whole reason a read number is worth
+       seeding here at all. (Ravi, 21-Aug-2026: "seed the fragment with the
+       read number on NOT IN MASTER too".) */
+    drillShow({ fragment: ai.number_fragment || (ai.part_numbers || [])[0] || '',
+                desc: ai.part_name })
     return
   }
 
@@ -671,27 +680,44 @@ function renderCard(kind, title, rows, hideSave = false) {
 }
 
 /* --------------------------------------------------------------------------
-   R75 — SEARCH WITH WHAT WE ALREADY READ.  (Ravi, 21-Aug-2026)
+   R76 — THE RECOGNITION LADDER.  (Ravi, 21-Aug-2026)
 
-   R74 taught the engine to keep the half of a part number it COULD read and
-   hand it back as number_fragment, and gave index.html a panel that turns that
-   fragment plus the printed description into a shortlist. This page — the one
-   the parts man is actually holding — never got that half. So a label whose
-   number is under scratched polythene still ended at "NOT IN MASTER" with
-   nothing to choose from, while the answer sat in the master the whole time.
+     "Our last objective is I should be able to capture what is the part.
+      Simple. Don't make it complex. Scanning it - recognising the part. If not
+      recognised, then scanning the part itself totally and recognising the
+      part. If 1 accurate part no is not coming even after all permutations and
+      combinations, then showing all possible results only if less than 10. If
+      more than 10 then asking the user to enter manually what it is and
+      guessing the price approximately by what it is."
 
-   Measured on the live database, 21-Aug-2026:
-     fragment_parts('376','cover under case')  -> 10 rows, every one 37614*
-     suggest_parts('cover under case')         -> 60 rows
-   The printed description alone narrows 55,681 parts to 60; with the three
-   characters a person can still read on the label it is 10.
+   So this panel is not a list any more. It is a ladder that ends in an answer:
 
-   So the panel SEEDS ITSELF from the read and RUNS THE SEARCH IMMEDIATELY.
-   The button is for CHANGING the search, never for starting the one we could
-   already run. Candidates are dense table rows — one part per line, tap the
-   number to take it — not cards (rule 8).
+     0 candidates   -> photograph the BARE PART (rung 2) — castings outlive labels
+     1 candidate    -> that IS the part. Take it, do not ask.
+     2..10          -> show them all, one tap each (rung 3)
+     more than 10   -> do NOT dump 60 rows on a man holding a box. Ask what it
+                       is, and meanwhile price it approximately from the very
+                       parts that matched (rung 4).
+
+   THE PERMUTATIONS ARE THE APP'S JOB, NOT HIS. fragment_parts() matches the
+   visible characters IN ORDER, so ONE camera substitution (0 read as O) makes a
+   whole correct number worth nothing. Measured on the live database, on a part
+   that IS in the master:
+
+     fragment_parts('37614KST90O','cover under case')  ->  0 rows
+     fragment_parts('37614KST90.','cover under case')  ->  2 rows, score 98
+     fragment_parts('37614KST','cover under case')     ->  3 rows
+     fragment_parts('37614','cover under case')        -> 10 rows
+
+   drillSearch() therefore walks that itself — the number as read, then with
+   the tail blurred, then progressively shortened, then the description alone —
+   and stops at the first rung that answers. That is why the read number can now
+   be seeded straight from a NOT-IN-MASTER result: seeding it alone would have
+   shown an empty list, and seeding it with the cascade shows the two parts it
+   really is.
    -------------------------------------------------------------------------- */
 let PS_MODELS = null, DRILL_SEQ = 0
+const LIST_MAX = 10                    // "only if less than 10" — Ravi
 const esc = (v) => String(v == null ? '' : v)
   .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
@@ -706,16 +732,20 @@ function drillShow(seed = {}) {
   const d = $('drill')
   if (!d.innerHTML) {
     d.innerHTML = `
-      <div class="hd">🧭 No confirmed number — narrowing the masters with what was read:</div>
+      <div class="hd" id="dHead">🧭 Narrowing the masters with what was read…</div>
       <div id="dHits"></div>
-      <div class="sub">Not it? Add anything else you can see on the label:</div>
+      <div class="sub">Add anything else you can see on the label:</div>
       <div class="row"><input id="dFrag" placeholder="Visible characters IN ORDER — e.g. 376, 41..KCC..940, ..940S"></div>
       <div class="row">
         <select id="dModel"><option value="">Any model</option></select>
-        <input id="dQ" placeholder="What it says / looks like — e.g. cover under case">
+        <input id="dQ" placeholder="What it is — e.g. cover under case">
         <button id="dFind">Search</button>
-      </div>`
+      </div>
+      <div class="sub">Still not it? Get a better look at the part:</div>
+      <div class="row"><button id="dBare">📷 Photograph the BARE part</button></div>
+      <div class="hint">Pull it out of the box, put it on a plain surface and fill the frame. The number cast into the part outlives the label stuck on the box.</div>`
     $('dFind').onclick = drillFind
+    $('dBare').onclick = () => $('camInput').click()
     $('dFrag').addEventListener('keydown', (e) => { if (e.key === 'Enter') drillFind() })
     $('dQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') drillFind() })
   }
@@ -727,7 +757,7 @@ function drillShow(seed = {}) {
     $('dHits').innerHTML = '<div class="note">Searching the masters with what was read…</div>'
     drillFind()
   } else if (!$('dHits').innerHTML) {
-    $('dHits').innerHTML = '<div class="note">Nothing was read to search with — type whatever you can see below.</div>'
+    drillHead('🧭 Nothing was read — photograph the bare part, or type what you can see.')
   }
   if (!PS_MODELS) {
     PS_MODELS = []
@@ -741,51 +771,141 @@ function drillShow(seed = {}) {
   }
 }
 
+function drillHead(t) { const h = $('dHead'); if (h) h.textContent = t }
+
+/** ALL PERMUTATIONS AND COMBINATIONS, RUN BY THE APP.
+ *  The number as read, then with its tail blurred one and two characters, then
+ *  shortened to 8/6/5/4, then the description on its own. First rung that
+ *  answers wins, so a good read still costs exactly one call. */
+async function drillSearch(frag, q, model) {
+  const tries = []
+  if (frag) {
+    tries.push(frag)
+    if (frag.indexOf('.') < 0 && frag.length >= 5) {
+      tries.push(frag.slice(0, -1) + '.')
+      tries.push(frag.slice(0, -2) + '..')
+      for (const k of [8, 6, 5, 4]) if (k < frag.length) tries.push(frag.slice(0, k))
+    }
+  }
+  const seen = new Set()
+  for (const t of tries) {
+    if (seen.has(t) || t.replace(/\./g, '').length < 3) continue
+    seen.add(t)
+    const { data, error } = await sb.rpc('fragment_parts', { p_frag: t, q: q || null, p_model: model })
+    if (error) return { rows: [], how: '', error }
+    if (Array.isArray(data) && data.length) {
+      return { rows: data, how: t === frag ? `the number as read (${t})` : `${frag} blurred to ${t}` }
+    }
+  }
+  if (q) {
+    const { data, error } = await sb.rpc('suggest_parts', { q, p_model: model })
+    if (error) return { rows: [], how: '', error }
+    if (Array.isArray(data) && data.length) {
+      return { rows: data, how: frag ? `the description alone (${frag} matched nothing)` : 'the description' }
+    }
+  }
+  return { rows: [], how: '' }
+}
+
+/** An approximate price for a part we cannot number, taken from the parts that
+ *  DID match — their own middle price. Falls back to the category average when
+ *  too few of them carry a price. */
+async function estimateFor(rows) {
+  const priced = rows.map((r) => Number(r.mrp)).filter((v) => isFinite(v) && v > 0).sort((a, b) => a - b)
+  const tally = {}
+  rows.forEach((r) => { const c = r.category; if (c) tally[c] = (tally[c] || 0) + 1 })
+  const category = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || null
+  if (priced.length >= 3) {
+    return { mrp: Math.round(priced[Math.floor(priced.length / 2)]),
+             lo: priced[0], hi: priced[priced.length - 1], n: priced.length,
+             category, source: 'candidates' }
+  }
+  const avg = await avgFor(category)
+  return { mrp: avg, lo: null, hi: null, n: 0, category, source: avg != null ? 'category' : null }
+}
+
 async function drillFind() {
   const out = $('dHits')
-  const frag = $('dFrag').value.trim()
+  const frag = $('dFrag').value.trim().toUpperCase()
   const q = $('dQ').value.trim()
   const model = $('dModel').value || null
   if (!frag && !q) {
-    out.innerHTML = '<div class="note">Type the visible characters and/or what the part looks like first.</div>'
+    drillHead('🧭 Type the visible characters, or what the part is.')
+    out.innerHTML = ''
     return
   }
   const my = ++DRILL_SEQ
-  out.innerHTML = '<div class="note">Searching the masters…</div>'
-  /* A fragment given -> the word-recognition matcher: visible characters in
-     order + description + model, exactly like reading a smudged word from its
-     first and last letters. Otherwise the description suggester. */
-  const { data, error } = frag
-    ? await sb.rpc('fragment_parts', { p_frag: frag, q: q || null, p_model: model })
-    : await sb.rpc('suggest_parts', { q, p_model: model })
+  out.innerHTML = '<div class="note">Trying the number as read, then blurred, then the description…</div>'
+  const { rows, how, error } = await drillSearch(frag, q, model)
   if (my !== DRILL_SEQ) return                     // a newer search already won
-  if (error) { out.innerHTML = `<div class="note">Search failed: ${esc(error.message)}</div>`; return }
-  const rows = Array.isArray(data) ? data : []
-  if (!rows.length) {
-    out.innerHTML = '<div class="note">Nothing close in the masters — save it with the photo and description; it can be named later.</div>'
+  if (error) {
+    drillHead('🧭 Search failed')
+    out.innerHTML = `<div class="note">${esc(error.message)}</div>`
     return
   }
-  const top = rows.slice(0, 12)
-  out.innerHTML = '<table><tr><th>PART NO</th><th>DESCRIPTION</th><th style="text-align:right">MRP</th></tr>'
-    + top.map((r, i) => `<tr>`
+
+  // ---- rung 1: nothing at all -> get a better look at the part -------------
+  if (!rows.length) {
+    drillHead('🧭 Nothing in the masters matches that yet')
+    out.innerHTML = '<div class="note">Photograph the BARE part below, or add a visible character or a better description.</div>'
+    return
+  }
+
+  // ---- rung 2: exactly one -> that IS the part -----------------------------
+  if (rows.length === 1) {
+    drillHead('🧭 One part in the whole master matches — taking it')
+    out.innerHTML = drillTable(rows)
+    drillWire(rows)
+    takeCandidate(String(rows[0].part), how)
+    return
+  }
+
+  // ---- rung 3: a shortlist a person can actually read ----------------------
+  if (rows.length <= LIST_MAX) {
+    drillHead(`🧭 ${rows.length} possible parts — tap the one in your hand`)
+    out.innerHTML = drillTable(rows) + `<div class="note">matched on ${esc(how)}</div>`
+    drillWire(rows)
+    return
+  }
+
+  // ---- rung 4: too many to read -> ask what it is, price it meanwhile ------
+  drillHead(`🧭 ${rows.length} parts still match — too many to pick from`)
+  const est = await estimateFor(rows)
+  if (my !== DRILL_SEQ) return
+  out.innerHTML = '<div class="note">Type what the part <b>is</b> in the box below and press Search — every word cuts the list.</div>'
+    + (est.mrp != null
+      ? `<div class="est">Approximate price for this kind of part: <b>${money(est.mrp)}</b>`
+        + (est.source === 'candidates'
+          ? `<div class="note">middle price of the ${est.n} matching parts · ${money(est.lo)} to ${money(est.hi)}${est.category ? ' · mostly ' + esc(est.category) : ''}</div>`
+          : `<div class="note">average for ${esc(est.category || 'this category')}</div>`)
+        + '<button id="dSave">💾 Save it as this, at about ' + money(est.mrp) + '</button></div>'
+      : '')
+  const sv = $('dSave')
+  if (sv) sv.onclick = () => saveAsDescribed(est)
+  $('dQ').focus()
+}
+
+function drillTable(rows) {
+  return '<table><tr><th>PART NO</th><th>DESCRIPTION</th><th style="text-align:right">MRP</th></tr>'
+    + rows.map((r, i) => `<tr>`
         + `<td class="no"><button id="dPick-${i}">${esc(r.part)}</button></td>`
         + `<td>${esc(r.desc) || '—'}</td>`
         + `<td class="mrp">${money(r.mrp)}</td></tr>`).join('')
     + '</table>'
-    + `<div class="note">${rows.length} match${rows.length === 1 ? '' : 'es'}`
-    + `${rows.length > top.length ? ` · closest ${top.length} shown` : ''}`
-    + ` · tap a number to take it · ${esc((rows[0] || {}).source || '')}</div>`
-  top.forEach((r, i) => {
+}
+
+function drillWire(rows) {
+  rows.forEach((r, i) => {
     const b = $(`dPick-${i}`)
     if (b) b.onclick = () => takeCandidate(String(r.part))
   })
 }
 
-/** A candidate the operator taps becomes the identified part — carrying the
- *  photo and the OCR text of the scan it came from, so the evidence is not
- *  thrown away by the act of choosing. The shortlist stays open: if the pick
- *  was wrong, the next one is one tap away. */
-async function takeCandidate(partNo) {
+/** A candidate the operator taps — or the single one the ladder found — becomes
+ *  the identified part, carrying the photo and the OCR text of the scan it came
+ *  from, so the evidence is not thrown away by the act of choosing. The
+ *  shortlist stays open: if the pick was wrong, the next one is one tap away. */
+async function takeCandidate(partNo, how) {
   $('manualNo').value = partNo
   const hit = await masterRow(partNo)
   if (!hit) { toast('Could not load ' + partNo); return }
@@ -800,15 +920,42 @@ async function takeCandidate(partNo) {
     match_method: 'manual', match_confidence: 1,
     mrp: hit.mrp != null ? Number(hit.mrp) : null,
     price_source: hit.mrp != null ? 'master' : null, qty: 1,
-    notes: 'chosen from the narrowing shortlist',
+    notes: 'narrowing ladder' + (how ? ': ' + how : ''),
   }
-  renderCard('ok', '✔ TAKEN FROM THE SHORTLIST', [
+  renderCard('ok', '✔ THIS IS THE PART', [
     ['Part no', `<b class="big">${esc(hit.part_no)}</b>`],
     ['Description', `<b>${esc(hit.description) || '—'}</b>`],
     ['Category', [hit.category, hit.subcategory].filter(Boolean).join(' · ') || '—'],
     ['MRP', `<b class="big">${money(hit.mrp)}</b>`],
     ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
-    ['Chosen', '<small>The photo and the read stay with it. Wrong one? Tap another below.</small>'],
+    ['Found by', `<small>${how ? esc(how) : 'the shortlist below'}. The photo and the read stay with it — wrong one? Tap another below.</small>`],
+  ])
+}
+
+/** Rung 4's answer: no number could be pinned, so save WHAT IT IS with an
+ *  approximate price. A part captured with a price band beats a part not
+ *  captured at all — the number can be filled in later from the photo. */
+function saveAsDescribed(est) {
+  const s = lastScan || {}
+  const what = $('dQ').value.trim() || s.ai_name || ''
+  if (!what) { toast('Type what the part is first'); $('dQ').focus(); return }
+  pending = {
+    photo_path: s.photo_path || null,
+    ocr_text: s.ocr_text || null,
+    provider: s.provider || 'none',
+    ai_name: s.ai_name || null, ai_category: s.ai_category || null, ai_brand: s.ai_brand || null,
+    part_no: null, description: what, category: est.category || s.ai_category || null,
+    match_method: 'visual', match_confidence: 0.3,
+    mrp: est.mrp != null ? Number(est.mrp) : null,
+    price_source: est.source === 'candidates' ? 'category_average' : (est.mrp != null ? 'category_average' : null),
+    qty: 1,
+    notes: 'no single part number' + (est.n ? ` — price is the middle of ${est.n} parts that matched` : ''),
+  }
+  renderCard('info', '👁 SAVED AS DESCRIBED — NO NUMBER', [
+    ['What it is', `<b class="big">${esc(what)}</b>`],
+    ['Category', esc(est.category || '—')],
+    ['Approximate price', `<b class="big">${money(est.mrp)}</b> <small>(approximate — not exact)</small>`],
+    ['Note', '<small>The photo is kept with it. The part number can be filled in later from that photo.</small>'],
   ])
 }
 
