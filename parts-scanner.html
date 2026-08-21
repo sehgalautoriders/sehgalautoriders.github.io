@@ -91,6 +91,25 @@
   #log .m-none { color: var(--bad); font-weight: 700; }
   #log .m-manual { color: #333; font-weight: 700; }
 
+  /* R75 — THE NARROWING PANEL. Dense TABLE rows, never cards (rule 8):
+     one candidate per line, aligned columns, a 1px divider. */
+  #drill { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; font-size: 13px; line-height: 1.5; }
+  #drill .hd { font-weight: 800; margin-bottom: 6px; }
+  #drill .sub { font-weight: 800; margin: 10px 0 2px; font-size: 12.5px; }
+  #drill .row { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  #drill input, #drill select { font-size: 14px; padding: 8px; border: 1px solid #d6c58a; border-radius: 6px; min-width: 0; background: #fff; color: #1c1917; }
+  #drill #dFrag { flex: 1; min-width: 180px; text-transform: uppercase; }
+  #drill #dQ { flex: 2; min-width: 150px; }
+  #drill #dModel { flex: 1; min-width: 118px; }
+  #drill #dFind { background: var(--dark); color: #fff; border: 0; border-radius: 6px; padding: 0 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  #drill table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  #drill th { text-align: left; font-size: 11px; letter-spacing: .03em; padding: 2px 6px 4px 0; }
+  #drill td { padding: 7px 6px 7px 0; border-top: 1px solid #fde68a; color: #1c1917; vertical-align: top; }
+  #drill td.no { white-space: nowrap; }
+  #drill td.no button { background: none; border: 0; padding: 0; font: inherit; font-weight: 800; color: #7c2d12; text-decoration: underline; cursor: pointer; }
+  #drill td.mrp { text-align: right; white-space: nowrap; }
+  #drill .note { color: #92700c; font-size: 11.5px; margin-top: 5px; }
+
   #toast { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); background: var(--dark); color: #fff; padding: 10px 20px; border-radius: 20px; font-size: 15px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 9; }
 </style>
 </head>
@@ -131,6 +150,7 @@
 
       <div id="busy" class="hidden"></div>
       <div id="result" class="hidden"></div>
+      <div id="drill" class="hidden"></div>
 
       <div class="manual">
         <input id="manualNo" placeholder="Or type part no…">
@@ -171,6 +191,8 @@ const $ = (id) => document.getElementById(id)
 let profile = null
 let pending = null          // the scan awaiting SAVE
 let scanPreviewUrl = ''
+let lastScan = null         // R75: photo + read of the scan on screen, so a
+                            // candidate picked from the shortlist keeps them
 
 // ---------------------------------------------------------------- helpers
 function toast(msg) {
@@ -266,6 +288,7 @@ async function readBarcode(file) {
 async function onPhoto(file) {
   if (!file) return
   $('result').classList.add('hidden')
+  drillHide(true)            // a new photo starts a new search, not the old one
   const busy = $('busy')
   busy.classList.remove('hidden')
   if (scanPreviewUrl) URL.revokeObjectURL(scanPreviewUrl)
@@ -442,6 +465,14 @@ function engineRows(body, provider) {
 
 async function buildResult(body, barcode) {
   const ai = body.result
+  lastScan = {
+    photo_path: body.photo_path || null,
+    ocr_text: (ai && ai.raw_text) || null,
+    provider: (ai && ai.provider) || 'none',
+    ai_name: (ai && ai.part_name) || null,
+    ai_category: (ai && ai.category) || null,
+    ai_brand: (ai && ai.brand) || null,
+  }
   $('busy').classList.add('hidden')
   if (scanPreviewUrl) { URL.revokeObjectURL(scanPreviewUrl); scanPreviewUrl = '' }
 
@@ -473,6 +504,7 @@ async function buildResult(body, barcode) {
         ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
         ...engineRows(body, 'barcode'),
       ])
+      drillHide()
     } else {
       showUnreadable(body.photo_path,
         `Barcode read "${barcode}" but it is not in the master, and the label text was unreadable.`)
@@ -500,6 +532,7 @@ async function buildResult(body, barcode) {
       ...(m.hit.superseded_by ? [['Superseded by', m.hit.superseded_by]] : []),
       ...engineRows(body, ai.provider),
     ])
+    drillHide()
     return
   }
 
@@ -544,6 +577,7 @@ async function buildResult(body, barcode) {
       ...(others ? [['Not this one?', `<small>${others}<br>Type the right number below and press Find.</small>`]] : []),
       ...engineRows(body, ai.provider),
     ])
+    drillHide()
     return
   }
 
@@ -568,6 +602,9 @@ async function buildResult(body, barcode) {
       ['Note', 'Saved for checking — maybe a newer part or another brand.'],
       ...engineRows(body, ai.provider),
     ])
+    /* R75: not-in-master is NOT a confirmed number. Narrow it with the
+       fragment the engine kept and the description the label printed. */
+    drillShow({ fragment: ai.number_fragment || '', desc: ai.part_name })
     return
   }
 
@@ -590,9 +627,10 @@ async function buildResult(body, barcode) {
     ['Avg price of this category', money(pending.mrp) + (pending.price_source === 'category_average' ? ' <small>(average — not exact)</small>' : '')],
     ...engineRows(body, ai.provider),
   ])
+  drillShow({ fragment: ai.number_fragment || '', desc: ai.part_name })
 }
 
-function showUnreadable(photoPath, msg) {
+function showUnreadable(photoPath, msg, seed = {}) {
   pending = photoPath ? {
     photo_path: photoPath, ocr_text: null, provider: 'none',
     ai_name: null, ai_category: null, ai_brand: null,
@@ -602,6 +640,7 @@ function showUnreadable(photoPath, msg) {
   renderCard('bad', '✖ COULD NOT READ', [
     ['What now', msg + '<br>Retake closer to the label, or type the part no below.'],
   ], !photoPath)
+  drillShow(seed)
 }
 
 function renderCard(kind, title, rows, hideSave = false) {
@@ -626,9 +665,151 @@ function renderCard(kind, title, rows, hideSave = false) {
     $('qMinus').onclick = () => { const q = $('qty'); q.value = Math.max(1, +q.value - 1) }
     $('qPlus').onclick = () => { const q = $('qty'); q.value = +q.value + 1 }
     $('saveBtn').onclick = savePending
-    $('skipBtn').onclick = () => { r.classList.add('hidden'); pending = null; $('camInput').click() }
+    $('skipBtn').onclick = () => { r.classList.add('hidden'); drillHide(true); pending = null; $('camInput').click() }
   }
   r.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+
+/* --------------------------------------------------------------------------
+   R75 — SEARCH WITH WHAT WE ALREADY READ.  (Ravi, 21-Aug-2026)
+
+   R74 taught the engine to keep the half of a part number it COULD read and
+   hand it back as number_fragment, and gave index.html a panel that turns that
+   fragment plus the printed description into a shortlist. This page — the one
+   the parts man is actually holding — never got that half. So a label whose
+   number is under scratched polythene still ended at "NOT IN MASTER" with
+   nothing to choose from, while the answer sat in the master the whole time.
+
+   Measured on the live database, 21-Aug-2026:
+     fragment_parts('376','cover under case')  -> 10 rows, every one 37614*
+     suggest_parts('cover under case')         -> 60 rows
+   The printed description alone narrows 55,681 parts to 60; with the three
+   characters a person can still read on the label it is 10.
+
+   So the panel SEEDS ITSELF from the read and RUNS THE SEARCH IMMEDIATELY.
+   The button is for CHANGING the search, never for starting the one we could
+   already run. Candidates are dense table rows — one part per line, tap the
+   number to take it — not cards (rule 8).
+   -------------------------------------------------------------------------- */
+let PS_MODELS = null, DRILL_SEQ = 0
+const esc = (v) => String(v == null ? '' : v)
+  .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+/** clear=true wipes the boxes: a new photo or a saved part starts a new
+ *  search. Plain hide keeps them, so a confirmed match can be reversed. */
+function drillHide(clear = false) {
+  $('drill').classList.add('hidden')
+  if (clear && $('dFrag')) { $('dFrag').value = ''; $('dQ').value = ''; $('dHits').innerHTML = '' }
+}
+
+function drillShow(seed = {}) {
+  const d = $('drill')
+  if (!d.innerHTML) {
+    d.innerHTML = `
+      <div class="hd">🧭 No confirmed number — narrowing the masters with what was read:</div>
+      <div id="dHits"></div>
+      <div class="sub">Not it? Add anything else you can see on the label:</div>
+      <div class="row"><input id="dFrag" placeholder="Visible characters IN ORDER — e.g. 376, 41..KCC..940, ..940S"></div>
+      <div class="row">
+        <select id="dModel"><option value="">Any model</option></select>
+        <input id="dQ" placeholder="What it says / looks like — e.g. cover under case">
+        <button id="dFind">Search</button>
+      </div>`
+    $('dFind').onclick = drillFind
+    $('dFrag').addEventListener('keydown', (e) => { if (e.key === 'Enter') drillFind() })
+    $('dQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') drillFind() })
+  }
+  d.classList.remove('hidden')
+  // A seed never overwrites what the operator has already typed.
+  if (seed.fragment && !$('dFrag').value) $('dFrag').value = seed.fragment
+  if (seed.desc && String(seed.desc).toLowerCase() !== 'unknown' && !$('dQ').value) $('dQ').value = seed.desc
+  if ($('dFrag').value.trim() || $('dQ').value.trim()) {
+    $('dHits').innerHTML = '<div class="note">Searching the masters with what was read…</div>'
+    drillFind()
+  } else if (!$('dHits').innerHTML) {
+    $('dHits').innerHTML = '<div class="note">Nothing was read to search with — type whatever you can see below.</div>'
+  }
+  if (!PS_MODELS) {
+    PS_MODELS = []
+    sb.rpc('ps_models', {}).then(({ data }) => {
+      PS_MODELS = Array.isArray(data) ? data : []
+      const sel = $('dModel')
+      if (sel && sel.options.length <= 1) PS_MODELS.forEach((m) => {
+        const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o)
+      })
+    }).catch(() => {})
+  }
+}
+
+async function drillFind() {
+  const out = $('dHits')
+  const frag = $('dFrag').value.trim()
+  const q = $('dQ').value.trim()
+  const model = $('dModel').value || null
+  if (!frag && !q) {
+    out.innerHTML = '<div class="note">Type the visible characters and/or what the part looks like first.</div>'
+    return
+  }
+  const my = ++DRILL_SEQ
+  out.innerHTML = '<div class="note">Searching the masters…</div>'
+  /* A fragment given -> the word-recognition matcher: visible characters in
+     order + description + model, exactly like reading a smudged word from its
+     first and last letters. Otherwise the description suggester. */
+  const { data, error } = frag
+    ? await sb.rpc('fragment_parts', { p_frag: frag, q: q || null, p_model: model })
+    : await sb.rpc('suggest_parts', { q, p_model: model })
+  if (my !== DRILL_SEQ) return                     // a newer search already won
+  if (error) { out.innerHTML = `<div class="note">Search failed: ${esc(error.message)}</div>`; return }
+  const rows = Array.isArray(data) ? data : []
+  if (!rows.length) {
+    out.innerHTML = '<div class="note">Nothing close in the masters — save it with the photo and description; it can be named later.</div>'
+    return
+  }
+  const top = rows.slice(0, 12)
+  out.innerHTML = '<table><tr><th>PART NO</th><th>DESCRIPTION</th><th style="text-align:right">MRP</th></tr>'
+    + top.map((r, i) => `<tr>`
+        + `<td class="no"><button id="dPick-${i}">${esc(r.part)}</button></td>`
+        + `<td>${esc(r.desc) || '—'}</td>`
+        + `<td class="mrp">${money(r.mrp)}</td></tr>`).join('')
+    + '</table>'
+    + `<div class="note">${rows.length} match${rows.length === 1 ? '' : 'es'}`
+    + `${rows.length > top.length ? ` · closest ${top.length} shown` : ''}`
+    + ` · tap a number to take it · ${esc((rows[0] || {}).source || '')}</div>`
+  top.forEach((r, i) => {
+    const b = $(`dPick-${i}`)
+    if (b) b.onclick = () => takeCandidate(String(r.part))
+  })
+}
+
+/** A candidate the operator taps becomes the identified part — carrying the
+ *  photo and the OCR text of the scan it came from, so the evidence is not
+ *  thrown away by the act of choosing. The shortlist stays open: if the pick
+ *  was wrong, the next one is one tap away. */
+async function takeCandidate(partNo) {
+  $('manualNo').value = partNo
+  const hit = await masterRow(partNo)
+  if (!hit) { toast('Could not load ' + partNo); return }
+  const dms = await stockOf(partNo)
+  const s = lastScan || {}
+  pending = {
+    photo_path: s.photo_path || null,
+    ocr_text: s.ocr_text || ('narrowed: ' + partNo),
+    provider: s.provider || 'none',
+    ai_name: s.ai_name || null, ai_category: s.ai_category || null, ai_brand: s.ai_brand || null,
+    part_no: hit.part_no, description: hit.description, category: hit.category,
+    match_method: 'manual', match_confidence: 1,
+    mrp: hit.mrp != null ? Number(hit.mrp) : null,
+    price_source: hit.mrp != null ? 'master' : null, qty: 1,
+    notes: 'chosen from the narrowing shortlist',
+  }
+  renderCard('ok', '✔ TAKEN FROM THE SHORTLIST', [
+    ['Part no', `<b class="big">${esc(hit.part_no)}</b>`],
+    ['Description', `<b>${esc(hit.description) || '—'}</b>`],
+    ['Category', [hit.category, hit.subcategory].filter(Boolean).join(' · ') || '—'],
+    ['MRP', `<b class="big">${money(hit.mrp)}</b>`],
+    ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
+    ['Chosen', '<small>The photo and the read stay with it. Wrong one? Tap another below.</small>'],
+  ])
 }
 
 // ---------------------------------------------------------------- saving
@@ -649,6 +830,7 @@ async function savePending() {
   }
   pending = null
   $('result').classList.add('hidden')
+  drillHide(true)
   toast('Saved ✔')
   refreshLog()
 }
@@ -658,6 +840,7 @@ async function manualFind() {
   const raw = $('manualNo').value.trim()
   if (!raw) return
   $('result').classList.add('hidden')
+  drillHide(true)
   const { data, error } = await sb.rpc('match_part', { p_raw: raw })
   if (error) { toast(error.message); return }
   if (data && data.length) {
@@ -684,6 +867,7 @@ async function manualFind() {
       ['MRP', `<b class="big">${money(hit.mrp)}</b>`],
       ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
     ])
+    drillHide()
   } else {
     /* Same courtesy as the camera path: a number typed off a worn box is as
        likely to be one character out as a number read off one. */
@@ -711,9 +895,12 @@ async function manualFind() {
         ['MRP', `<b class="big">${money(pending.mrp)}</b>`],
         ['DMS stock', dms > 0 ? dms + ' pcs' : 'none'],
       ])
+      drillHide()
       return
     }
-    showUnreadable(null, `"${raw}" is not in the master, and nothing close enough to it is either.`)
+    /* R75: a typed number the master rejects is the strongest fragment there
+       is — hand it straight to the narrowing search instead of stopping. */
+    showUnreadable(null, `"${raw}" is not in the master, and nothing close enough to it is either.`, { fragment: raw })
   }
 }
 
