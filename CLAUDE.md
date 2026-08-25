@@ -83,7 +83,21 @@ closing.
 - **Correct any mistake openly.** Say it plainly once and move on. No long
   apology, no repeating it later.
 
-## 1.6 Never write these
+## 1.6 Naming a chat
+
+Ravi's rule, 25-Aug-2026: **every chat is named `dd-mm-yy - hh:mm`.**
+
+- Example: `25-08-26 - 18:57`
+- Use **IST** (Asia/Kolkata), not UTC. Get it with
+  `TZ=Asia/Kolkata date '+%d-%m-%y - %H:%M'`.
+- The time is when the chat **started**, not when it ended.
+- Nothing else in the name. No topic, no description, no version number.
+
+The session title on claude.ai is set by the interface, not by anything I can
+call. So at the **start of every chat**, give him the exact string on its own
+line so he can rename it in one copy-paste. Do not wait to be asked.
+
+## 1.7 Never write these
 
 - "I hope this email finds you well."
 - "At the outset, we would like to state…"
@@ -93,7 +107,7 @@ closing.
 - "furthermore", "moreover", "in addition" repeated in every paragraph.
 - Legal language where a simple operational instruction is enough.
 
-## 1.7 Check before sending any reply
+## 1.8 Check before sending any reply
 
 - Can a non-technical manager understand the main point without help?
 - Is it deep enough to actually decide?
@@ -244,38 +258,73 @@ harness before the code.
 
 # PART 5 — WHERE THINGS STAND
 
-Update this section whenever work lands.
+Update this section whenever work lands. It is the handover to the next chat.
 
-**Branch `claude/estimate-parts-tree-jn37h1`, PR #1, draft, not merged.**
-Current build R27-2026.08.03.2.
+**Last updated: 25-08-26, 18:57 IST.**
 
-Done:
-- R25 — estimate part search + typed fallback; part:labour rules (dearest kept,
-  never the last, part removal cascades, adoption of untagged labour); parts tree
-  in All-India Part Finder; insurance 26 standard reasons, day board, and the
-  line explaining why the customer list is short.
-- R26 — Parts Scanner UI rebuilt; 8 mascots given real jobs.
-- R27 — Date of Sale now actually fetches (`heroCustLookup` was short-circuiting
-  on the phone cache and never asking the server); Model and Date of Sale frozen
-  when they come from DMS records, with WM/GM/CEO unlock.
+Note on dates: the commits for R25–R27 are stamped 03/04-08-26 because the
+build container's clock was wrong while that work was done. The real date of
+all of it is 25-08-26. Trust this line, not the git timestamps.
 
-Pending:
-- **Merge PR #1.** Nothing above is live until then.
-- Enable **Drive API** under Services in the Apps Script project. Console
+## The one line
+
+Branch `claude/estimate-parts-tree-jn37h1`, **PR #1, still a DRAFT, not merged.**
+Build R27-2026.08.03.2. Five commits. **Nothing here is live — the staff are
+still on R24**, because GitHub Pages deploys from `main` and this has not been
+merged into `main`.
+
+## Done and pushed
+
+| Release | What went in |
+|---|---|
+| R25 | Estimate part search by name or part number, any word order · typed fallback for a part not in the master · part:labour rules — dearest labour kept (⭐), others strikeable, never the last, part removal takes all its labour, untagged labour adopted so it cannot outlive its part · "labour only" button · parts tree in All-India Part Finder · insurance: 26 standard reasons shipped in the app, day board (called today, closed today, MTD, MTD conversion, follow-ups), and the line naming exactly what is filtering the customer list with a "show whole book" button |
+| R26 | Parts Scanner screen rebuilt. 8 of the 33 mascots given real jobs — Hero robot in the banner, parts-box robot on the tip, and the status line changes character with the outcome |
+| R27 | Date of Sale now actually fetches · Model and Date of Sale frozen when they come from DMS records, WM/GM/CEO can unlock |
+| — | This `CLAUDE.md` |
+
+## The two R27 root causes, so they are not re-debugged
+
+1. **Date of Sale.** `heroCustLookup` is local-first and short-circuits: if the
+   phone's IndexedDB copy has the reg, it returns and **never asks the server**.
+   `custWriteBatch` writes `dos:r.d`, so a chunk row without `d` is cached with
+   `dos:''` — and from then on that vehicle's sale date could only be typed by
+   hand. Re-syncing cannot fix it; the sync is what writes the blank. Fixed with
+   `heroVehicleResolve()`, which asks the server when the phone's answer is
+   missing a field the estimate needs, then merges.
+2. **Model freeze.** `esOnGatePick` ends with `esMaybeAskModel(g)`, which opened
+   the confirm modal **synchronously** on every gate pick, while the DMS lock ran
+   off an async callback landing afterwards. The SA was always asked, and the
+   freeze arrived too late. Fixed by holding the question until records answer
+   (7-second limit), then freezing without asking.
+
+## Pending — Ravi's side
+
+- **Merge PR #1**, or say to hold it as draft. Nothing is live until it merges.
+- **Enable Drive API** under Services in the Apps Script project. Console
   setting, not code. Blocks the live Power BI all-India stock fetch. The project
-  number is in the error message on screen — it is not written down here because
-  this repo is public.
+  number is in the on-screen error message — not written here, this repo is
+  public.
+- **Send the remaining Estimate module list.** He has said twice the module is
+  not finished. Ask; do not guess.
+
+## Pending — build side
+
 - Daily insurance-done update, so closed policies drop off the worklist. Needs a
-  server route.
+  server route in Apps Script.
 - Per-customer daily conversions tracker. Needs a server route.
-- Remaining Estimate module items — Ravi has said twice the module is not
-  finished. Ask him for the list rather than guessing.
+
+## Deliberately not done
+
+- The bottom nav bar in the Parts Scanner mockups. The app already has its own
+  navigation and a second one would fight it. Say so if he asks again.
+- The source `.docx` is not committed. This repo is public and it is an internal
+  document; Part 1 already carries the standard in full.
 
 ---
 
 # PART 6 — BEFORE YOU REPLY
 
-Run Part 1.7. Then check three things:
+Run Part 1.8. Then check three things:
 
 1. Did I answer in Level 5 IIMK Human, or did I slip back into AI wording?
 2. Did I test what I am claiming, or am I assuming?
