@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 61;
-window.HERO_BUILD = 'R76-2026.08.21.1';
+window.HERO_RELEASE = 62;
+window.HERO_BUILD = 'R77-2026.08.28.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -4446,7 +4446,28 @@ function jget(action, params, cb){
    waiting via a small badge in the nav bar — nothing is invisible or lost. */
 const OFFLINE_QUEUE_KEY='sehgal_offline_queue';
 function getQueue(){ try{ return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)||'[]'); }catch(e){ return []; } }
-function setQueue(q){ try{ localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); }catch(e){} updateQueueBadge(); }
+function setQueue(q){
+  /* R77: localStorage quota is finite and a gate entry carries six photos. The
+     old catch(e){} silently LOST the entry when the queue outgrew the quota —
+     during a long outage that is guaranteed. Now: on failure, strip the photo
+     payloads (any huge string) from the OLDEST items first — preferring items
+     already copied to the backup server — and keep the entry text. Losing a
+     photo is the price of never losing the entry. */
+  try{ localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); updateQueueBadge(); return; }catch(e){}
+  try{
+    const order=q.slice().sort(function(a,b){ return (b.sbSaved?1:0)-(a.sbSaved?1:0) || (a.ts||0)-(b.ts||0); });
+    for(const it of order){
+      let stripped=false;
+      if(it && it.body) for(const k in it.body){
+        if(typeof it.body[k]==='string' && it.body[k].length>60000){ it.body[k]=''; it.body._photosDropped=1; stripped=true; }
+      }
+      if(!stripped) continue;
+      try{ localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); updateQueueBadge(); return; }catch(e2){}
+    }
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
+  }catch(e3){}
+  updateQueueBadge();
+}
 function queueWrite(body){ const q=getQueue(); q.push({id:'q'+Date.now()+Math.random().toString(36).slice(2), body, ts:Date.now()}); setQueue(q); }
 function updateQueueBadge(){
   const n=getQueue().length;
@@ -4484,19 +4505,28 @@ async function flushQueue(){
   let q=getQueue();
   if(!q.length) return;
   FLUSHING=true;
-  const sent=[];
+  /* R77: receipts first — hbVerifyQueue_ deletes only entries the server is
+     PROVEN to hold, and re-arms ones whose proof never came. */
+  try{ if(typeof hbVerifyQueue_==='function') await hbVerifyQueue_(); }catch(e){}
+  q=getQueue();
   for(const item of q){
     if(!queueSendable_(item)) continue;        // in flight in jpost — re-sending it is the duplicate
+    if(item.sent && (Date.now()-item.sent)<HB_REVERIFY_MS) continue;   // sent, awaiting its receipt
+    if((item.attempts||0)>=HB_MAX_ATTEMPTS) continue; // parked, still visible in the badge — never deleted
+    if(typeof HB!=='undefined' && HB.state==='DEAD'){
+      /* Backend dead: a send cannot succeed. Keep the entry safe on the second
+         engine instead and try the backend again when the heartbeat recovers. */
+      try{ if(typeof hbSafetyNet_==='function') hbSafetyNet_(item.id, item.body); }catch(e){}
+      continue;
+    }
     queueMark_(item.id,{sending:Date.now()});
     try{
       await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(item.body)});
-      sent.push(item.id);
+      queueMark_(item.id,{sending:0, sent:Date.now(),
+                          attempts:(item.attempts||0)+((typeof HB!=='undefined'&&HB.state==='ALIVE')?1:0)});
+      try{ if(typeof hbAfterSend_==='function') hbAfterSend_(item.id); }catch(e){}
     }catch(e){ queueMark_(item.id,{sending:0}); } // stays queued for the next round
   }
-  /* Re-read before removing, and remove only what THIS pass sent. The old
-     `setQueue(remaining)` overwrote the whole queue with the snapshot taken
-     before the awaits, silently dropping anything jpost queued during them. */
-  if(sent.length) setQueue(getQueue().filter(x=>sent.indexOf(x.id)<0));
   FLUSHING=false;
 }
 async function globalSyncNow(){
@@ -4538,6 +4568,195 @@ window.addEventListener('online', flushQueue);
 updateQueueBadge(); // reflect any queue left over from a previous offline session, immediately on load
 setInterval(flushQueue, 20000); // background retry every 20s while the app is open
 
+/* ================= R77: BACKEND HEALTH + SECOND ENGINE =================
+   Built 28-08-2026 after the Apps Script backend spent TEN DAYS dead
+   (18→28 Aug, expired Google grant) while the app kept telling every guard
+   "saved". Ravi: "You could have told the guard or shut off the app...
+   Make a process that it should not happen like this ever."
+
+   Three duties, all automatic, no human step anywhere:
+   1. DETECT  — a cheap heartbeat proves the backend answers JSON. Two straight
+                failures while online = DEAD.
+   2. SHOW    — DEAD paints a full-screen red cover the guard cannot miss, and
+                a persistent red strip after they continue. Entry keeps working;
+                the truth is never hidden again.
+   3. SURVIVE — while DEAD, every gate entry / estimate / gate-out is copied to
+                the Supabase gate-capture function (the second engine), and the
+                queue replays everything to the backend the moment the
+                heartbeat recovers.                                        */
+const HB_KEY='hero_hb_v1';
+const HB_OK_WINDOW_MS=2*60*1000;    // a healthy ping this close to a send = that send executed
+const HB_REVERIFY_MS=8*60*1000;     // unproven after this long -> send again (server dedupes gates)
+const HB_MAX_ATTEMPTS=5;            // proven-alive sends with no receipt -> park, never delete
+const HB_ALIVE_EVERY=10*60*1000, HB_DEAD_EVERY=60*1000;
+const GATE_CAPTURE_URL='https://tiwfuwfzjxcsbrifcdpu.supabase.co/functions/v1/gate-capture';
+const GATE_CAPTURE_TOKEN='scnH-0DioqjaKYQpQ9cyOpBmoMYjO1k8';
+
+let HB={state:'UNKNOWN', firstFail:0, lastOk:0, lastPing:0, strikes:0, okTimes:[]};
+try{ Object.assign(HB, JSON.parse(localStorage.getItem(HB_KEY)||'{}')); }catch(e){}
+HB.state=HB.state||'UNKNOWN'; HB.okTimes=HB.okTimes||[];
+function hbSave_(){ try{ localStorage.setItem(HB_KEY, JSON.stringify(HB)); }catch(e){} }
+
+function hbPing_(){
+  if(!navigator.onLine) return;              // no network is the phone's problem, not the backend's
+  HB.lastPing=Date.now();
+  let done=false;
+  const fail=function(why){ if(done) return; done=true; hbMark_(false, why); };
+  const timer=setTimeout(function(){ fail('timeout'); }, 15000);
+  fetch(jUrl_('gate_sb_status',{_hb:Date.now()},null),{method:'GET',mode:'cors',credentials:'omit',cache:'no-store'})
+    .then(function(r){ return r.text(); })
+    .then(function(t){
+      if(done) return; done=true; clearTimeout(timer);
+      let j=null; try{ j=JSON.parse(t); }catch(e){
+        const m=String(t).match(/^[^(]*\((.*)\)\s*;?\s*$/); if(m){ try{ j=JSON.parse(m[1]); }catch(e2){} }
+      }
+      hbMark_(!!j, j?'':'non-json reply (auth page?)');
+    })
+    .catch(function(){ if(!navigator.onLine){ done=true; clearTimeout(timer); return; } fail('fetch rejected'); });
+}
+
+function hbMark_(ok, why){
+  const was=HB.state;
+  if(ok){
+    HB.state='ALIVE'; HB.strikes=0; HB.lastOk=Date.now();
+    HB.okTimes.push(Date.now()); if(HB.okTimes.length>80) HB.okTimes=HB.okTimes.slice(-80);
+    if(was==='DEAD'){
+      HB.firstFail=0; hbCover_(false);
+      try{ flushQueue(); }catch(e){}          // replay everything the outage queued, immediately
+    }
+  }else{
+    HB.strikes=(HB.strikes||0)+1;
+    /* first strike: confirm fast — a transient Google 500 must not paint the
+       cover, but a real outage must not wait for the next slow tick either */
+    if(HB.strikes===1){ setTimeout(function(){ try{ hbPing_(); }catch(e){} }, 20000); }
+    if(HB.strikes>=2){
+      if(HB.state!=='DEAD'){ HB.firstFail=Date.now(); }
+      HB.state='DEAD'; hbCover_(true);
+    }
+  }
+  hbSave_(); hbStrip_();
+}
+
+/* One tight ping shortly after every send, so the ok-window evidence that
+   verifies non-gate writes actually exists. */
+function hbAfterSend_(qid){ setTimeout(function(){ try{ hbPing_(); }catch(e){} }, 4000); }
+
+/* Receipts. Gate entries are verified the strong way — read back from the
+   server. Everything else: a healthy ping within 2 minutes of the send proves
+   the backend was answering when the write landed. */
+async function hbVerifyQueue_(){
+  const q=getQueue(); const pending=q.filter(function(it){ return it.sent; });
+  if(!pending.length) return;
+  const okNear=function(ts){ for(const o of HB.okTimes){ if(Math.abs(o-ts)<=HB_OK_WINDOW_MS) return true; } return false; };
+  let gateIds=null;
+  const gatePend=pending.filter(function(it){ return it.body && it.body.type==='gate'; });
+  if(gatePend.length && HB.state==='ALIVE' && Date.now()-(HB._gvTs||0)>90000){
+    HB._gvTs=Date.now(); hbSave_();
+    gateIds=await new Promise(function(res){
+      try{ jgetRaw('gate_history',{days:2},function(r){
+        res((r&&r.ok&&r.entries)?r.entries.map(function(g){ return String(g.entryId||''); }):null);
+      },20000); }catch(e){ res(null); }
+    });
+  }
+  const drop=[];
+  for(const it of pending){
+    const ty=it.body&&it.body.type;
+    if(ty==='gate' && gateIds && it.body.entryId){
+      if(gateIds.indexOf(String(it.body.entryId))>=0){ drop.push(it.id); continue; }
+      if(Date.now()-it.sent>60000){ queueMark_(it.id,{sent:0}); continue; } // alive, read back, NOT there -> resend
+    }
+    if(ty!=='gate' && okNear(it.sent)){ drop.push(it.id); continue; }
+    if(ty==='gate' && gateIds===null && okNear(it.sent)){ drop.push(it.id); continue; } // no read this pass — window rule
+    if(Date.now()-it.sent>HB_REVERIFY_MS){ queueMark_(it.id,{sent:0}); }
+  }
+  if(drop.length) setQueue(getQueue().filter(function(x){ return drop.indexOf(x.id)<0; }));
+}
+
+/* The second engine. Fire-and-forget; marks the item sbSaved so the badge and
+   cover can say "safe on backup server". Never blocks or fails a save. */
+function hbSafetyNet_(qid, body){
+  if(!body || !navigator.onLine) return;
+  const ty=body.type;
+  const op= ty==='gate' ? 'gate'
+          : ty==='gate_out' ? 'gate_out'
+          : (ty==='estimate'||ty==null) ? 'estimate' : '';
+  if(!op) return;
+  const it=getQueue().find(function(x){ return x.id===qid; });
+  if(!it || it.sbSaved || it.sbTrying) return;
+  /* only when the backend is dead, or the item has sat unproven for 5+ min */
+  const stuck = it.ts && (Date.now()-it.ts>5*60*1000) && !it.sent;
+  if(!(HB.state==='DEAD' || stuck)) return;
+  queueMark_(qid,{sbTrying:Date.now()});
+  fetch(GATE_CAPTURE_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({op:op, t:GATE_CAPTURE_TOKEN, rec:body})})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ queueMark_(qid,{sbTrying:0, sbSaved:(j&&j.ok)?1:0}); hbStrip_(); })
+    .catch(function(){ queueMark_(qid,{sbTrying:0}); });
+}
+
+/* ---------------- the guard-facing truth ---------------- */
+function hbCounts_(){
+  const q=getQueue();
+  return {n:q.length, sb:q.filter(function(x){ return x.sbSaved; }).length};
+}
+function hbSinceTxt_(){
+  if(!HB.firstFail) return '';
+  try{ return new Date(HB.firstFail).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return ''; }
+}
+function hbCover_(show){
+  let el=document.getElementById('hb-cover');
+  if(!show){ if(el) el.remove(); return; }
+  const snooze=Number(localStorage.getItem('hb_cover_snooze')||0);
+  if(Date.now()<snooze) { hbStrip_(); return; }
+  if(el) return;
+  const c=hbCounts_();
+  el=document.createElement('div');
+  el.id='hb-cover';
+  el.style.cssText='position:fixed;inset:0;z-index:2147483000;background:#7f1d1d;color:#fff;overflow:auto;padding:22px 18px;font-family:inherit;text-align:center';
+  el.innerHTML=
+    '<div style="font-size:52px;margin-top:6vh">&#9940;</div>'+
+    '<div style="font-size:24px;font-weight:800;margin-top:8px">SERVER NOT WORKING</div>'+
+    '<div style="font-size:16px;margin-top:10px;line-height:1.5">Entries are <b>NOT reaching the main server</b>'+(hbSinceTxt_()?' since <b>'+hbSinceTxt_()+'</b>':'')+'.<br>'+
+    'Every entry is being saved <b>on this phone</b> and to the <b>backup server</b>, and will sync automatically.</div>'+
+    '<div style="font-size:15px;margin-top:12px;line-height:1.5">&#128721; सर्वर बंद है। एंट्री इस फोन में सेव हो रही है।<br>ऐप <b>डिलीट/लॉगआउट न करें</b>, डेटा <b>क्लियर न करें</b>।</div>'+
+    '<div style="background:#991b1b;border-radius:10px;padding:10px;margin:16px auto 0;max-width:340px;font-size:15px">'+
+    '<b>Inform Ravi sir / workshop manager NOW.</b><br>Pending on phone: <b>'+c.n+'</b> &middot; Safe on backup: <b>'+c.sb+'</b></div>'+
+    '<button onclick="hbCoverContinue_()" style="margin-top:18px;background:#fff;color:#7f1d1d;border:0;border-radius:10px;padding:14px 22px;font-size:16px;font-weight:800">CONTINUE &mdash; KEEP SAVING ON PHONE</button>'+
+    '<div style="font-size:12px;opacity:.85;margin-top:14px">This screen returns every 30 minutes while the server is down.</div>';
+  document.body.appendChild(el);
+}
+function hbCoverContinue_(){
+  try{ localStorage.setItem('hb_cover_snooze', String(Date.now()+30*60*1000)); }catch(e){}
+  const el=document.getElementById('hb-cover'); if(el) el.remove();
+  hbStrip_();
+}
+function hbStrip_(){
+  let el=document.getElementById('hb-strip');
+  if(HB.state!=='DEAD'){ if(el) el.remove(); return; }
+  const c=hbCounts_();
+  const txt='&#9940; SERVER DOWN'+(hbSinceTxt_()?' since '+hbSinceTxt_():'')+' &middot; phone: '+c.n+' &middot; backup: '+c.sb+' &middot; inform Ravi sir';
+  if(!el){
+    el=document.createElement('div');
+    el.id='hb-strip';
+    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147482000;background:#b91c1c;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:6px 8px';
+    document.body.appendChild(el);
+  }
+  el.innerHTML=txt;
+}
+/* boot + cadence: 60s tick, pings when due; DEAD re-shows the cover past its snooze */
+setTimeout(function(){ try{ hbPing_(); }catch(e){} }, 2500);
+setInterval(function(){
+  try{
+    /* proven-healthy: relax to 10 min. UNKNOWN or DEAD: stay on 60s so a phone
+       that boots into an outage finds out within two minutes, not ten. */
+    const due = HB.lastPing + ((HB.state==='ALIVE'&&!HB.strikes)?HB_ALIVE_EVERY:HB_DEAD_EVERY);
+    if(Date.now()>=due) hbPing_();
+    if(HB.state==='DEAD') hbCover_(true);
+  }catch(e){}
+}, 60000);
+window.addEventListener('online', function(){ setTimeout(function(){ try{ hbPing_(); }catch(e){} }, 1500); });
+/* ================= end R77 ================= */
+
 async function jpost(body){
   if(body && typeof body.type==='string' && body.type.indexOf('master_')===0) clearMasterCache();
   if(body && body.type==='set_app_config') clearMasterCache();
@@ -4556,10 +4775,23 @@ async function jpost(body){
      fetch is even started — there is no window in which the flusher can see
      this row as idle and send it a second time. See queueSendable_ above. */
   const q=getQueue(); q.push({id:qid, body, ts:Date.now(), sending: online?Date.now():0}); setQueue(q);
+  /* R77: if the main backend is dead, copy the save to the SECOND ENGINE
+     (Supabase gate-capture) immediately — the entry is centrally safe within
+     seconds even if this phone never comes back. */
+  try{ if(typeof hbSafetyNet_==='function') hbSafetyNet_(qid, body); }catch(e){}
   if(!online) return; // stays queued; background retry sends it once online
   try{
     await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
-    setQueue(getQueue().filter(x=>x.id!==qid)); // sent — remove only this item, not the whole queue
+    /* R77: an opaque no-cors response is NOT a receipt. This exact spot used to
+       delete the queue item on ANY reply — including Google's "Authorisation is
+       required" page — which is how 1,301 entries were destroyed while the
+       backend was dead from 18 to 28 Aug 2026 and nobody saw a thing. The item
+       now stays queued, stamped `sent`, until hbVerifyQueue_ PROVES the server
+       took it (gate entries by reading them back, the rest by a healthy
+       backend ping bracketing the send). */
+    queueMark_(qid,{sending:0, sent:Date.now(),
+                    attempts:((typeof HB!=='undefined'&&HB.state==='ALIVE')?1:0)});
+    try{ if(typeof hbAfterSend_==='function') hbAfterSend_(qid); }catch(e){}
   }catch(e){
     // stays queued — hand it back to the background retry, nothing lost
     queueMark_(qid,{sending:0});
