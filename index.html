@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 62;
-window.HERO_BUILD = 'R77-2026.08.28.1';
+window.HERO_RELEASE = 63;
+window.HERO_BUILD = 'R78-2026.08.28.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -4513,10 +4513,15 @@ async function flushQueue(){
     if(!queueSendable_(item)) continue;        // in flight in jpost — re-sending it is the duplicate
     if(item.sent && (Date.now()-item.sent)<HB_REVERIFY_MS) continue;   // sent, awaiting its receipt
     if((item.attempts||0)>=HB_MAX_ATTEMPTS) continue; // parked, still visible in the badge — never deleted
-    if(typeof HB!=='undefined' && HB.state==='DEAD'){
-      /* Backend dead: a send cannot succeed. Keep the entry safe on the second
-         engine instead and try the backend again when the heartbeat recovers. */
-      try{ if(typeof hbSafetyNet_==='function') hbSafetyNet_(item.id, item.body); }catch(e){}
+    /* R78: the critical types are Supabase-only — retry them there. */
+    if(SB_WRITE_TYPES[String((item.body&&item.body.type)||'')]){
+      queueMark_(item.id,{sending:Date.now()});
+      await sbWriteQueued_(item.id, item.body);
+      continue;
+    }
+    if(typeof HB!=='undefined' && HB.gas==='DEAD'){
+      /* Apps Script dead: a send cannot succeed. Leave it queued — it is one of
+         the non-critical types, and it replays the moment Apps Script answers. */
       continue;
     }
     queueMark_(item.id,{sending:Date.now()});
@@ -4584,6 +4589,54 @@ setInterval(flushQueue, 20000); // background retry every 20s while the app is o
                 the Supabase gate-capture function (the second engine), and the
                 queue replays everything to the backend the moment the
                 heartbeat recovers.                                        */
+/* ============ R78: SUPABASE IS THE WRITER FOR THE CRITICAL PATH ============
+   Gate entry, gate out and estimate are written to the gate-capture Edge
+   Function and nowhere else. It returns real readable JSON over proper CORS,
+   so a save finally has a RECEIPT instead of the no-cors guess that destroyed
+   1,301 entries between 18 and 28 August. Apps Script keeps serving the other
+   modules (masters, insurance, parts, reports) until they are migrated too. */
+const SB_WRITE_TYPES={gate:1, gate_out:1, estimate:1};
+
+function sbCaptureOp_(type){
+  return type==='gate' ? 'gate' : type==='gate_out' ? 'gate_out' : type==='estimate' ? 'estimate' : '';
+}
+
+/* Writes one queued item to Supabase. Deletes it from the queue ONLY on a real
+   ok:true (or a dup, which means the server already holds it). Anything else
+   leaves it queued for the next flush — nothing is ever dropped on a guess. */
+async function sbWriteQueued_(qid, body){
+  const op=sbCaptureOp_(String((body&&body.type)||''));
+  if(!op){ queueMark_(qid,{sending:0}); return false; }
+  try{
+    const r=await fetch(GATE_CAPTURE_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({op:op, t:GATE_CAPTURE_TOKEN, rec:body})});
+    const j=await r.json().catch(function(){ return null; });
+    if(j && j.ok){
+      setQueue(getQueue().filter(function(x){ return x.id!==qid; }));  // proven stored
+      if(typeof HB!=='undefined' && HB.state!=='ALIVE'){ hbMark_(true,''); }
+      return true;
+    }
+    queueMark_(qid,{sending:0, attempts:((getQueue().find(function(x){return x.id===qid;})||{}).attempts||0)+1});
+    return false;
+  }catch(e){
+    queueMark_(qid,{sending:0});
+    return false;
+  }
+}
+
+/* Token from Postgres. Never throws and never blocks the guard: on any failure
+   it calls back with nothing, and geAfterToken's local fallback takes over. */
+function sbNextToken_(loc, cb){
+  let done=false;
+  const finish=function(v){ if(done) return; done=true; try{ cb(v); }catch(e){} };
+  const timer=setTimeout(function(){ finish(null); }, 12000);
+  fetch(GATE_CAPTURE_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({op:'next_token', t:GATE_CAPTURE_TOKEN, rec:{location:loc}})})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ clearTimeout(timer); finish(j && j.ok ? j : null); })
+    .catch(function(){ clearTimeout(timer); finish(null); });
+}
+
 const HB_KEY='hero_hb_v1';
 const HB_OK_WINDOW_MS=2*60*1000;    // a healthy ping this close to a send = that send executed
 const HB_REVERIFY_MS=8*60*1000;     // unproven after this long -> send again (server dedupes gates)
@@ -4592,27 +4645,49 @@ const HB_ALIVE_EVERY=10*60*1000, HB_DEAD_EVERY=60*1000;
 const GATE_CAPTURE_URL='https://tiwfuwfzjxcsbrifcdpu.supabase.co/functions/v1/gate-capture';
 const GATE_CAPTURE_TOKEN='scnH-0DioqjaKYQpQ9cyOpBmoMYjO1k8';
 
-let HB={state:'UNKNOWN', firstFail:0, lastOk:0, lastPing:0, strikes:0, okTimes:[]};
+let HB={state:'UNKNOWN', gas:'UNKNOWN', firstFail:0, lastOk:0, lastPing:0, strikes:0, okTimes:[]};
 try{ Object.assign(HB, JSON.parse(localStorage.getItem(HB_KEY)||'{}')); }catch(e){}
 HB.state=HB.state||'UNKNOWN'; HB.okTimes=HB.okTimes||[];
 function hbSave_(){ try{ localStorage.setItem(HB_KEY, JSON.stringify(HB)); }catch(e){} }
 
+/* R78: the RED cover now tracks SUPABASE, because that is what gate entry and
+   estimates actually depend on. Apps Script is checked separately and only
+   raises an amber strip — losing it no longer stops the workshop floor. */
 function hbPing_(){
   if(!navigator.onLine) return;              // no network is the phone's problem, not the backend's
   HB.lastPing=Date.now();
   let done=false;
-  const fail=function(why){ if(done) return; done=true; hbMark_(false, why); };
-  const timer=setTimeout(function(){ fail('timeout'); }, 15000);
+  const timer=setTimeout(function(){ if(done) return; done=true; hbMark_(false,'timeout'); }, 15000);
+  fetch(GATE_CAPTURE_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+    cache:'no-store', body:JSON.stringify({op:'ping'})})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if(done) return; done=true; clearTimeout(timer);
+      hbMark_(!!(j && j.ok), (j&&j.ok)?'':'capture engine did not answer ok');
+    })
+    .catch(function(){
+      if(done) return;
+      if(!navigator.onLine){ done=true; clearTimeout(timer); return; }
+      done=true; clearTimeout(timer); hbMark_(false,'fetch rejected');
+    });
+  hbPingGas_();
+}
+
+/* Apps Script health — masters, insurance, parts and the reports still need it.
+   Amber strip only; it can never paint the red cover again. */
+function hbPingGas_(){
+  if(!navigator.onLine) return;
+  let done=false;
+  const set=function(ok){ if(done) return; done=true; HB.gas=ok?'ALIVE':'DEAD'; hbSave_(); hbStrip_(); };
+  const timer=setTimeout(function(){ set(false); }, 15000);
   fetch(jUrl_('gate_sb_status',{_hb:Date.now()},null),{method:'GET',mode:'cors',credentials:'omit',cache:'no-store'})
     .then(function(r){ return r.text(); })
     .then(function(t){
-      if(done) return; done=true; clearTimeout(timer);
-      let j=null; try{ j=JSON.parse(t); }catch(e){
-        const m=String(t).match(/^[^(]*\((.*)\)\s*;?\s*$/); if(m){ try{ j=JSON.parse(m[1]); }catch(e2){} }
-      }
-      hbMark_(!!j, j?'':'non-json reply (auth page?)');
+      clearTimeout(timer);
+      let j=null; try{ j=JSON.parse(t); }catch(e){}
+      set(!!j);
     })
-    .catch(function(){ if(!navigator.onLine){ done=true; clearTimeout(timer); return; } fail('fetch rejected'); });
+    .catch(function(){ clearTimeout(timer); if(navigator.onLine) set(false); });
 }
 
 function hbMark_(ok, why){
@@ -4672,28 +4747,6 @@ async function hbVerifyQueue_(){
   if(drop.length) setQueue(getQueue().filter(function(x){ return drop.indexOf(x.id)<0; }));
 }
 
-/* The second engine. Fire-and-forget; marks the item sbSaved so the badge and
-   cover can say "safe on backup server". Never blocks or fails a save. */
-function hbSafetyNet_(qid, body){
-  if(!body || !navigator.onLine) return;
-  const ty=body.type;
-  const op= ty==='gate' ? 'gate'
-          : ty==='gate_out' ? 'gate_out'
-          : (ty==='estimate'||ty==null) ? 'estimate' : '';
-  if(!op) return;
-  const it=getQueue().find(function(x){ return x.id===qid; });
-  if(!it || it.sbSaved || it.sbTrying) return;
-  /* only when the backend is dead, or the item has sat unproven for 5+ min */
-  const stuck = it.ts && (Date.now()-it.ts>5*60*1000) && !it.sent;
-  if(!(HB.state==='DEAD' || stuck)) return;
-  queueMark_(qid,{sbTrying:Date.now()});
-  fetch(GATE_CAPTURE_URL,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({op:op, t:GATE_CAPTURE_TOKEN, rec:body})})
-    .then(function(r){ return r.json(); })
-    .then(function(j){ queueMark_(qid,{sbTrying:0, sbSaved:(j&&j.ok)?1:0}); hbStrip_(); })
-    .catch(function(){ queueMark_(qid,{sbTrying:0}); });
-}
-
 /* ---------------- the guard-facing truth ---------------- */
 function hbCounts_(){
   const q=getQueue();
@@ -4716,11 +4769,11 @@ function hbCover_(show){
   el.innerHTML=
     '<div style="font-size:52px;margin-top:6vh">&#9940;</div>'+
     '<div style="font-size:24px;font-weight:800;margin-top:8px">SERVER NOT WORKING</div>'+
-    '<div style="font-size:16px;margin-top:10px;line-height:1.5">Entries are <b>NOT reaching the main server</b>'+(hbSinceTxt_()?' since <b>'+hbSinceTxt_()+'</b>':'')+'.<br>'+
-    'Every entry is being saved <b>on this phone</b> and to the <b>backup server</b>, and will sync automatically.</div>'+
+    '<div style="font-size:16px;margin-top:10px;line-height:1.5">Entries are <b>NOT reaching the server</b>'+(hbSinceTxt_()?' since <b>'+hbSinceTxt_()+'</b>':'')+'.<br>'+
+    'Every entry is being saved <b>on this phone</b> and will sync automatically the moment the server answers.</div>'+
     '<div style="font-size:15px;margin-top:12px;line-height:1.5">&#128721; सर्वर बंद है। एंट्री इस फोन में सेव हो रही है।<br>ऐप <b>डिलीट/लॉगआउट न करें</b>, डेटा <b>क्लियर न करें</b>।</div>'+
     '<div style="background:#991b1b;border-radius:10px;padding:10px;margin:16px auto 0;max-width:340px;font-size:15px">'+
-    '<b>Inform Ravi sir / workshop manager NOW.</b><br>Pending on phone: <b>'+c.n+'</b> &middot; Safe on backup: <b>'+c.sb+'</b></div>'+
+    '<b>Inform Ravi sir / workshop manager NOW.</b><br>Pending on this phone: <b>'+c.n+'</b></div>'+
     '<button onclick="hbCoverContinue_()" style="margin-top:18px;background:#fff;color:#7f1d1d;border:0;border-radius:10px;padding:14px 22px;font-size:16px;font-weight:800">CONTINUE &mdash; KEEP SAVING ON PHONE</button>'+
     '<div style="font-size:12px;opacity:.85;margin-top:14px">This screen returns every 30 minutes while the server is down.</div>';
   document.body.appendChild(el);
@@ -4732,15 +4785,22 @@ function hbCoverContinue_(){
 }
 function hbStrip_(){
   let el=document.getElementById('hb-strip');
-  if(HB.state!=='DEAD'){ if(el) el.remove(); return; }
+  const gasBad=(HB.gas==='DEAD');
+  if(HB.state!=='DEAD' && !gasBad){ if(el) el.remove(); return; }
   const c=hbCounts_();
-  const txt='&#9940; SERVER DOWN'+(hbSinceTxt_()?' since '+hbSinceTxt_():'')+' &middot; phone: '+c.n+' &middot; backup: '+c.sb+' &middot; inform Ravi sir';
+  /* Two different truths, and they must not be confused. Supabase down = gate
+     entry itself is at risk (red). Apps Script down = only the older modules
+     are affected; gate entry and estimates carry on untouched (amber). */
+  const txt = (HB.state==='DEAD')
+    ? '&#9940; SERVER DOWN'+(hbSinceTxt_()?' since '+hbSinceTxt_():'')+' &middot; on phone: '+c.n+' &middot; inform Ravi sir'
+    : '&#9888; Reports/masters offline &middot; gate entry &amp; estimates are saving normally';
   if(!el){
     el=document.createElement('div');
     el.id='hb-strip';
-    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147482000;background:#b91c1c;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:6px 8px';
+    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147482000;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:6px 8px';
     document.body.appendChild(el);
   }
+  el.style.background=(HB.state==='DEAD')?'#b91c1c':'#b45309';
   el.innerHTML=txt;
 }
 /* boot + cadence: 60s tick, pings when due; DEAD re-shows the cover past its snooze */
@@ -4775,11 +4835,16 @@ async function jpost(body){
      fetch is even started — there is no window in which the flusher can see
      this row as idle and send it a second time. See queueSendable_ above. */
   const q=getQueue(); q.push({id:qid, body, ts:Date.now(), sending: online?Date.now():0}); setQueue(q);
-  /* R77: if the main backend is dead, copy the save to the SECOND ENGINE
-     (Supabase gate-capture) immediately — the entry is centrally safe within
-     seconds even if this phone never comes back. */
-  try{ if(typeof hbSafetyNet_==='function') hbSafetyNet_(qid, body); }catch(e){}
   if(!online) return; // stays queued; background retry sends it once online
+  /* R78 (28-08-2026): gate entry, gate out and estimate no longer go to Apps
+     Script AT ALL. They go straight to Supabase, which answers with a readable
+     JSON receipt. Ravi, after the 10-day outage: "shift everything to supabase
+     so that this doesnot happen again. Abondon google script also completely."
+     This is the line that makes a Google outage stop mattering to the workshop
+     floor — and it also ends the dual-write that was putting the SAME entry_id
+     into sheet_gate_entries twice (measured today: GE1787906981751, 23s apart,
+     once from the phone and once from the Apps Script mirror replaying it). */
+  if(SB_WRITE_TYPES[String((body&&body.type)||'')]){ await sbWriteQueued_(qid, body); return; }
   try{
     await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
     /* R77: an opaque no-cors response is NOT a receipt. This exact spot used to
@@ -6468,7 +6533,7 @@ let GE_TOKEN_PRE=null, GE_TOKEN_PREBUSY=false, GE_TOKEN_PRELOC='';
 function gePrefetchToken(){
   const loc=val('ge-loc'); if(!loc || !ONLINE) return;
   GE_TOKEN_PREBUSY=true; GE_TOKEN_PRELOC=loc;
-  jget('next_token', {location:loc}, function(t){
+  sbNextToken_(loc, function(t){
     GE_TOKEN_PREBUSY=false;
     /* Keep it only if it is a real server token and the guard has not switched
        location in the meantime. */
@@ -6581,10 +6646,11 @@ function geSaveEntry(){
     /* Already have a real server token - no round trip, no wait. */
     geAfterToken(preTok);
   } else {
-    jget('next_token', {location:loc}, function(t1){
+    /* R78: minted by Postgres (hero_next_gate_token, migration 0056) — atomic,
+       same algorithm and same numbering as the retired Apps Script version. */
+    sbNextToken_(loc, function(t1){
       if(t1 && t1.token){ geAfterToken(t1); return; }
-      if(t1 && t1.error==='network'){ geAfterToken(t1); return; } // network is clearly down — use the safe fallback token now, don't make the guard wait through a second 20s timeout
-      jget('next_token', {location:loc}, function(t2){ geAfterToken(t2); }); // one retry only when the first reply wasn't a network failure
+      sbNextToken_(loc, function(t2){ geAfterToken(t2); }); // one retry, then the safe local fallback
     });
   }
   /* Get the next vehicle's token ready while this one uploads, so the very
