@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 63;
-window.HERO_BUILD = 'R78-2026.08.28.2';
+window.HERO_RELEASE = 64;
+window.HERO_BUILD = 'R79-2026.09.02.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -22806,5 +22806,501 @@ function insbExport(){
   document.body.appendChild(a); a.click();
   setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
+</script>
+<!-- ================= R79 QUICK ADD, COMPOSE CACHE, TARGET AMOUNT (02-09-2026) ================= -->
+<script>
+/* ===========================================================================
+   R79 — QUICK ADD, THE COMPOSE CACHE AND THE TARGET AMOUNT   (Ravi, 02-09-2026)
+
+   "Customer says bearing change karna hai... This guy goes looking for splendor
+    front bearing, it takes 10 min... You go in hotel the waiter adds 50 items in
+    10 sec. It should be like that."
+   "Make it very easy for the SA to make a perfect estimate in under 10 sec.
+    There are 125 customers waiting in line daily."
+   "How much bill the Advisor wants to make. say 1500. so He types 1500 and all
+    the other things align as per his last history and his ability to pay."
+   "Demanded repairs are for the customer to tell his words and not for us to
+    add parts and labour into it."
+
+   MEASURED 02-09-2026: the R70 picker (Category -> Sub-category -> Parts) costs
+   2.5-4.9 s per step through Apps Script, its search box is locked until a
+   category is picked, and the SPLENDOR PLUS tree holds one bearing (the engine
+   kit), so Wheels and Steering both return nothing after 3-5 s each. The same
+   search on Supabase: 2 ms.
+
+   WHAT THIS BLOCK DOES — additive, wrap-never-replace, last block in the file:
+     1. QUICK ADD replaces the tree as the front door of "Parts by category".
+        One box. The advisor types what the customer said — Hindi, English, a
+        part number — and gets ready-to-add lines: part number, description,
+        MRP, our stock in brackets and the fitment labour code with this
+        workshop's rate. One tap adds the part AND its labour. Empty box = the
+        menu: this model's most-added parts and labour. The R70 tree is still
+        there, one tap away as "Browse by category".
+        Instant path: the model's own parts tree is kept on the phone
+        (IndexedDB, same HKV store the masters use) and searched in memory,
+        so the first list paints in milliseconds even with no signal. The
+        server (part_quick_search, 0057) adds the all-India catalogue, the
+        vocabulary book and the labour rates ~200 ms later and is cached per
+        word. If the server function is not installed yet, the phone path
+        still works.
+     2. THE CUSTOMER'S WORDS are the demanded repair. Whatever was typed when
+        a line was added goes on the estimate verbatim under "Demanded
+        repairs", with the line's complaint code — the app never invents the
+        complaint, it records what was said.
+     3. THE APP LEARNS: after every add, part_alias_learn stores the typed
+        word -> the part chosen, so the next advisor typing the same word sees
+        that part first. Avni watches; nobody curates a dictionary.
+     4. THE COMPOSE CACHE: estimate_compose answers are kept on the phone by
+        model | service | reg | visit. Picking a vehicle paints the manual's
+        lines from the phone at once and the live call refreshes them behind.
+        Pending vehicles on the list are composed in the background before the
+        advisor opens them, so the common case — a paid service with nothing
+        demanded — is open, glance, Generate.
+     5. THE TARGET AMOUNT: the advisor types what the customer will pay. The
+        strip shows the gap and proposes which lines to defer to the next
+        visit — never oil, never the service labour, never a safety part
+        (brakes, tyres, bearings, steering, lights, chain, cables, suspension).
+        Deferring goes through esRemoveItem, so undo and the linked-labour
+        rules stay exactly as they are. The placeholder is this customer's
+        last comparable estimate — his own history is the default target.
+
+   NOTHING here changes what an estimate SAYS: prices, codes and stock come
+   from the same tables and the same functions as before.
+   =========================================================================== */
+(function(){
+"use strict";
+if(typeof window==='undefined') return;
+var HQS={model:'', q:'', rows:[], labour:[], srv:false, t:null, seq:0, tree:{}, alias:null, _by:{}, target:0, prefetching:false};
+var HQS_TREE_TTL=12*3600e3, HQS_ALIAS_TTL=6*3600e3, HQS_RESULT_TTL=24*3600e3, HQS_COMPOSE_TTL=12*3600e3;
+var HQS_STOP=/^(hai|hain|ha|he|ho|ka|ki|ke|ko|se|me|mein|aur|and|the|of|to|for|nahi|nahin|na|karna|karo|kar|karke|change|badal|badalna|badlo|badalo|lagana|lagao|laga|dalna|dalo|check|dekho|dekhna|problem|issue|awaaz|awaz|sound|noise|new|naya|nayi|purana|old|wala|wali|hua|hui|gaya|gayi|raha|rahi|tha|thi|please|plz|bhi|sir|ji)$/i;
+var HQS_SAFETY=/BRAKE|SHOE|PAD\b|DISC|TYRE|TIRE|TUBE|BEARING|CONE SET|STEERING|HANDLE|BULB|LAMP|HEADLIGHT|WINKER|INDICATOR|HORN|CHAIN|SPROCKET|CABLE|FORK|SHOCK|CUSHION|ABSORBER|AXLE|WHEEL|SPOKE|RIM\b|LEVER|SWITCH|BATTERY|HARNESS|FUEL|PETROL|OIL SEAL|SEAL/i;
+
+function esc(v){ return (typeof rtEsc==='function')?rtEsc(v):String(v==null?'':v).replace(/[&<>"']/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function money(n){ try{ return rtMoney(n); }catch(e){ return '₹'+Math.round(n||0); } }
+function gv(id){ try{ return (typeof val==='function')?val(id):(document.getElementById(id)||{}).value||''; }catch(e){ return ''; } }
+function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function words(s){ return norm(s).split(' ').filter(function(w){ return w.length>=3 && !HQS_STOP.test(w); }); }
+function pnKey(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function curModel(){ try{ return String((typeof esCurrentModelUP==='function'?esCurrentModelUP():gv('es-model'))||'').trim().toUpperCase(); }catch(e){ return ''; } }
+
+/* ---- the phone store: same HKV map + IndexedDB the masters live in ---- */
+function kget(k){ try{ var o=HKV.get('hqs:'+k); return (o&&o.v!==undefined)?o:null; }catch(e){ return null; } }
+function kput(k,v){ try{ var o={t:Date.now(), v:v}; HKV.set('hqs:'+k,o); hkvPut('hqs:'+k,o); }catch(e){} }
+function fresh(o,ttl){ return !!(o && (Date.now()-(o.t||0))<ttl); }
+
+/* ---- the model's own parts, kept on the phone ---- */
+function loadTree(model, cb){
+  if(!model){ cb&&cb(false); return; }
+  var c=kget('tree:'+model);
+  if(c){ HQS.tree[model]=c.v; cb&&cb(true); if(fresh(c,HQS_TREE_TTL)) return; }
+  if(typeof sbFetch!=='function'){ if(!c) cb&&cb(false); return; }
+  sbFetch('/rest/v1/model_part_tree?select=part_no,description,category,sub_category,mrp,stock,linked_labour,complaint_code,times_used,model'
+          +'&model=eq.'+encodeURIComponent(model)+'&order=times_used.desc.nullslast&limit=3000',{method:'GET'})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(rows){
+      if(!Array.isArray(rows)){ if(!c) cb&&cb(false); return; }
+      HQS.tree[model]=rows; kput('tree:'+model, rows);
+      if(!c) cb&&cb(true); else if(HQS.model===model && HQS.q) render();
+    })
+    .catch(function(){ if(!c) cb&&cb(false); });
+}
+function loadAlias(){
+  var c=kget('alias');
+  if(c){ HQS.alias=c.v; if(fresh(c,HQS_ALIAS_TTL)) return; }
+  if(typeof sbFetch!=='function') return;
+  sbFetch('/rest/v1/part_alias?select=alias,canonical,kind,part_no,model&limit=3000',{method:'GET'})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(rows){ if(Array.isArray(rows)){ HQS.alias=rows; kput('alias',rows); } })
+    .catch(function(){});
+}
+
+/* ---- instant search over the phone copy (mirrors part_quick_search scoring) ---- */
+function localSearch(q, model){
+  var rows=HQS.tree[model]||[]; if(!rows.length) return [];
+  var qn=norm(q), qpn=pnKey(q), ws=words(q), terms=[];
+  (HQS.alias||[]).forEach(function(a){
+    var al=String(a.alias||''); if(!al) return;
+    if(al===qn || (qn.length>=3 && al.indexOf(qn)===0) || (al.length>=3 && qn.indexOf(al)>-1)){
+      var c=String(a.canonical||'').toUpperCase(); if(c && terms.indexOf(c)<0) terms.push(c);
+      if(a.part_no) terms.push('#'+pnKey(a.part_no));
+    }
+  });
+  var out=[];
+  rows.forEach(function(r){
+    var d=String(r.description||'').toUpperCase(), pn=pnKey(r.part_no), s=0;
+    if(qpn && pn===qpn) s+=100; else if(qpn.length>=4 && pn.indexOf(qpn)===0) s+=40;
+    if(terms.some(function(t){ if(t.charAt(0)==='#') return t.slice(1)===pn; var tw=t.split(' ').filter(Boolean); return tw.length && tw.every(function(w){ return d.indexOf(w)>-1; }); })) s+=60;
+    var wh=0; ws.forEach(function(w){ if(d.indexOf(w.toUpperCase())>-1) wh++; }); s+=Math.min(45,15*wh);
+    if(s<15) return;
+    s+=20+((+r.mrp>0)?3:0)+Math.min(10,Math.floor((+r.times_used||0)/5));
+    out.push({pn:String(r.part_no||''), desc:r.description, cat:r.category, sub:r.sub_category, mrp:+r.mrp||0,
+              stock:r.stock, cc:r.complaint_code||'', linked_labour:r.linked_labour||'', labour:[],
+              times_used:+r.times_used||0, model:r.model, src:'tree', score:s});
+  });
+  out.sort(function(a,b){ return (b.score-a.score)||(b.times_used-a.times_used)||(b.mrp-a.mrp); });
+  return out.slice(0,12);
+}
+function localChips(model){
+  return (HQS.tree[model]||[]).filter(function(r){ return +r.mrp>0 && r.part_no; }).slice(0,12).map(function(r){
+    return {pn:String(r.part_no), desc:r.description, cat:r.category, sub:r.sub_category, mrp:+r.mrp||0, stock:r.stock,
+            cc:r.complaint_code||'', linked_labour:r.linked_labour||'', labour:[], times_used:+r.times_used||0, model:r.model, src:'chip', score:0};
+  });
+}
+
+/* ---- the server: catalogue, vocabulary, labour rates ---- */
+function serverSearch(q, model, seq){
+  if(typeof sbRpc!=='function') return;
+  sbRpc('part_quick_search',{p_q:q, p_model:model||null, p_limit:12}).then(function(res){
+    if(!res || !res.ok) return;
+    kput('r:'+model+'|'+norm(q), res);
+    if(seq!==HQS.seq) return;
+    HQS.rows=res.parts||[]; HQS.labour=res.labour||[]; HQS.srv=true; render();
+  }).catch(function(){ /* not installed yet, or offline: the phone list stands */ });
+}
+function chips(){
+  var model=HQS.model, c=kget('chips:'+model);
+  if(c && c.v){ HQS.rows=c.v.parts||[]; HQS.labour=c.v.labour||[]; HQS.srv=true; }
+  else { HQS.rows=localChips(model); HQS.labour=[]; HQS.srv=false; }
+  render();
+  if(fresh(c,HQS_TREE_TTL) || !model || typeof sbRpc!=='function') return;
+  var seq=HQS.seq;
+  sbRpc('part_quick_search',{p_q:'', p_model:model, p_limit:12}).then(function(res){
+    if(!res || !res.ok) return;
+    kput('chips:'+model, res);
+    if(seq===HQS.seq && !norm(HQS.q)){ HQS.rows=res.parts||[]; HQS.labour=res.labour||[]; HQS.srv=true; render(); }
+  }).catch(function(){});
+}
+function typed(v){
+  var q=String(v||''); HQS.q=q; HQS.seq++; var seq=HQS.seq;
+  clearTimeout(HQS.t);
+  var qn=norm(q);
+  if(!qn){ chips(); return; }
+  HQS.rows=localSearch(q, HQS.model); HQS.labour=[]; HQS.srv=false;
+  var c=kget('r:'+HQS.model+'|'+qn);
+  if(c && c.v && c.v.ok){ HQS.rows=c.v.parts||[]; HQS.labour=c.v.labour||[]; HQS.srv=true; }
+  render();
+  if(fresh(c,HQS_RESULT_TTL)) return;
+  HQS.t=setTimeout(function(){ if(seq===HQS.seq) serverSearch(q, HQS.model, seq); }, 160);
+}
+
+/* ---- the list ---- */
+function render(){
+  var body=document.getElementById('rt-body'); if(!body) return;
+  var q=HQS.q, rows=HQS.rows||[], lab=HQS.labour||[], qn=norm(q), h='';
+  if(!qn) h+='<div class="rt-sec">Most added on '+esc(HQS.model||'this model')+' — tap to add</div>';
+  else h+='<div class="rt-sec">'+(rows.length+lab.length)+' for “'+esc(q)+'”'
+          +(HQS.srv?'':' <span style="opacity:.65;font-weight:500">· checking the full Hero catalogue…</span>')+'</div>';
+  if(!rows.length && !lab.length){
+    h+='<div class="rt-empty">'+(qn
+      ? 'Nothing yet for “'+esc(q)+'”. Try another word (Hindi or English), a part number, or <span class="rt-chip" onclick="hqsBrowse()">Browse by category</span>.'
+      : 'No parts on record for this model yet. Type a word, or <span class="rt-chip" onclick="hqsBrowse()">Browse by category</span>.')+'</div>';
+    body.innerHTML=h; return;
+  }
+  HQS._by={};
+  rows.forEach(function(r,i){
+    HQS._by['p'+i]=r;
+    var on=(ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===String(r.pn); });
+    var meta=[];
+    if(r.stock!=null && r.stock!=='') meta.push((+r.stock>0)?(Math.round(+r.stock)+' in stock'):'0 here');
+    if(r.src==='catalogue') meta.push('Hero catalogue');
+    var labs=r.labour||[];
+    if(labs.length) meta.push(labs.map(function(l){ return String(l.code)+' ₹'+Math.round(+l.amt||0); }).join(', '));
+    else if(r.linked_labour) meta.push('labour linked');
+    if(r.times_used) meta.push('used '+r.times_used+'×');
+    h+='<div class="rt-row"><i class="rt-dot '+((+r.mrp>0)?'rt-g':'rt-a')+'"></i>'
+      +'<div class="rt-main"><div class="rt-name">'+esc(r.desc||r.pn)+'</div>'
+      +'<div class="rt-meta"><span class="rt-code">'+esc(r.pn)+'</span>'+(meta.length?(' · '+esc(meta.join(' · '))):'')+'</div></div>'
+      +'<div class="rt-amt">'+((+r.mrp>0)?money(+r.mrp):'—')+'</div>'
+      +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="hqsAddPart(\'p'+i+'\',this)">'+(on?'✓':'＋')+'</button></div>';
+  });
+  if(lab.length){
+    h+='<div class="rt-sec">Labour</div>';
+    lab.forEach(function(l,i){
+      HQS._by['l'+i]=l;
+      var on=(ES_ADDLAB||[]).some(function(x){ return String(x.code||'')===String(l.code); });
+      h+='<div class="rt-row"><i class="rt-dot '+((+l.amt>0)?'rt-g':'rt-r')+'"></i>'
+        +'<div class="rt-main"><div class="rt-name">'+esc(l.desc)+'</div>'
+        +'<div class="rt-meta"><span class="rt-code">'+esc(l.code)+'</span>'
+        +((l.model && HQS.model && String(l.model).toUpperCase()!==HQS.model)?(' · rate from '+esc(l.model)):'')+'</div></div>'
+        +'<div class="rt-amt">'+((+l.amt>0)?money(+l.amt):'—')+'</div>'
+        +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="hqsAddLab(\'l'+i+'\',this)">'+(on?'✓':'＋')+'</button></div>';
+    });
+  }
+  body.innerHTML=h;
+}
+
+/* ---- opening: one tap from the estimate, keyboard up, menu showing ---- */
+function open(){
+  if(typeof esGuardLocked_==='function' && esGuardLocked_('The parts list')) return;
+  if(typeof rtEnsurePanel==='function') rtEnsurePanel();
+  var p=document.getElementById('rt-panel'); if(!p){ alert('Picker unavailable in this build.'); return; }
+  p.style.display='flex';
+  HQS.model=curModel(); HQS.q=''; HQS.rows=[]; HQS.labour=[]; HQS.srv=false; HQS.seq++;
+  var s=document.getElementById('rt-search');
+  if(s){ s.value=''; s.placeholder='Type what the customer said — bearing, brake shoe, wash, chain…';
+         s.oninput=function(){ typed(this.value); };
+         setTimeout(function(){ try{ s.focus(); }catch(e){} },60); }
+  var crumb=document.getElementById('rt-crumb');
+  if(crumb) crumb.innerHTML='<b>'+esc(HQS.model||'model not set')+'</b> &nbsp;›&nbsp; Quick add '
+    +'<span class="rt-chip" style="margin-left:8px" onclick="hqsBrowse()">Browse by category ›</span>';
+  loadAlias();
+  loadTree(HQS.model, function(){ if(!norm(HQS.q)) chips(); });
+  chips();
+}
+window.hqsOpen=open;
+window.rtOpenParts=open;                 /* "Parts by category" now opens Quick add first */
+window.hqsBrowse=function(){             /* the R70 tree, one tap away */
+  try{
+    RTP.model=HQS.model; RTP.cat=''; RTP.sub=''; RTP.q=''; RTP.page=1; RTP.rows=[]; RTP.all=false;
+    var s=document.getElementById('rt-search');
+    if(s){ s.value=''; s.placeholder='Search this category by part number or description…';
+           s.oninput=function(){ rtpSearchDebounced(this.value.trim()); }; }
+    rtpCrumb(); rtpLoadCats();
+  }catch(e){ alert('Category browse unavailable: '+e); }
+};
+
+/* ---- adding: part + its labour in one tap; the words go on the estimate ---- */
+function recordSaid(cc){
+  var said=String(HQS.q||'').trim(); if(!said) return;
+  if(pnKey(said).length>=6 && /^[A-Za-z0-9\-\s]+$/.test(said) && words(said).length<=1 && /\d/.test(said)) return; /* a part number, not a complaint */
+  if((ES_DEMANDED||[]).some(function(x){ return String(x.name||'').toLowerCase()===said.toLowerCase(); })) return;
+  ES_DEMANDED.push({name:said, cc:cc||'', _said:true});
+}
+function learn(r){
+  var said=String(HQS.q||'').trim();
+  if(!said || typeof sbRpc!=='function' || !r || !r.pn) return;
+  if(pnKey(said)===pnKey(r.pn)) return;
+  sbRpc('part_alias_learn',{p_alias:said, p_part_no:String(r.pn), p_model:HQS.model||null, p_desc:String(r.desc||'')}).catch(function(){});
+}
+function afterAdd(btn){
+  if(btn){ btn.className='rt-add done'; btn.textContent='✓'; }
+  try{ esDrawChips(); }catch(e){}
+  try{ rtRenderStrip(); }catch(e){}
+  try{ esUpdateLive(); }catch(e){}
+}
+window.hqsAddPart=function(id, btn){
+  if(typeof esGuardLocked_==='function' && esGuardLocked_('Parts')) return;
+  var r=HQS._by&&HQS._by[id]; if(!r) return;
+  if((ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===String(r.pn); })){ alert('Already on this estimate.'); return; }
+  var price=+r.mrp||0;
+  if(!(price>0)){
+    var t=prompt('No MRP on record for '+(r.desc||r.pn)+'. Type the price:','');
+    price=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(price>0)) return;
+  }
+  ES_ADDPART.push({l:r.desc||r.pn, p:price, pn:String(r.pn), cc:r.cc||'',
+                   stk:(r.stock!=null&&r.stock!==''?+r.stock:undefined), _fromTree:true, _fromQuick:true, _said:String(HQS.q||'')});
+  /* fitment labour: the server resolved it (model's own rate first); if the
+     server was not reached, the repair tree on the phone does the same job */
+  var labs=(r.labour||[]).slice(), added=[];
+  if(!labs.length && r.linked_labour && typeof RT!=='undefined' && RT && RT.ready && typeof rtResolve==='function'){
+    try{
+      var rates=rtModelRates();
+      String(r.linked_labour).split('|').filter(Boolean).forEach(function(code){
+        code=rtCode(code); var L=RT.byCode[code]; if(!L) return;
+        var x=rtResolve(L,rates); if(x.ev==='R' || !(x.rate>0)) return;
+        labs.push({code:code, desc:x.name, amt:x.rate, _amber:(x.ev==='A')});
+      });
+    }catch(e){}
+  }
+  labs.forEach(function(l){
+    if(!(+l.amt>0) || !l.code) return;
+    try{ if(typeof esRejectOwnedCode_==='function' && esRejectOwnedCode_(l.code)) return; }catch(e){}
+    if((ES_ADDLAB||[]).some(function(x){ return String(x.code||'')===String(l.code); })) return;
+    ES_ADDLAB.push({l:l.desc, p:+l.amt, code:String(l.code), cc:r.cc||'', _fromPart:r.desc||r.pn, _fromPn:String(r.pn),
+                    _locked:true, _fromTree:true, _amber:!!l._amber||!!l.borrowed});
+    added.push(l.desc);
+  });
+  recordSaid(r.cc);
+  afterAdd(btn);
+  learn(r);
+  var m=document.getElementById('es-msg');
+  if(m){
+    m.style.color=added.length?'var(--ok)':'var(--warn)';
+    m.textContent='✓ '+(r.desc||r.pn)+' added'+(added.length?(' with labour: '+added.join(', ')+'.')
+                  :(' — no fitment labour is linked; add it from the Labour list or "Search labour".'));
+    setTimeout(function(){ if(m.textContent.indexOf('added')>-1) m.textContent=''; },7000);
+  }
+};
+window.hqsAddLab=function(id, btn){
+  if(typeof esGuardLocked_==='function' && esGuardLocked_('Labour')) return;
+  var l=HQS._by&&HQS._by[id]; if(!l) return;
+  try{ if(typeof esRejectOwnedCode_==='function' && esRejectOwnedCode_(l.code)) return; }catch(e){}
+  if((ES_ADDLAB||[]).some(function(x){ return String(x.code||'')===String(l.code); })){ alert('Already on this estimate.'); return; }
+  var p=+l.amt||0;
+  if(!(p>0)){
+    var t=prompt('No rate on record for '+l.desc+'. Type the amount:','');
+    p=Number(String(t||'').replace(/[^0-9.]/g,''))||0;
+    if(!(p>0)) return;
+  }
+  ES_ADDLAB.push({l:l.desc, p:p, code:String(l.code), _fromPicker:true, _fromQuick:true, _said:String(HQS.q||'')});
+  recordSaid('');
+  afterAdd(btn);
+};
+
+/* ---- the compose cache: paint from the phone, refresh behind ---- */
+function svcOf(purpose){
+  var s=String(purpose||'');
+  if(/free/i.test(s)) return 'free'; if(/paid/i.test(s)) return 'paid'; if(/joyride/i.test(s)) return 'joyride';
+  if(/general/i.test(s)) return 'general'; if(/accident|bodyshop/i.test(s)) return 'accidental';
+  return '';
+}
+function ckey(model, svc, stage, reg, visit){
+  return 'compose:'+[String(model||'').toUpperCase(), svc||'', stage||'', pnKey(reg), (visit==null?'':visit)].join('|');
+}
+if(typeof window.sbRpc==='function'){
+  var _sbRpc=window.sbRpc;
+  window.sbRpc=function(name, args){
+    var p=_sbRpc.apply(this, arguments);
+    if(name==='estimate_compose' && args && p && p.then){
+      p.then(function(res){
+        try{
+          if(!res || !res.ok) return;
+          var sv=String(args.p_service||'paid'), svc=sv.split(' ')[0], stage=(svc==='free')?(sv.split(' ')[1]||'I'):'';
+          kput(ckey(args.p_model, svc, stage, args.p_reg||'', args.p_visit), res);
+        }catch(e){}
+      }).catch(function(){});
+    }
+    return p;
+  };
+}
+if(typeof window.esCompose==='function'){
+  var _esCompose=window.esCompose;
+  window.esCompose=function(){
+    try{
+      var model=gv('es-model'), km=+gv('es-km')||0, svc=gv('es-type')||'';
+      var reg=(gv('es-reg')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+      if(model && svc){
+        var stage=(svc==='free')?(gv('es-freestage')||'I'):'';
+        var visit=(typeof esVisitNo==='function')?esVisitNo(model,km):null;
+        var months=(typeof esMonthsSince==='function')?(esMonthsSince(gv('es-dos'))||null):null;
+        var key=[model,km,months,svc,stage,reg,visit].join('|');
+        var c=kget(ckey(model,svc,stage,reg,visit));
+        if(c && c.v && c.v.ok && ES_COMPOSE_KEY!==key && fresh(c,HQS_COMPOSE_TTL)){
+          ES_COMPOSED=c.v; ES_COMPOSE_ERR='';
+          try{ if(typeof esResetRemoved==='function') esResetRemoved(); }catch(e){}
+          try{ esRenderManual(); }catch(e){}
+          try{ esRenderHistory(); }catch(e){}
+          try{ esUpdateLive(); }catch(e){}
+        }
+      }
+    }catch(e){}
+    return _esCompose.apply(this, arguments);
+  };
+}
+/* pending vehicles are composed before the advisor opens them */
+function prefetch(){
+  try{
+    if(HQS.prefetching || typeof sbRpc!=='function' || (typeof ONLINE!=='undefined' && !ONLINE)) return;
+    var list=(typeof ES_GATE_ENTRIES!=='undefined' && Array.isArray(ES_GATE_ENTRIES))?ES_GATE_ENTRIES:[];
+    if(!list.length) return;
+    var jobs=[];
+    for(var i=0;i<list.length && jobs.length<12;i++){
+      var g=list[i]||{}; var model=String(g.model||'').trim(); var svc=svcOf(g.purpose);
+      if(!model || !svc) continue;
+      var km=+String(g.km||'').replace(/[^0-9]/g,'')||0;
+      var visit=(typeof esVisitNo==='function')?esVisitNo(model,km):null;
+      var stage=(svc==='free')?(['I','I','II','III','IV','V'][Math.min(5,Math.max(1,visit||1))]||'I'):'';
+      var reg=String(g.reg||'');
+      if(fresh(kget(ckey(model,svc,stage,reg,visit)),HQS_COMPOSE_TTL)) continue;
+      jobs.push({p_model:model, p_km:km, p_months:null, p_visit:visit, p_reg:pnKey(reg), p_service:(svc==='free'?('free '+stage):svc)});
+    }
+    if(!jobs.length) return;
+    HQS.prefetching=true;
+    var k=0;
+    (function next(){
+      if(k>=jobs.length){ HQS.prefetching=false; return; }
+      var a=jobs[k++];
+      sbRpc('estimate_compose', a).catch(function(){}).then(function(){ setTimeout(next, 250); });
+    })();
+  }catch(e){ HQS.prefetching=false; }
+}
+window.hqsPrefetch=prefetch;
+if(typeof window.esLoadGateEntries==='function'){
+  var _esLoadGateEntries=window.esLoadGateEntries;
+  window.esLoadGateEntries=function(){
+    var r=_esLoadGateEntries.apply(this, arguments);
+    try{ setTimeout(prefetch, 2500); setTimeout(prefetch, 9000); }catch(e){}
+    return r;
+  };
+}
+
+/* ---- the target amount and what to defer ---- */
+function ensureBar(){
+  if(document.getElementById('hqs-bar')) return;
+  var act=document.getElementById('rt-actions'); if(!act) return;
+  var d=document.createElement('div'); d.id='hqs-bar';
+  d.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin:8px 0 6px';
+  d.innerHTML=
+     '<button type="button" id="hqs-open" onclick="hqsOpen()" style="flex:2 1 220px;min-height:46px;border:0;border-radius:10px;'
+    +'background:#1d4ed8;color:#fff;font:800 15px Inter,sans-serif;cursor:pointer;text-align:left;padding:0 14px">'
+    +'🗣 Add what the customer said <span style="font-weight:500;opacity:.85;font-size:12px">— bearing, brake shoe, wash…</span></button>'
+    +'<label style="flex:1 1 150px;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;padding:0 10px;background:#fff">'
+    +'<span style="font-size:12px;font-weight:800;color:var(--steel,#475569);white-space:nowrap">₹ Target</span>'
+    +'<input id="hqs-target" type="number" inputmode="numeric" placeholder="last time" oninput="hqsTarget(this.value)" '
+    +'style="flex:1;min-width:70px;border:0;outline:0;font:800 16px Inter,sans-serif;background:transparent"></label>'
+    +'<div id="hqs-fit" style="flex:1 1 100%;font-size:12px;line-height:1.5"></div>';
+  act.parentNode.insertBefore(d, act);
+  /* the old front door is still there, renamed to what it now is */
+  var old=act.querySelector('button[onclick="rtOpenParts()"]');
+  if(old) old.textContent='Browse parts';
+}
+window.hqsTarget=function(v){ HQS.target=Math.round(+String(v||'').replace(/[^0-9.]/g,'')||0); try{ esUpdateLive(); }catch(e){ fitRender(); } };
+window.hqsDefer=function(label){ try{ esRemoveItem(label); }catch(e){} };
+window.hqsDeferAll=function(){
+  var ls=HQS._defer||[]; HQS._defer=[];
+  ls.forEach(function(l){ try{ esRemoveItem._confirmed=true; esRemoveItem(l); }catch(e){} finally{ try{ esRemoveItem._confirmed=false; }catch(e){} } });
+};
+function fitRender(){
+  var box=document.getElementById('hqs-fit'); if(!box) return;
+  var c=null; try{ c=esComputeCurrent(); }catch(e){}
+  var inp=document.getElementById('hqs-target');
+  if(inp && c && c.custLast>0 && !inp.value) inp.placeholder='last time '+money(c.custLast);
+  else if(inp && c && !inp.value && c.modelMed>0) inp.placeholder='usual '+money(c.modelMed);
+  if(!c || !(HQS.target>0)){ box.innerHTML=''; HQS._defer=[]; return; }
+  var gst=(typeof GST==='number')?GST:0.18;
+  var total=Math.round(c.total||0), gap=total-HQS.target;
+  if(gap<=0){
+    box.innerHTML='<span style="color:#065f46;font-weight:700">✔ '+money(total)+' is within the '+money(HQS.target)+' target</span>'
+      +(gap<0?(' <span style="color:#475569">— '+money(-gap)+' room for demanded work</span>'):'');
+    HQS._defer=[]; return;
+  }
+  /* what may be deferred: never oil, never the service labour, never a
+     locked fitment line (it goes with its part), never a safety part */
+  var cand=[];
+  (c.items.parts||[]).forEach(function(x){ if(x.src==='consumable' || (x.src==='oil')) return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l, p:+(x.netP!==undefined?x.netP:x.p)||0, kind:'part'}); });
+  (c.items.labour||[]).forEach(function(x){ if(x._locked || x.free || x._mandatory || x.src==='service' || x.src==='express') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l, p:+(x.netP!==undefined?x.netP:x.p)||0, kind:'labour'}); });
+  cand=cand.filter(function(x){ return x.p>0; }).sort(function(a,b){ return b.p-a.p; });
+  var need=gap/(1+gst), pick=[], sum=0;
+  cand.forEach(function(x){ if(sum>=need) return; pick.push(x); sum+=x.p; });
+  HQS._defer=pick.map(function(x){ return x.l; });
+  var kept=(c.items.parts||[]).filter(function(x){ return HQS_SAFETY.test(String(x.l||'')); }).length;
+  var h='<span style="color:#b45309;font-weight:800">'+money(total)+' is '+money(gap)+' over the '+money(HQS.target)+' target.</span> ';
+  if(!pick.length){ h+='<span style="color:#475569">Nothing here can be deferred safely'+(kept?(' — the '+kept+' safety line'+(kept===1?'':'s')+' stay'):'')+'. Use a discount or agree a higher amount.</span>'; box.innerHTML=h; return; }
+  h+='<span style="color:#475569">Defer to next visit:</span> ';
+  h+=pick.map(function(x){ return '<span class="rt-chip" style="margin:2px 4px 2px 0" onclick="hqsDefer('+JSON.stringify(String(x.l)).replace(/"/g,'&quot;')+')">'+esc(x.l)+' '+money(x.p)+' ✕</span>'; }).join('');
+  if(pick.length>1) h+='<span class="rt-chip on" style="margin:2px 0" onclick="hqsDeferAll()">Defer all '+pick.length+'</span>';
+  if(sum<need) h+=' <span style="color:#b45309">(still '+money(Math.round((need-sum)*(1+gst)))+' over after that — safety lines are kept)</span>';
+  box.innerHTML=h;
+}
+if(typeof window.rtEnsureStrip==='function'){
+  var _rtEnsureStrip=window.rtEnsureStrip;
+  window.rtEnsureStrip=function(){ var ok=_rtEnsureStrip.apply(this, arguments); try{ ensureBar(); }catch(e){} return ok; };
+}
+if(typeof window.esUpdateLive==='function'){
+  var _esUpdateLive=window.esUpdateLive;
+  window.esUpdateLive=function(){ var r=_esUpdateLive.apply(this, arguments); try{ fitRender(); }catch(e){} return r; };
+}
+/* a new vehicle starts with no target */
+if(typeof window.esOnGatePick==='function'){
+  var _esOnGatePick=window.esOnGatePick;
+  window.esOnGatePick=function(){ try{ HQS.target=0; var i=document.getElementById('hqs-target'); if(i) i.value=''; }catch(e){} return _esOnGatePick.apply(this, arguments); };
+}
+try{ ensureBar(); }catch(e){}
+window.HQS=HQS;
+/* exposed for the release smoke test (no login needed): search the phone copy, render, fit */
+window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsFitRender=fitRender; window.hqsTyped=typed;
+})();
+
 </script>
 </body></html>
