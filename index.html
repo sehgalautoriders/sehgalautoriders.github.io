@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 65;
-window.HERO_BUILD = 'R80-2026.09.03.1';
+window.HERO_BUILD = 'R80-2026.09.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9218,15 +9218,55 @@ async function esPushSheet(d){
 
 /* Gate-entry picker: pending-only, scoped to this user's allowed workshops */
 let ES_GATE_ENTRIES=[];
+var ES_GATE_LOAD_SEQ=0, ES_GATE_FRESH_SEEN=false, ES_GATE_EMPTY_T=0;
+/* R80 (Ravi 03-09): "When an Advisor presses the button it says no gate entries
+   directly... he will think the app is not working today and close it in a sec
+   and do the rest of the day manually. This is a new app, people are very
+   sensitive." So the picker NEVER asserts empty while it is still loading, and
+   the caught-up state is calm and positive, not a bare "Nothing pending". */
+function esGateShowCaughtUp_(){
+  var sel=document.getElementById('es-gate-pick'), hint=document.getElementById('es-gate-hint');
+  if(sel){ sel.innerHTML='<option value="">No vehicle waiting right now — tap to refresh</option>'; }
+  if(hint){ hint.classList.remove('es-gate-loading'); hint.style.color='';
+    hint.innerHTML='You’re all caught up — every gate-entered vehicle is estimated.<br>'
+      +'A vehicle standing in the workshop but not listed means its gate entry was missed: '
+      +'<b>do the gate entry</b> and tell your WM.'
+      +'<br><button class="btn ghost sm" style="margin-top:6px" onclick="openModule(\'gate\')">Do a Gate Entry</button>'
+      +' <button class="btn ghost sm" style="margin-top:6px" onclick="esLoadGateEntries()">↻ Refresh</button>'; }
+}
+function esGateCss_(){
+  if(document.getElementById('es-gate-css')) return;
+  var st=document.createElement('style'); st.id='es-gate-css';
+  st.textContent='@keyframes esGateDots{0%,20%{opacity:.25}50%{opacity:1}100%{opacity:.25}}'
+    +'.es-gate-loading{color:#2563eb}'
+    +'.es-gate-loading::after{content:" \\2022\\2022\\2022";letter-spacing:3px;animation:esGateDots 1.1s infinite}'
+    +'@keyframes esGateFade{from{opacity:.15;transform:translateY(3px)}to{opacity:1;transform:none}}'
+    +'.es-gate-in{animation:esGateFade .35s ease}';
+  document.head.appendChild(st);
+}
 function esLoadGateEntries(){
   // FIX 15-Jul: while a vehicle is picked, never rebuild the list — earlier guard sat in a
   // wrapper that internal callers (refresh timer) bypassed, so the selection kept vanishing.
   if(typeof ES!=='undefined' && ES && (ES.gateId||ES.token)) return;
+  esGateCss_();
   const sel0=document.getElementById('es-gate-pick');
-  if(!getLastGood('report_today',{})) sel0.innerHTML='<option value="">Loading vehicles…</option>';
+  const hint0=document.getElementById('es-gate-hint');
+  /* Show a calm animated "Loading today's vehicles…" until the FRESH answer
+     lands. Keep any vehicles already on screen so a refresh never blanks it. */
+  if(!(ES_GATE_ENTRIES && ES_GATE_ENTRIES.length)){
+    sel0.innerHTML='<option value="">⏳  Loading today’s vehicles…</option>';
+    if(hint0){ hint0.classList.add('es-gate-loading'); hint0.style.color=''; hint0.textContent='One moment — bringing in the vehicles from the gate'; }
+  }
+  ES_GATE_LOAD_SEQ++; var loadSeq=ES_GATE_LOAD_SEQ; ES_GATE_FRESH_SEEN=false;
+  clearTimeout(ES_GATE_EMPTY_T);
   jgetReliable('report_today', {}, function(res, isStale){
+    if(loadSeq!==ES_GATE_LOAD_SEQ) return;                 // a newer load supersedes this one
+    if(!isStale) ES_GATE_FRESH_SEEN=true;
     if(!res || res.ok===false){
-      if(!isStale) document.getElementById('es-gate-pick').innerHTML='<option value="">— Could not load (tap to retry) —</option>';
+      if(!isStale){
+        const s=document.getElementById('es-gate-pick'); if(s) s.innerHTML='<option value="">↻  Tap to load the vehicles</option>';
+        const h=document.getElementById('es-gate-hint'); if(h){ h.classList.remove('es-gate-loading'); h.style.color=''; h.textContent='Could not reach the gate list just now — tap the box to try again.'; }
+      }
       return;
     }
     // ALL DAYS, NOT JUST TODAY (Ravi 16-Jul): advisors open JCs next day when a lot of
@@ -9253,14 +9293,19 @@ function esLoadGateEntries(){
     const sel=document.getElementById('es-gate-pick');
     const hint=document.getElementById('es-gate-hint');
     if(!entries.length){
-      // The app knows. It should not ask the SA to go and check a list.
-      sel.innerHTML='<option value="">— Nothing pending —</option>';
-      if(hint) hint.innerHTML='✅ All gate-entered vehicles are estimated. Nothing is pending.<br>'
-        +'If a vehicle is standing in your workshop and not in this list, its gate entry was not done. '
-        +'<b>Do the gate entry yourself now</b> and inform your WM — the missed entry is recorded against the guard.'
-        +'<br><button class="btn ghost sm" style="margin-top:6px" onclick="openModule(\'gate\')">Do the missing Gate Entry</button>';
+      /* A cached (stale) empty is NOT authoritative — hold the calm loading
+         state and let the fresh answer decide, with a 7s safety net so a fresh
+         call that never lands still resolves to the caught-up message. Never
+         flash "no gate entries" at a nervous SA before we actually know. */
+      if(isStale && !ES_GATE_FRESH_SEEN){
+        clearTimeout(ES_GATE_EMPTY_T);
+        ES_GATE_EMPTY_T=setTimeout(function(){ if(loadSeq===ES_GATE_LOAD_SEQ && !ES_GATE_FRESH_SEEN) esGateShowCaughtUp_(); }, 7000);
+        return;
+      }
+      esGateShowCaughtUp_();
       return;
     }
+    if(hint) hint.classList.remove('es-gate-loading');
     const todayKey=heroIstDay();
     const dayKeyOf=g=>{
       const k=String(g.dateKey||'').slice(0,10);
@@ -9290,6 +9335,13 @@ function esLoadGateEntries(){
     });
     if(openKey!==null) html+='</optgroup>';
     sel.innerHTML=html;
+    /* Smooth reveal (Ravi 03-09: "smoothly the list should pop up, not disturb
+       the SA"): fade the filled list in, and flash the count green for a beat so
+       the SA sees the app worked before the standing instruction. */
+    sel.classList.remove('es-gate-in'); void sel.offsetWidth; sel.classList.add('es-gate-in');
+    if(hint){ var normalHint=hint.textContent; hint.classList.remove('es-gate-loading'); hint.style.color='#15803d';
+      hint.textContent='✓ '+entries.length+' vehicle'+(entries.length===1?'':'s')+' ready — '+todayCount+' from today';
+      setTimeout(function(){ if(document.getElementById('es-gate-hint')===hint){ hint.style.color=''; hint.textContent=normalHint; } }, 1400); }
   });
 }
 document.getElementById('es-gate-pick').addEventListener('click', function(){
