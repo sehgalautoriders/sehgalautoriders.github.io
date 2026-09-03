@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 68;
-window.HERO_BUILD = 'R83-2026.09.03.1';
+window.HERO_RELEASE = 70;
+window.HERO_BUILD = 'R85-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -7397,7 +7397,11 @@ function esShowForm(){
   esUpdateLive();
 }
 function esTickDateTime(){ const el=document.getElementById('es-dt'); if(el) el.value=new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
-setInterval(()=>{ if(document.getElementById('view-estimate').style.display!=='none') esTickDateTime(); }, 30000);
+/* R85 (Ravi 03-09-2026): "Date and time should not be editable." The field is
+   already readonly; the 30-second re-stamp made it keep changing on screen, which
+   read as a live/editable field. It is now STAMPED ONCE — at estimate-view open
+   and again on each gate pick (esOnGatePick) — and then frozen for that estimate.
+   The old ticking interval is removed. */
 
 /* Typeable dd-mm-yyyy date fields (English-India) — identical on mobile and laptop,
    auto-inserts dashes as digits are typed. Used by Date of Sale (and any future
@@ -8607,14 +8611,36 @@ function esRenderManual(){
      padding this release removed. */
   const cl=(C.checklist||[]);
   if(chk){
-    chk.innerHTML = cl.length
-      ? '<details class="es-chk"><summary>'+cl.length+' checks the manual specifies at this service</summary>'
-        +'<table class="es-mini"><tbody>'+cl.map(function(x){
-            return '<tr><td>'+raviEsc(x.item)+'</td><td class="mono">'+raviEsc(x.act)+'</td></tr>';
-          }).join('')+'</tbody></table>'
-        +'<div class="hint">I inspect · C clean · A adjust · L lubricate · T top up · R replace. '
-        +'These are done under the service labour and are not charged separately.</div></details>'
-      : '';
+    if(!cl.length){ chk.innerHTML=''; }
+    else {
+      /* R85 (Ravi 03-09-2026): the checks that need MATERIAL added — Replace (R)
+         and Top up (T) — must be shown in RED and directly visible, not hidden
+         behind a tap the SA will never make. Inspect / clean / adjust / lubricate
+         stay in the collapsed list below. */
+      var actHas=function(a,letter){ return String(a||'').toUpperCase().split(/[^A-Z]+/).indexOf(letter)>-1; };
+      var need=cl.filter(function(x){ return actHas(x.act,'R')||actHas(x.act,'T'); });
+      var rest=cl.filter(function(x){ return !(actHas(x.act,'R')||actHas(x.act,'T')); });
+      var needHtml='';
+      if(need.length){
+        needHtml='<div style="border:1.5px solid #fecaca;background:#fef2f2;border-radius:8px;padding:8px 10px;margin:2px 0 6px">'
+          +'<div style="font-size:12px;font-weight:800;color:#b91c1c;margin-bottom:5px">⚠ Material to add per the owner manual ('+need.length+')</div>'
+          +'<table class="es-mini"><tbody>'+need.map(function(x){
+              var tag=actHas(x.act,'R')?'REPLACE':'TOP UP';
+              return '<tr><td style="color:#b91c1c;font-weight:700">'+raviEsc(x.item)+'</td>'
+                +'<td class="mono" style="color:#b91c1c;font-weight:800;white-space:nowrap">'+raviEsc(x.act)+' · '+tag+'</td></tr>';
+            }).join('')+'</tbody></table>'
+          +'<div class="hint" style="color:#b91c1c">These need a part or a top-up on the estimate — Generate will offer to add them.</div></div>';
+      }
+      chk.innerHTML = needHtml
+        +(rest.length
+          ? '<details class="es-chk"><summary>'+rest.length+' more checks the manual specifies at this service</summary>'
+            +'<table class="es-mini"><tbody>'+rest.map(function(x){
+                return '<tr><td>'+raviEsc(x.item)+'</td><td class="mono">'+raviEsc(x.act)+'</td></tr>';
+              }).join('')+'</tbody></table>'
+            +'<div class="hint">I inspect · C clean · A adjust · L lubricate · T top up · R replace. '
+            +'These are done under the service labour and are not charged separately.</div></details>'
+          : '');
+    }
   }
   /* WHERE THE MASTER IS SHORT. A part the manual says to replace but which has
      no part number for this model cannot go on the estimate — the billing desk
@@ -8823,7 +8849,7 @@ function esUpdateLiveInner_(){
           const ratio=lab>0?(partsSide/lab):0;
           const good=lab>0&&ratio<=1.15;
           const auto=(c.items&&c.items._autoLabourAdded&&c.items._autoLabourAdded.length)||0;
-          return `<div style="display:flex;justify-content:space-between;padding:2px 0;color:${good?'#065f46':'#6d28d9'}"><span>⚖ Parts : Labour <span style="font-size:10px;opacity:.8">(target 1 : 1)</span></span><b class="mono">${lab>0?ratio.toFixed(2)+' : 1':'—'}</b></div>`+
+          return `<div style="display:flex;justify-content:space-between;padding:2px 0;color:${good?'#065f46':'#6d28d9'}"><span>⚖ Parts : Labour <span style="font-size:10px;opacity:.8">(checkpoint 1 : 1)</span></span><b class="mono">${lab>0?ratio.toFixed(2)+' : 1':'—'}</b></div>`+
             (gap>0&&lab>0?`<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px;color:#92400e"><span>↳ labour short of 1 : 1</span><b class="mono">${inr(gap)}</b></div>`:'')+
             (auto?`<div style="padding:2px 0;font-size:10.5px;color:#065f46">✔ ${auto} fitting labour line${auto===1?'':'s'} added automatically for parts on this estimate — delete any that do not apply.</div>`:'');
         })()+
@@ -8892,6 +8918,53 @@ function reqCheck(fields){
   return missing;
 }
 
+/* ===========================================================================
+   R85 (Ravi 03-09-2026) — MANUAL FLOOR GATE ON GENERATE
+   "Confirm the R parts and top-up parts as per the owner manual are added first
+    along with their labours, then only allow generating the estimate. Don't keep
+    the Generate button locked — but when pressed, if they are missing, ask to add
+    them, and give an 'Add now' option so the SA does not have to do it by hand."
+   The compulsory base (oil + interval/PM/replace parts + their fitment labour +
+   the service labour) is composed automatically by estimate_compose. The only way
+   a required line is absent is that the SA explicitly removed it — so the gate
+   checks ES_REMOVED against the composed floor and offers to restore it.
+   =========================================================================== */
+function esManualFloorMissing_(){
+  var C=(typeof ES_COMPOSED!=='undefined')?ES_COMPOSED:null; if(!C) return [];
+  var model=String(C.model_asked||val('es-model')||'');
+  var out=[];
+  (C.oil||[]).forEach(function(o){
+    if(!esModelOk_(C.model_oil, model)) return;
+    if(ES_REMOVED.has(o.desc)) out.push({l:o.desc, kind:'Engine oil'});
+  });
+  (C.parts||[]).forEach(function(x){
+    if(!esModelOk_(x.from_model||C.model_parts, model)) return;
+    if(ES_REMOVED.has(x.desc)) out.push({l:x.desc, kind:'Part'});
+  });
+  (C.labour||[]).forEach(function(l){
+    if(!l.rate_borrowed && !esModelOk_(l.from_model||C.model_labour, model)) return;
+    if(ES_REMOVED.has(l.desc)) out.push({l:l.desc, kind:'Labour'});
+  });
+  return out;
+}
+function esAddManualFloor_(list){
+  (list||[]).forEach(function(m){ try{ ES_REMOVED.delete(m.l); }catch(e){} });
+  try{ esUpdateLive(); }catch(e){}
+  try{ esRenderManual(); }catch(e){}
+}
+function esShowManualGate_(list){
+  var m0=document.getElementById('es-msg');
+  var names=(list||[]).map(function(m){ return '• '+m.l+'  ('+m.kind+')'; }).join('\n');
+  var ok=confirm('The owner manual needs these on the estimate before it can be generated:\n\n'
+    +names+'\n\nTap OK to ADD NOW (with their labour) and generate, or Cancel to review.');
+  if(ok){
+    esAddManualFloor_(list);
+    if(m0){ m0.style.color='#065f46'; m0.textContent='Added the manual’s required lines.'; }
+    setTimeout(function(){ try{ esGenerate(); }catch(e){} }, 40);   /* re-run: the gate now passes */
+  } else {
+    if(m0){ m0.style.color='var(--signal-d)'; m0.textContent='Add the manual’s required parts and labour, then generate.'; }
+  }
+}
 function esGenerate(){
   if(ES.locked) return;
   /* REGISTRATION NUMBER CHECK, before anything is generated (folded in
@@ -8951,6 +9024,10 @@ function esGenerate(){
   if(String(val('es-mob2')||'').trim()) req.push({v:val('es-mob2'), label:'Additional mobile', mobile:true});
   const missing=reqCheck(req);
   if(missing.length){ reqShowMissing(missing); return; }
+  /* R85: owner-manual REPLACE parts, TOP-UPs and their labour must be present.
+     Not a locked button — a check on press, with a one-tap "Add now". */
+  var _mf=[]; try{ _mf=esManualFloorMissing_(); }catch(e){}
+  if(_mf.length){ esShowManualGate_(_mf); return; }
   const c=esComputeCurrent();
   if(!c){ msg.textContent='Select a model and a service type.'; return; }
   ES.current={id:'EST'+Date.now().toString().slice(-7),ts:Date.now(),name:val('es-name'),mob:val('es-mob'),reg:val('es-reg').toUpperCase(),
@@ -9314,6 +9391,11 @@ function esLoadGateEntries(){
   clearTimeout(ES_GATE_EMPTY_T);
   jgetReliable('report_today', {}, function(res, isStale){
     if(loadSeq!==ES_GATE_LOAD_SEQ) return;                 // a newer load supersedes this one
+    /* R85 (Ravi 03-09-2026): "Vehicle from Gate entry is chosen and after some
+       time it has gone blank." A report_today callback that was already in flight
+       when the SA picked a vehicle would land later and rewrite the <select>,
+       wiping the selection. Once a vehicle is picked, NEVER touch the list. */
+    if(typeof ES!=='undefined' && ES && (ES.gateId||ES.token)) return;
     if(!isStale) ES_GATE_FRESH_SEEN=true;
     if(!res || res.ok===false){
       if(!isStale){
@@ -9322,11 +9404,19 @@ function esLoadGateEntries(){
       }
       return;
     }
-    // ALL DAYS, NOT JUST TODAY (Ravi 16-Jul): advisors open JCs next day when a lot of
-    // vehicles come in together. pendingAll comes from the backend when available;
-    // pending (today) is the fallback until that deploy.
     let entries=(res&&(res.pendingAll||res.pending))||[];
     entries = entries.filter(e => wsAllowed(e.location));
+    /* R85 (Ravi 03-09-2026): TODAY ONLY. "Always show only today's. Yesterday's
+       not-done is not-done — the SA gets no incentive for a job card that was not
+       estimated, so an unestimated vehicle from yesterday is not carried forward
+       into this list." This SUPERSEDES the 16-Jul all-days rule and also cuts the
+       list from ~1,000 rows to a day's worth, which is the load-time fix. */
+    (function(){
+      var todayKey=heroIstDay();
+      var dk=function(g){ var k=String(g.dateKey||'').slice(0,10); if(k) return k;
+        var d=new Date(g.time); return isNaN(d.getTime())?'':d.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); };
+      entries=entries.filter(function(g){ return dk(g)===todayKey; });
+    })();
     /* NEWEST FIRST, GROUPED BY DAY (Ravi 14-Aug-2026 — measured, not guessed).
        pendingAll is every gate entry that still has no estimate, so it only
        grows: on 14-Aug it held 1,048 vehicles going back to 15-Jul, in backend
@@ -9359,41 +9449,30 @@ function esLoadGateEntries(){
       return;
     }
     if(hint) hint.classList.remove('es-gate-loading');
-    const todayKey=heroIstDay();
-    const dayKeyOf=g=>{
-      const k=String(g.dateKey||'').slice(0,10);
-      if(k) return k;
-      const d=new Date(g.time);
-      return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
-    };
-    const todayCount=entries.filter(g=>dayKeyOf(g)===todayKey).length;
-    if(hint) hint.textContent='Compulsory. No manual estimates. '+todayCount+' from today, '
-      +entries.length+' pending in all.';
-    /* One <optgroup> per day, newest day first, so "today" is the first thing
-       under the cursor and an older day is a deliberate scroll, not an accident. */
-    let html='<option value="">— Select vehicle from Gate Entry —</option>', openKey=null;
-    entries.forEach((g,i)=>{
-      const k=dayKeyOf(g);
-      if(k!==openKey){
-        if(openKey!==null) html+='</optgroup>';
-        const d=k?new Date(k+'T12:00:00'):null;
-        const label = !k ? 'Date not recorded'
-          : k===todayKey ? 'Today · '+(d?d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}):k)
-          : (d?d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}):k);
-        html+='<optgroup label="'+label+'">';
-        openKey=k;
-      }
+    /* R85: today-only, newest first already. Every entry is today's. */
+    const todayCount=entries.length;
+    if(hint) hint.textContent='Compulsory. No manual estimates. '+todayCount+' vehicle'
+      +(todayCount===1?'':'s')+' from today.';
+    const head0='<option value="">— Select vehicle from Gate Entry —</option>';
+    const optHtml=entries.map((g,i)=>{
       const t=g.token?g.token+' · ':'';
-      html+=`<option value="${i}">${t}${g.reg} · ${g.name||'Unknown'} (${g.model})</option>`;
+      return `<option value="${i}">${t}${g.reg} · ${g.name||'Unknown'} (${g.model})</option>`;
     });
-    if(openKey!==null) html+='</optgroup>';
-    sel.innerHTML=html;
-    /* Smooth reveal (Ravi 03-09: "smoothly the list should pop up, not disturb
-       the SA"): fade the filled list in, and flash the count green for a beat so
-       the SA sees the app worked before the standing instruction. */
+    /* R85 (Ravi 03-09-2026): "There are 10 advisors, so minimum 10 entries should
+       show first, then the rest can load slowly for the day." Paint the first 10
+       at once so no SA stares at an empty box, then fill the tail a beat later —
+       and never overwrite a selection the SA has already made in between. */
+    const picked=()=> (typeof ES!=='undefined' && ES && (ES.gateId||ES.token));
+    sel.innerHTML=head0+optHtml.slice(0,10).join('');
     sel.classList.remove('es-gate-in'); void sel.offsetWidth; sel.classList.add('es-gate-in');
+    if(optHtml.length>10){
+      setTimeout(function(){
+        if(loadSeq!==ES_GATE_LOAD_SEQ || picked()) return;   // superseded, or SA already chose
+        const s2=document.getElementById('es-gate-pick'); if(s2) s2.innerHTML=head0+optHtml.join('');
+      }, 400);
+    }
     if(hint){ var normalHint=hint.textContent; hint.classList.remove('es-gate-loading'); hint.style.color='#15803d';
-      hint.textContent='✓ '+entries.length+' vehicle'+(entries.length===1?'':'s')+' ready — '+todayCount+' from today';
+      hint.textContent='✓ '+todayCount+' vehicle'+(todayCount===1?'':'s')+' ready for today';
       setTimeout(function(){ if(document.getElementById('es-gate-hint')===hint){ hint.style.color=''; hint.textContent=normalHint; } }, 1400); }
   });
 }
@@ -9416,6 +9495,7 @@ function esOnGatePick(g){
   const newId=g.entryId||g.id||('TOKEN:'+(g.token||''));
   const switching = ES.gateId && ES.gateId!==newId;
   const kmEl=document.getElementById('es-km'); if(kmEl){ kmEl.value=''; try{ esKmLock_(true); }catch(e){} }
+  try{ esTickDateTime(); }catch(e){}   /* R85: freeze the estimate's date & time at this pick */
   const dosEl0=document.getElementById('es-dos'); if(dosEl0) dosEl0.value='';
   const phBox=document.getElementById('es-gate-photos'); if(phBox){ phBox.innerHTML=''; phBox.style.display='none'; }
   if(switching){
@@ -16789,7 +16869,7 @@ function rtRenderStrip(){
      picked. The four buttons stay up from the moment the form is drawn; only the
      ratio numbers wait for something to measure. */
   strip.style.display='block';
-  var act=document.getElementById('rt-actions'); if(act) act.style.display='flex';
+  var act=document.getElementById('rt-actions'); if(act) act.style.display='none';  /* R85: pickers removed */
   if(!c){
     var pl0=document.getElementById('rt-pl');
     if(pl0) pl0.innerHTML='Pick the vehicle and the service type — then the parts:labour ratio is measured here.';
@@ -16842,12 +16922,14 @@ function rtEnsureStrip(){
        the old category/part dropdowns out of the form and nothing replaced them,
        so a part the advisor could see in the Parts Finder could not be put on an
        estimate. "Parts by category" is that door. */
-    +'<div id="rt-actions">'
-    +'<button type="button" class="rt-btn pri" onclick="rtOpen(\'cat\')">Add by complaint</button>'
-    +'<button type="button" class="rt-btn" onclick="rtOpenParts()">Parts by category</button>'
-    +'<button type="button" class="rt-btn" onclick="rtOpen(\'suggest\')">Suggested labour</button>'
-    +'<button type="button" class="rt-btn" onclick="esOpenLabPicker()">Search labour</button>'
-    +'</div>';
+    /* R85 (Ravi 03-09-2026): the four picker buttons — Add by complaint, Parts by
+       category, Suggested labour, Search labour — are REMOVED. R81 only hid them
+       via ensureBar(), but rtRenderStrip() re-rendered this strip and re-showed
+       them, so they came back. They are gone from the source now. The amount dial
+       (#hqs-bar) is the only control; the compulsory manual base is composed
+       automatically. The empty div stays so code that references #rt-actions is
+       safe. */
+    +'<div id="rt-actions" style="display:none"></div>';
   live.parentNode.insertBefore(d, live.nextSibling);
   return true;
 }
@@ -23401,7 +23483,7 @@ function ensureBar(){
       +'font:800 15px Inter,sans-serif;color:var(--ink,#0f172a);cursor:pointer">₹'+n.toLocaleString('en-IN')+'</button>';
   }).join('');
   d.innerHTML=
-     '<div style="font-size:12.5px;font-weight:800;color:var(--steel,#475569);margin-bottom:6px">🎯 How much should this estimate be?</div>'
+     '<div style="font-size:12.5px;font-weight:800;color:var(--steel,#475569);margin-bottom:6px">🎯 SA estimate for this job</div>'
     +'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:stretch">'+chips
     +'<label style="flex:1 1 110px;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;padding:0 10px;background:#fff">'
     +'<span style="font-size:15px;font-weight:800;color:var(--steel,#475569)">₹</span>'
@@ -23491,20 +23573,20 @@ function esTargetApply_(amount){
 function esTargetStatus_(c, base, added, deferred){
   var box=document.getElementById('hqs-fit'); if(!box) return;
   var total=Math.round((c&&c.total)||0), t=HQS.target, gst=(typeof GST==='number')?GST:0.18;
-  if(!t){ box.innerHTML='<span style="color:#475569">Compulsory service for this vehicle is <b>'+money(base)+'</b> (oil + due parts + service labour). Tap an amount to add cleaning / service jobs up to it.</span>'; return; }
+  if(!t){ box.innerHTML='<span style="color:#475569">Compulsory service for this vehicle is <b>'+money(base)+'</b> (oil + due parts + service labour). Tap an amount to set the SA estimate — cleaning / service jobs fill up to it.</span>'; return; }
   if(added && added.length){
-    var h='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">(target '+money(t)+') — added:</span> '
+    var h='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">(SA estimate '+money(t)+') — added:</span> '
       +added.map(function(a){ return '<span class="rt-chip" style="margin:2px 4px 2px 0">'+esc(String(a.desc).replace(/\s*\(.*\)\s*/,''))+' '+money(Math.round(a.amt*(1+gst)))+'</span>'; }).join('');
     if(total<t-40) h+=' <span style="color:#475569">— every service job is in; to go higher, add a part the customer approves.</span>';
     box.innerHTML=h; return;
   }
   if(deferred && deferred.length){
-    box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">(target '+money(t)+') — deferred to next visit:</span> '
+    box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">(SA estimate '+money(t)+') — deferred to next visit:</span> '
       +deferred.map(function(x){ return '<span class="rt-chip" style="margin:2px 4px 2px 0">'+esc(x.l)+'</span>'; }).join('');
     return;
   }
   if(t<base-1){ box.innerHTML='<span style="color:#b45309;font-weight:800">'+money(base)+' is the minimum</span> <span style="color:#475569">for this vehicle’s due maintenance (oil + interval parts). '+money(t)+' would drop a required item — use the discount boxes instead.</span>'; return; }
-  box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">matches the target.</span>';
+  box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">matches the SA estimate.</span>';
 }
 if(typeof window.rtEnsureStrip==='function'){
   var _rtEnsureStrip=window.rtEnsureStrip;
@@ -23636,6 +23718,182 @@ window.heroDiagUpload=heroDiagUpload;
   try{ var dz0=document.getElementById('es-dos'); if(dz0){ dz0.addEventListener('change', saveDos_); dz0.addEventListener('blur', saveDos_); } }catch(e){}
   var _f=window.esOnGatePick;
   window.esOnGatePick=function(g){ var r=_f.apply(this, arguments); try{ ES_DOS_FROM_RECORD=false; ES_DOS_SAVED=''; if(g && g.reg) fill(g.reg); }catch(e){} return r; };
+})();
+</script>
+<script>
+/* =====================================================================
+   R84 (03-09-2026) — THE MASTERS CONSOLE COMES OFF APPS SCRIPT
+
+   Ravi, 03-09-2026: "If anything is pending on Appscript strip it and send to
+   supabase. Now entire thing should run from Supabase. Google sheets, Appscript
+   is done with."
+
+   The console's 17 read call sites (master_list ×3, master_table ×12,
+   master_stamps, refresh_masters) and its three row writes (addrow, updaterow,
+   deleterow) are intercepted HERE, at the transport, rather than at each screen.
+   One wrapper covers every call site — including any this file gained after the
+   count was taken — and the screens are not touched at all.
+
+   Server side: migrations 0070 (hero_master_list / hero_master_table /
+   hero_master_stamps, built from the SB_MAP shim so the console cannot drift
+   from what is in Postgres) and 0071 (hero_master_write, gated to CEO / admin /
+   GM / WM, every edit audited before+after).
+
+   THE FALLBACK IS DELIBERATE AND TEMPORARY. A Supabase call that throws — no
+   session, no network, an RPC not yet applied — falls through to the old Apps
+   Script path and increments window.HERO_MASTERS_FALLBACKS. That counter is the
+   measurement that decides when the Apps Script masters code can be DELETED:
+   while it reads 0 across real use, nothing is depending on Google any more.
+   Read it in the console with `HERO_MASTERS_FALLBACKS`.
+
+   WHAT IS NOT INTERCEPTED, ON PURPOSE:
+
+   · The LOGIN table. Apps Script serves it from Supabase already (R50,
+     sbLoginTable) and it has no SB_MAP entry, so there is nothing here to
+     improve on and a wrong guess would lock people out. It moves with Wave 6.
+
+   · master_createtable / master_deletetable / master_addcolumn /
+     master_deletecolumn. In a spreadsheet those were harmless. Against Postgres
+     they are DDL run on behalf of whoever is holding the phone, and deleting a
+     mapped table would drop a table the estimate engine reads by name. They now
+     say so instead of appearing to work: the four screen actions below refuse
+     BEFORE touching the grid, so the console never shows a change that did not
+     happen. Ravi's call to reinstate them.
+   ===================================================================== */
+(function () {
+  var MASTER_READS  = { master_list: 1, master_table: 1, master_stamps: 1, refresh_masters: 1 };
+  var MASTER_WRITES = { master_addrow: 'addrow', master_updaterow: 'updaterow', master_deleterow: 'deleterow' };
+  var SCHEMA_OPS    = { master_createtable: 'createtable', master_deletetable: 'deletetable',
+                        master_addcolumn: 'addcolumn', master_deletecolumn: 'deletecolumn' };
+  var DDL_MSG = 'Adding or dropping a master table or column is a database change, not a phone action — '
+              + 'the estimate engine reads these tables by name. Ask Claude for a migration.';
+
+  window.HERO_MASTERS_FALLBACKS = 0;
+
+  function isLoginName(n) { return /^\s*(md_)?login\s*$/i.test(String(n || '')); }
+
+  function noteFallback(what, err) {
+    window.HERO_MASTERS_FALLBACKS++;
+    try { console.warn('[R84] masters ' + what + ' fell back to Apps Script:', (err && err.message) || err); } catch (e) {}
+  }
+
+  function readViaSupabase(action, params) {
+    if (action === 'master_list')   return sbRpc('hero_master_list', {});
+    if (action === 'master_stamps') return sbRpc('hero_master_stamps', {});
+    if (action === 'refresh_masters') {
+      /* There is no server-side master cache to bust any more: the RPC reads
+         Postgres on every call. Answering ok:true keeps the caller's flow. */
+      return Promise.resolve({ ok: true, note: 'reads Postgres directly — nothing to refresh' });
+    }
+    return sbRpc('hero_master_table', {
+      p_name: String((params && params.name) || ''), p_limit: null, p_offset: 0
+    });
+  }
+
+  function wrapRead(fnName) {
+    var orig = window[fnName];
+    if (typeof orig !== 'function') return;
+    window[fnName] = function (action, params) {
+      var args = arguments, self = this;
+      if (!MASTER_READS[action]) return orig.apply(self, args);
+      if (action === 'master_table' && isLoginName(params && params.name)) return orig.apply(self, args);
+      var cb = args[2];
+      readViaSupabase(action, params).then(function (res) {
+        try { if (cb) cb(res); } catch (e) { try { console.warn('[R84]', e); } catch (_) {} }
+      }).catch(function (err) {
+        noteFallback(action, err);
+        try { orig.apply(self, args); }
+        catch (e) { try { if (cb) cb({ ok: false, error: String((err && err.message) || err) }); } catch (_) {} }
+      });
+    };
+  }
+  ['jget', 'jgetRaw', 'jgetReliable'].forEach(wrapRead);
+
+  /* ------------------------------------------------------------ writes -- */
+  var origPost = window.jpost;
+  if (typeof origPost === 'function') {
+    window.jpost = function (body) {
+      var t = String((body && body.type) || '');
+      var self = this, args = arguments;
+
+      if (SCHEMA_OPS[t]) {
+        /* Ask the server anyway, so the refusal and its reason come from ONE
+           place and change in one place. The message is shown either way. */
+        sbRpc('hero_master_schema_op', {
+          p_op: SCHEMA_OPS[t], p_table: String((body && body.table) || ''),
+          p_arg: String((body && (body.column || (body.columns || []).join(', '))) || '')
+        }).then(function (res) { alert((res && res.detail) || DDL_MSG); })
+          .catch(function () { alert(DDL_MSG); });
+        return Promise.resolve({ ok: false, error: 'schema changes are not made from the app' });
+      }
+
+      if (MASTER_WRITES[t] && !isLoginName(body && body.table)) {
+        return sbRpc('hero_master_write', {
+          p_op: MASTER_WRITES[t],
+          p_table: String((body && body.table) || ''),
+          p_row: (body && body.row != null) ? String(body.row) : null,
+          p_values: (body && body.values) || {}
+        }).then(function (res) {
+          /* A refusal is now READABLE — the whole point of leaving no-cors.
+             The old path returned an opaque response and the person was told
+             "Saved" whatever happened. */
+          if (res && res.ok === false) {
+            alert('Not saved: ' + (res.error || 'refused')
+                  + (res.detail ? ('\n\n' + res.detail) : '')
+                  + (res.columns ? ('\n\n' + res.columns) : ''));
+          }
+          return res;
+        }).catch(function (err) {
+          noteFallback(t, err);
+          return origPost.apply(self, args);
+        });
+      }
+
+      return origPost.apply(self, args);
+    };
+  }
+
+  /* --------------------------------------------- screens that must change -- */
+
+  /* `_row` used to be a spreadsheet row NUMBER, which the old mdAddRow could
+     guess as "rows + 2". It is now the row's primary key, which only the server
+     can mint — so the row is added, the receipt is read, and the grid is
+     redrawn from the truth rather than from an optimistic guess. */
+  var origAddRow = window.mdAddRow;
+  window.mdAddRow = function () {
+    if (typeof mdIsLogin === 'function' && mdIsLogin()) return origAddRow.apply(this, arguments);
+    var blank = {};
+    (MD_COLUMNS || []).forEach(function (c) { blank[c] = ''; });
+    mdFlag('Adding…');
+    Promise.resolve(window.jpost({ type: 'master_addrow', table: MD_CURRENT, values: blank }))
+      .then(function (res) {
+        if (res && res.ok === false) { mdFlag(''); return; }
+        mdFlag('Added');
+        if (typeof mdSelectTable === 'function' && MD_CURRENT) mdSelectTable(MD_CURRENT);
+      })
+      .catch(function () { mdFlag('Not added'); });
+  };
+
+  /* The four schema buttons refuse BEFORE touching the grid, so the console
+     never shows a column or a table that was not actually created or dropped. */
+  window.mdRemoveColumn = function (col) {
+    alert('Column "' + col + '" was not removed.\n\n' + DDL_MSG);
+  };
+  window.mdAddColumn = function () {
+    alert('Column not added.\n\n' + DDL_MSG);
+    if (typeof mdCloseModal === 'function') mdCloseModal('modal-addcolumn');
+  };
+  window.mdDeleteCurrentTable = function () {
+    if (typeof mdIsLogin === 'function' && mdIsLogin()) {
+      alert('The LOGIN table cannot be deleted — it is the login store for both apps.');
+      return;
+    }
+    alert('Table "' + MD_CURRENT + '" was not deleted.\n\n' + DDL_MSG);
+  };
+  window.mdCreateTable = function () {
+    alert('Table not created.\n\n' + DDL_MSG);
+    if (typeof mdCloseModal === 'function') mdCloseModal('modal-newtable');
+  };
 })();
 </script>
 </body></html>
