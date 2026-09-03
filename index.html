@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 66;
-window.HERO_BUILD = 'R81-2026.09.03.1';
+window.HERO_RELEASE = 67;
+window.HERO_BUILD = 'R82-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8409,8 +8409,24 @@ function esVisitNo(modelName, km){
   }catch(e){ return null; }
 }
 
+/* R82 (Ravi 03-09): "It always comes at 0 km until the odometer is scanned. Big
+   problem. It should be minimum last km, average running calculation, last km +
+   days × last running." So the estimate composes on a PROVISIONAL odometer until
+   the SA scans — the gate's own reading first (a real reading taken today), then
+   an age×average projection (~10,000 km/yr) — never 0. The scan replaces it. */
+var ES_KM_SRC='none';
+function esProvisionalKm_(){
+  try{
+    var typed=+String(val('es-km')||'').replace(/[^0-9]/g,'')||0;
+    if(typed>0){ ES_KM_SRC='meter'; return typed; }
+    if(typeof ES_GATE_KM!=='undefined' && ES_GATE_KM>0){ ES_KM_SRC='gate'; return ES_GATE_KM; }
+    var mo=(typeof esMonthsSince==='function')?(esMonthsSince(val('es-dos'))||0):0;
+    if(mo>0){ ES_KM_SRC='age'; return Math.max(500, Math.round(mo*830)); }   /* ~10,000 km/yr */
+  }catch(e){}
+  ES_KM_SRC='none'; return 0;
+}
 function esCompose(){
-  const model=val('es-model'), km=+val('es-km')||0, svc=val('es-type')||'';
+  const model=val('es-model'), km=esProvisionalKm_(), svc=val('es-type')||'';
   const reg=(val('es-reg')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const wrap=document.getElementById('es-manual-wrap');
   if(!model || !svc){
@@ -8539,6 +8555,8 @@ function esRenderManual(){
   const schedNorm=String(C.model_schedule||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(head){
     head.innerHTML='<b>Service '+C.visit+'</b> at '+Number(C.km||0).toLocaleString('en-IN')+' km'
+      +((typeof ES_KM_SRC!=='undefined' && ES_KM_SRC!=='meter' && ES_KM_SRC!=='none')
+        ? ' <span class="es-warn">≈ estimated '+(ES_KM_SRC==='gate'?'from the gate reading':'from vehicle age')+' — scan the meter to confirm</span>' : '')
       +' · manual on file: <b>'+raviEsc(C.model_schedule||'none')+'</b>'
       +' · engine oil every '+C.oil_interval_km+' km'
       +(schedNorm && schedNorm!==askedNorm
@@ -8630,7 +8648,7 @@ function esComputeCurrent(){
   const modelName=val('es-model'); if(!modelName) return null;
   const fam=famFor(modelName);
   const ftype=val('es-type'); if(!ftype) return null;
-  const km=+val('es-km')||0, dos=val('es-dos'), freeStage=val('es-freestage');
+  const km=esProvisionalKm_(), dos=val('es-dos'), freeStage=val('es-freestage');
   const dec=esDecide(fam,ftype,freeStage); if(!dec) return null;
   /* esEnforceLinkedLabour_ runs BEFORE anything is summed, so no total, no
      printed line and no saved record can ever contain labour whose part is gone. */
@@ -9258,9 +9276,12 @@ function esLoadGateEntries(){
   esGateCss_();
   const sel0=document.getElementById('es-gate-pick');
   const hint0=document.getElementById('es-gate-hint');
-  /* Show a calm animated "Loading today's vehicles…" until the FRESH answer
-     lands. Keep any vehicles already on screen so a refresh never blanks it. */
-  if(!(ES_GATE_ENTRIES && ES_GATE_ENTRIES.length)){
+  /* Show a calm animated "Loading today's vehicles…" ONLY on a truly cold start
+     — no list in memory AND nothing cached. R82 (Ravi 03-09: "every time the app
+     opens it loads gate entries again and again"): when a cached list exists,
+     jgetReliable paints it from last-good at once, so do NOT flash Loading over
+     it on every open. */
+  if(!(ES_GATE_ENTRIES && ES_GATE_ENTRIES.length) && !getLastGood('report_today',{})){
     sel0.innerHTML='<option value="">⏳  Loading today’s vehicles…</option>';
     if(hint0){ hint0.classList.add('es-gate-loading'); hint0.style.color=''; hint0.textContent='One moment — bringing in the vehicles from the gate'; }
   }
@@ -12101,7 +12122,7 @@ function heroPhotoCachePut(id,dataUrl){
 function heroPhotoView(url,label){
   let ov=document.getElementById('hero-photo-ov');
   if(!ov){
-    ov=document.createElement('div'); ov.id='hero-photo-ov';
+    ov=document.createElement('div'); ov.id='hero-photo-ov'; ov.className='hero-ovl';
     ov.style.cssText='position:fixed;inset:0;background:rgba(10,12,16,.96);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px';
     ov.innerHTML='<div id="hero-photo-cap" style="color:#cbd5e1;font-size:13px;font-weight:700;margin-bottom:8px"></div>'
       +'<div id="hero-photo-box" style="flex:1;width:100%;display:flex;align-items:center;justify-content:center;overflow:auto"></div>'
@@ -15631,7 +15652,12 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
      in-flow content. #global-progress is fixed at z-index 9999 and WOULD
      outrank every popup, so it is named as not-a-popup. It does not match the
      selector today; the guard is there so it cannot start matching later. */
-  const POPUP_SEL = '.modal,.ravi-modal-overlay,[id$="-modal"],[id$="-sheet"],[id$="-popup"],[id$="-overlay"]';
+  /* R82 (Ravi 03-09): "still the back screen moves even if there is a front
+     screen on top of it." The touch-scroll lock and the back key both walk this
+     selector; the gate-photo zoom (#hero-photo-ov -> class .hero-ovl) and the
+     bottom sheet (#rt-panel, id ends "-panel") were not in it, so a drag on the
+     backdrop scrolled the page behind. Both are now covered. */
+  const POPUP_SEL = '.modal,.ravi-modal-overlay,.hero-ovl,[id$="-modal"],[id$="-sheet"],[id$="-popup"],[id$="-overlay"],[id$="-panel"]';
 
   /* Fixed, high z-index, and deliberately NOT closable with the back key.
      hero-updcover is the compulsory update screen — back must never dismiss it. */
@@ -23311,11 +23337,15 @@ function prefetch(){
   }catch(e){ HQS.prefetching=false; }
 }
 window.hqsPrefetch=prefetch;
+/* R82 (Ravi 03-09): the background pre-compose fired ~12 estimate_compose calls
+   on EVERY estimate open — the "loads again and again" churn. Throttle it to once
+   per 5 minutes; the compose cache already covers the gap between runs. */
+var ES_PREFETCH_AT=0;
 if(typeof window.esLoadGateEntries==='function'){
   var _esLoadGateEntries=window.esLoadGateEntries;
   window.esLoadGateEntries=function(){
     var r=_esLoadGateEntries.apply(this, arguments);
-    try{ setTimeout(prefetch, 2500); setTimeout(prefetch, 9000); }catch(e){}
+    try{ if(Date.now()-ES_PREFETCH_AT>300000){ ES_PREFETCH_AT=Date.now(); setTimeout(prefetch, 2500); } }catch(e){}
     return r;
   };
 }
@@ -23489,38 +23519,65 @@ window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsTyped=type
     if(!hint){ hint=document.createElement('div'); hint.className='hint r80-rec'; hint.style.marginTop='4px'; el.parentNode.appendChild(hint); }
     hint.textContent=text;
   }
+  /* Which vehicle the DOS box currently belongs to, and whether the shown value
+     came from our records (read-only) or is blank and open for the SA to fill. */
+  var ES_DOS_REG='', ES_DOS_FROM_RECORD=false, ES_DOS_SAVED='';
+  function dosLock_(on){
+    var dz=document.getElementById('es-dos'); if(!dz) return;
+    var fld=dz.closest ? dz.closest('.fld') : dz.parentNode;
+    var oldHint=fld && fld.querySelector ? fld.querySelector('.hint:not(.r80-rec)') : null;
+    if(on){ dz.readOnly=true; dz.style.background='#f1f5f9'; dz.setAttribute('placeholder','from our records');
+      if(oldHint) oldHint.textContent='From our records — no typing needed.'; }
+    else { dz.readOnly=false; dz.style.background=''; dz.setAttribute('placeholder','dd-mm-yyyy');
+      if(oldHint) oldHint.textContent='Not in our records. If the customer knows it, type it (dd-mm-yyyy) — we will save it.'; }
+  }
   function fill(reg){
     var key=String(reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(key.length<6) return;
+    ES_DOS_REG=key; ES_DOS_FROM_RECORD=false; ES_DOS_SAVED='';
     recLine('Checking our records…');
     sbFetch('/rest/v1/customer_master?reg_key=eq.'+encodeURIComponent(key)
             +'&select=date_of_sale,date_of_sale_raw,insurance_expiry_date,last_service_date,model&limit=1',{method:'GET'})
       .then(function(r){ return r.ok?r.json():null; })
       .then(function(rows){
-        if(!Array.isArray(rows)||!rows.length){ recLine('This vehicle is not in our records — first visit we can see.'); return; }
-        var v=rows[0];
-        var d=dmy(v.date_of_sale)|| (/^\d{2}-\d{2}-\d{4}$/.test(String(v.date_of_sale_raw||''))?v.date_of_sale_raw:'');
+        var v=(Array.isArray(rows)&&rows.length)?rows[0]:null;
+        var d=v?(dmy(v.date_of_sale)|| (/^\d{2}-\d{2}-\d{4}$/.test(String(v.date_of_sale_raw||''))?v.date_of_sale_raw:'')):'';
         var dos=document.getElementById('es-dos');
-        if(d && dos && !String(dos.value||'').trim()){ dos.value=d; try{ esUpdateLive(); }catch(e){} try{ esCompose(); }catch(e){} }
+        if(d){
+          /* have a sale date on record -> fill and lock */
+          ES_DOS_FROM_RECORD=true;
+          if(dos && !String(dos.value||'').trim()){ dos.value=d; try{ esUpdateLive(); }catch(e){} try{ esCompose(); }catch(e){} }
+          dosLock_(true);
+        } else {
+          /* blank (no record, or a record with no sale date) -> let the SA fill
+             it so our database gets fuller (Ravi 03-09). */
+          dosLock_(false);
+        }
         var bits=[];
         if(d) bits.push('sold '+d);
-        if(v.last_service_date) bits.push('last service '+dmy(v.last_service_date));
-        if(v.insurance_expiry_date){ var ex=new Date(v.insurance_expiry_date); bits.push('insurance '+((ex<new Date())?'EXPIRED ':'due ')+dmy(v.insurance_expiry_date)); }
-        recLine(bits.length?('On record: '+bits.join('  ·  ')):'On record, but no sale date stored.');
+        if(v && v.last_service_date) bits.push('last service '+dmy(v.last_service_date));
+        if(v && v.insurance_expiry_date){ var ex=new Date(v.insurance_expiry_date); bits.push('insurance '+((ex<new Date())?'EXPIRED ':'due ')+dmy(v.insurance_expiry_date)); }
+        if(bits.length) recLine('On record: '+bits.join('  ·  '));
+        else if(v) recLine('On record, but no sale date — type it below if the customer knows it.');
+        else recLine('New to our records — type the sale date if the customer knows it.');
       })
       .catch(function(){ recLine(''); });
   }
+  /* Save an SA-typed sale date back to the database (fills customer_master only
+     where it is blank; always logged). Runs only on a blank-origin box. */
+  function saveDos_(){
+    if(ES_DOS_FROM_RECORD || typeof sbRpc!=='function') return;
+    var dz=document.getElementById('es-dos'); if(!dz) return;
+    var val=String(dz.value||'').trim();
+    if(!/^\d{2}-\d{2}-\d{4}$/.test(val)) return;
+    if(!ES_DOS_REG || val===ES_DOS_SAVED) return;
+    ES_DOS_SAVED=val;
+    sbRpc('customer_set_dos',{p_reg:ES_DOS_REG, p_dos:val, p_emp:(typeof USER!=='undefined'&&USER)?String(USER.empno||''):''})
+      .then(function(res){ if(res&&res.ok){ recLine('✓ Sale date '+val+' saved to our records — thank you.'); } })
+      .catch(function(){});
+  }
+  try{ var dz0=document.getElementById('es-dos'); if(dz0){ dz0.addEventListener('change', saveDos_); dz0.addEventListener('blur', saveDos_); } }catch(e){}
   var _f=window.esOnGatePick;
-  window.esOnGatePick=function(g){ var r=_f.apply(this, arguments); try{ if(g && g.reg) fill(g.reg); }catch(e){} return r; };
-  /* R81 (Ravi 03-09): "DOS should come from the back end only." Make the Date of
-     Sale box read-only — it is filled from customer_master above, never typed. */
-  try{
-    var dz=document.getElementById('es-dos');
-    if(dz){ dz.readOnly=true; dz.style.background='#f1f5f9'; dz.setAttribute('placeholder','from our records');
-      var fld=dz.closest ? dz.closest('.fld') : dz.parentNode;
-      var oldHint=fld && fld.querySelector ? fld.querySelector('.hint:not(.r80-rec)') : null;
-      if(oldHint) oldHint.textContent='Comes from our records — no typing needed. The estimate still generates if it is blank.';
-    }
-  }catch(e){}
+  window.esOnGatePick=function(g){ var r=_f.apply(this, arguments); try{ ES_DOS_FROM_RECORD=false; ES_DOS_SAVED=''; if(g && g.reg) fill(g.reg); }catch(e){} return r; };
 })();
 </script>
 </body></html>
