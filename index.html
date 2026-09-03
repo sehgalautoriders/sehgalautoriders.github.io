@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 67;
-window.HERO_BUILD = 'R82-2026.09.03.1';
+window.HERO_RELEASE = 68;
+window.HERO_BUILD = 'R83-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1790,6 +1790,17 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
 <div id="view-control" style="display:none">
   <div class="wrap">
     <div class="statrow" id="ctl-stats"></div>
+    <!-- R83 (Ravi 03-09): "Give me where I can put latest files in Hero app my
+         login. Upload latest files for diagnosis." Uploads the raw file to the
+         private hero-uploads bucket; Claude pulls it for the optimization pass. -->
+    <div class="card" id="ctl-upload-card">
+      <div class="card-h">📤 Upload latest files — for diagnosis</div>
+      <div class="card-b">
+        <div style="font-size:12.5px;color:var(--steel);margin-bottom:8px">Upload the latest DMS exports or any data file — JC summary, bill value, stock, holdup, price/labour list. Saved privately for Claude to run the optimization / diagnosis pass on fresh data. This does not change the live app.</div>
+        <label class="btn" style="background:#1d4ed8;cursor:pointer;display:inline-block">📎 Choose files<input type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.txt,.json,.zip" style="display:none" onchange="heroDiagUpload(this)"></label>
+        <div id="ctl-upload-status" style="font-size:12px;margin-top:8px;line-height:1.7"></div>
+      </div>
+    </div>
     <div class="card">
       <div class="card-h">Today — Gate Entries &amp; Estimates
         <button class="navbtn" onclick="ctlLoad()">↻ Refresh</button>
@@ -8561,6 +8572,20 @@ function esRenderManual(){
       +' · engine oil every '+C.oil_interval_km+' km'
       +(schedNorm && schedNorm!==askedNorm
         ? ' <span class="es-warn">nearest manual to '+raviEsc(C.model_asked)+'</span>' : '');
+    /* R83 (Ravi 03-09): "near due, oil near due — say 6000 km is oil change,
+       then from 5500 to 6500 it should flag. ±500 km." */
+    try{
+      var oi=+C.oil_interval_km||0, kmc=+C.km||0;
+      if(oi>0 && kmc>0){
+        var boundary=Math.round(kmc/oi)*oi; if(boundary<oi) boundary=oi;
+        var dist=kmc-boundary;                       /* + past due, - before due */
+        if(Math.abs(dist)<=500){
+          var msg=(dist>=0)?('OIL DUE now — '+boundary.toLocaleString('en-IN')+' km reached')
+                           :('OIL due soon — '+Math.abs(dist)+' km to the '+boundary.toLocaleString('en-IN')+' km change');
+          head.innerHTML+=' <span style="background:#fef3c7;color:#92400e;border-radius:6px;padding:2px 7px;font-weight:800;font-size:11px">⏰ '+msg+'</span>';
+        }
+      }
+    }catch(e){}
   }
   /* WHAT THE LAST VISIT LEFT UNDONE. Ravi: "if missed something to add in last
      history it should show that." */
@@ -23499,6 +23524,39 @@ window.HQS=HQS;
 window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsTyped=typed; window.esTargetApply_=esTargetApply_; window.esAddonLadder_=esAddonLadder_;
 })();
 
+</script>
+<!-- ============ R83 — UPLOAD FILES FOR DIAGNOSIS (03-09-2026) ============ -->
+<script>
+"use strict";
+/* Ravi 03-09: a place in the app (CEO/Control Room) to upload the latest DMS /
+   data files so Claude can pull them from the private hero-uploads bucket and
+   run the CRM-optimization / diagnosis pass on fresh data. */
+async function heroDiagUpload(input){
+  var files=(input&&input.files)?Array.prototype.slice.call(input.files):[];
+  var box=document.getElementById('ctl-upload-status');
+  if(!files.length) return;
+  if(typeof sbFetch!=='function'){ if(box) box.innerHTML='<span style="color:#b91c1c">Please sign in first.</span>'; return; }
+  var emp=(typeof USER!=='undefined'&&USER)?String(USER.empno||USER.personName||'user').replace(/[^A-Za-z0-9]/g,''):'user';
+  var esc=(typeof raviEsc==='function')?raviEsc:function(s){return String(s||'');};
+  var lines=[], ok=0, fail=0;
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    var ts=new Date().toISOString().replace(/[^0-9]/g,'').slice(0,14);
+    var safe=String(f.name).replace(/[^A-Za-z0-9._-]/g,'_');
+    var path=emp+'/'+ts+'-'+safe;
+    if(box) box.innerHTML=lines.concat('⏳ Uploading '+esc(f.name)+'…').join('<br>');
+    try{
+      var res=await sbFetch('/storage/v1/object/hero-uploads/'+path,
+        {method:'POST', headers:{'Content-Type':(f.type||'application/octet-stream'),'x-upsert':'true'}, body:f});
+      if(res.ok){ ok++; lines.push('✅ '+esc(f.name)+'  ('+Math.round((f.size||0)/1024)+' KB)'); }
+      else { fail++; var m=''; try{ m=(await res.json()).message||('HTTP '+res.status); }catch(e){ m='HTTP '+res.status; } lines.push('❌ '+esc(f.name)+' — '+esc(m)); }
+    }catch(e){ fail++; lines.push('❌ '+esc(f.name)+' — '+esc(String((e&&e.message)||e))); }
+    if(box) box.innerHTML=lines.join('<br>');
+  }
+  if(box) box.innerHTML=lines.join('<br>')+'<br><b style="color:'+(fail?'#b45309':'#065f46')+'">'+ok+' uploaded'+(fail?(', '+fail+' failed'):'')+' — Claude can now pull these for diagnosis.</b>';
+  try{ input.value=''; }catch(e){}
+}
+window.heroDiagUpload=heroDiagUpload;
 </script>
 <!-- ============ R80 — DATE OF SALE + VEHICLE RECORD (03-09-2026) ============ -->
 <script>
