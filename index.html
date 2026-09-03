@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 71;
-window.HERO_BUILD = 'R86-2026.09.03.1';
+window.HERO_RELEASE = 72;
+window.HERO_BUILD = 'R87-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8609,7 +8609,12 @@ function esRenderManual(){
   /* THE MANUAL'S OWN CHECKLIST for this service. Not priced: Hero bills these
      under the one service labour code, and pricing them separately is the
      padding this release removed. */
-  const cl=(C.checklist||[]);
+  /* R87 (Ravi 03-09-2026 eve): "engine oil is showing many times." The composed
+     checklist repeats an item once per interval milestone at this service, so
+     "Engine Oil · I,T" came up 5×. Collapse to one row per item+action. */
+  var cl=(function(){ var seen={}, u=[]; (C.checklist||[]).forEach(function(x){
+      var k=(String(x.item||'').trim().toUpperCase())+'|'+(String(x.act||'').trim().toUpperCase());
+      if(seen[k]) return; seen[k]=1; u.push(x); }); return u; })();
   if(chk){
     if(!cl.length){ chk.innerHTML=''; }
     else {
@@ -23485,10 +23490,14 @@ function ensureBar(){
   d.innerHTML=
      '<div style="font-size:12.5px;font-weight:800;color:var(--steel,#475569);margin-bottom:6px">🎯 SA estimate for this job</div>'
     +'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:stretch">'+chips
-    +'<label style="flex:1 1 110px;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;padding:0 10px;background:#fff">'
+    +'<label style="flex:1 1 100%;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;padding:0 10px;background:#fff">'
     +'<span style="font-size:15px;font-weight:800;color:var(--steel,#475569)">₹</span>'
-    +'<input id="hqs-target" type="number" inputmode="numeric" placeholder="type" oninput="hqsTypeTarget(this.value)" '
+    +'<input id="hqs-target" type="number" inputmode="numeric" placeholder="Make estimate of ₹…" oninput="hqsTypeInput(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();hqsPreEstimate();}" '
     +'style="flex:1;min-width:52px;border:0;outline:0;font:800 16px Inter,sans-serif;background:transparent"></label></div>'
+    /* R87 (Ravi 03-09-2026 eve): "when I enter the amount, give a Pre-estimate
+       button." Typing no longer recomputes on every keystroke (that felt slow);
+       the SA types the amount then presses this once. */
+    +'<button type="button" id="hqs-pre" onclick="hqsPreEstimate()" style="width:100%;margin-top:8px;min-height:46px;border:0;border-radius:10px;background:#1d4ed8;color:#fff;font:800 15px Inter,sans-serif;cursor:pointer">⚡ Pre-estimate — build parts &amp; labour to this amount</button>'
     +'<div id="hqs-fit" style="font-size:12px;line-height:1.55;margin-top:7px"></div>';
   strip.appendChild(d);
   try{ esTargetStatus_(esComputeCurrent(), Math.round((esComputeCurrent()||{}).total||0), [], []); }catch(e){}
@@ -23525,6 +23534,19 @@ function esAddonLadder_(cb){
     .catch(function(){ cb(HQS_ADDONS[model]||[]); });
 }
 window.hqsSetTarget=function(n){ var i=document.getElementById('hqs-target'); if(i) i.value=n; hqsMarkChips_(n); esTargetApply_(n); };
+/* R86: typing only remembers the number + lights the matching chip — it does NOT
+   recompute (that was the slow live behaviour). The Pre-estimate button applies. */
+window.hqsTypeInput=function(v){ var n=Math.round(+String(v||'').replace(/[^0-9.]/g,'')||0); hqsMarkChips_(n); };
+window.hqsPreEstimate=function(){
+  var i=document.getElementById('hqs-target');
+  var n=Math.round(+String((i&&i.value)||'').replace(/[^0-9.]/g,'')||0);
+  var b=document.getElementById('hqs-pre');
+  if(!n){ var fb=document.getElementById('hqs-fit'); if(fb) fb.innerHTML='<span style="color:#b45309">Type an amount first, or tap one of the ₹ buttons.</span>'; return; }
+  if(b){ b.textContent='⚡ Building…'; b.disabled=true; }
+  hqsMarkChips_(n);
+  setTimeout(function(){ try{ esTargetApply_(n); }catch(e){} if(b){ b.textContent='⚡ Pre-estimate — build parts & labour to this amount'; b.disabled=false; } }, 20);
+};
+/* kept for any old cached caller — routes to the button behaviour */
 window.hqsTypeTarget=function(v){ var n=Math.round(+String(v||'').replace(/[^0-9.]/g,'')||0); hqsMarkChips_(n); esTargetApply_(n); };
 function hqsMarkChips_(n){ try{ Array.prototype.forEach.call(document.querySelectorAll('#hqs-bar .hqs-amt'),function(b){ var on=(+b.getAttribute('data-amt')===+n); b.style.background=on?'#1d4ed8':'#fff'; b.style.color=on?'#fff':'var(--ink,#0f172a)'; b.style.borderColor=on?'#1d4ed8':'var(--line,#d6dbe3)'; }); }catch(e){} }
 var ES_TDEFER=new Set();
@@ -23558,7 +23580,10 @@ function esTargetApply_(amount){
   }
   if(amount<base-1){
     var cand=[];
-    (c.items.parts||[]).forEach(function(x){ if(x.src==='consumable'||x.src==='oil'||x.src==='manual'||x.src==='rule') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l,p:+(x.netP!==undefined?x.netP:x.p)||0}); });
+    /* R87 (Ravi 03-09-2026 eve): "cannot go below this, cannot go below that — remove it."
+       Interval / PM parts (src 'manual') may now be deferred so the SA estimate can
+       go lower. Still protected: engine oil, safety items, service labour, fitment. */
+    (c.items.parts||[]).forEach(function(x){ if(x.src==='consumable'||x.src==='oil'||x.src==='rule') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l,p:+(x.netP!==undefined?x.netP:x.p)||0}); });
     (c.items.labour||[]).forEach(function(x){ if(x._locked||x.free||x._mandatory||x.src==='service'||x.src==='fitment'||x.src==='rule'||x.src==='express') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l,p:+(x.netP!==undefined?x.netP:x.p)||0}); });
     cand=cand.filter(function(x){ return x.p>0; }).sort(function(a,b){ return b.p-a.p; });
     var need=(base-amount)/(1+gst), sum=0, deferred=[];
@@ -23585,7 +23610,10 @@ function esTargetStatus_(c, base, added, deferred){
       +deferred.map(function(x){ return '<span class="rt-chip" style="margin:2px 4px 2px 0">'+esc(x.l)+'</span>'; }).join('');
     return;
   }
-  if(t<base-1){ box.innerHTML='<span style="color:#b45309;font-weight:800">'+money(base)+' is the minimum</span> <span style="color:#475569">for this vehicle’s due maintenance (oil + interval parts). '+money(t)+' would drop a required item — use the discount boxes instead.</span>'; return; }
+  /* R86: no more "minimum" wall. If the amount is below what is left after
+     trimming, we settle at the least this service can physically be — engine oil,
+     safety items and service labour stay in — and say so calmly, not as a refusal. */
+  if(t<base-1){ box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">— trimmed towards your SA estimate of '+money(t)+'. Engine oil, safety items and service labour stay in; that is the least this service can be.</span>'; return; }
   box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">matches the SA estimate.</span>';
 }
 if(typeof window.rtEnsureStrip==='function'){
