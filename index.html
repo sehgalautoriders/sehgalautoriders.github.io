@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 65;
-window.HERO_BUILD = 'R80-2026.09.03.3';
+window.HERO_RELEASE = 66;
+window.HERO_BUILD = 'R81-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -23321,80 +23321,152 @@ if(typeof window.esLoadGateEntries==='function'){
 }
 
 /* ---- the target amount and what to defer ---- */
+/* ===========================================================================
+   R81 (Ravi 03-09): "Remove all those buttons — Add by complaint, Browse parts,
+   Suggested labour, Search labour. Add what the customer said is also confusing.
+   Do just ONE thing: SA changes the number 1500 / 2000 / 2500 and the estimate
+   parts and labour change accordingly, automatically, in real time. Some
+   compulsory things remain — preventive-maintenance parts, oil at intervals,
+   specified interval parts per the manual."
+
+   So the four pickers and the quick-add button are GONE. The amount is the only
+   control. The compulsory manual base (oil + interval/PM parts + service labour)
+   is always in and is never removed. Raising the amount adds legitimate, model-
+   correct value-added SERVICE jobs (real Hero DMS codes: chain clean & lube,
+   water wash, carburetor cleaning, brake cleaning, wheel-bearing greasing…).
+   =========================================================================== */
 function ensureBar(){
   if(document.getElementById('hqs-bar')) return;
-  var act=document.getElementById('rt-actions'); if(!act) return;
-  var d=document.createElement('div'); d.id='hqs-bar';
-  d.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin:8px 0 6px';
+  var strip=document.getElementById('rt-strip'); if(!strip) return;
+  var act=document.getElementById('rt-actions'); if(act) act.style.display='none';  /* the four pickers, gone */
+  var d=document.createElement('div'); d.id='hqs-bar'; d.style.cssText='margin:10px 0 4px';
+  var chips=[1500,2000,2500,3000].map(function(n){
+    return '<button type="button" class="hqs-amt" data-amt="'+n+'" onclick="hqsSetTarget('+n+')" '
+      +'style="flex:1 1 60px;min-height:44px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;background:#fff;'
+      +'font:800 15px Inter,sans-serif;color:var(--ink,#0f172a);cursor:pointer">₹'+n.toLocaleString('en-IN')+'</button>';
+  }).join('');
   d.innerHTML=
-     '<button type="button" id="hqs-open" onclick="hqsOpen()" style="flex:2 1 220px;min-height:46px;border:0;border-radius:10px;'
-    +'background:#1d4ed8;color:#fff;font:800 15px Inter,sans-serif;cursor:pointer;text-align:left;padding:0 14px">'
-    +'🗣 Add what the customer said <span style="font-weight:500;opacity:.85;font-size:12px">— bearing, brake shoe, wash…</span></button>'
-    +'<label style="flex:1 1 150px;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;padding:0 10px;background:#fff">'
-    +'<span style="font-size:12px;font-weight:800;color:var(--steel,#475569);white-space:nowrap">₹ Target</span>'
-    +'<input id="hqs-target" type="number" inputmode="numeric" placeholder="last time" oninput="hqsTarget(this.value)" '
-    +'style="flex:1;min-width:70px;border:0;outline:0;font:800 16px Inter,sans-serif;background:transparent"></label>'
-    +'<div id="hqs-fit" style="flex:1 1 100%;font-size:12px;line-height:1.5"></div>';
-  act.parentNode.insertBefore(d, act);
-  /* the old front door is still there, renamed to what it now is */
-  var old=act.querySelector('button[onclick="rtOpenParts()"]');
-  if(old) old.textContent='Browse parts';
+     '<div style="font-size:12.5px;font-weight:800;color:var(--steel,#475569);margin-bottom:6px">🎯 How much should this estimate be?</div>'
+    +'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:stretch">'+chips
+    +'<label style="flex:1 1 110px;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line,#d6dbe3);border-radius:10px;padding:0 10px;background:#fff">'
+    +'<span style="font-size:15px;font-weight:800;color:var(--steel,#475569)">₹</span>'
+    +'<input id="hqs-target" type="number" inputmode="numeric" placeholder="type" oninput="hqsTypeTarget(this.value)" '
+    +'style="flex:1;min-width:52px;border:0;outline:0;font:800 16px Inter,sans-serif;background:transparent"></label></div>'
+    +'<div id="hqs-fit" style="font-size:12px;line-height:1.55;margin-top:7px"></div>';
+  strip.appendChild(d);
+  try{ esTargetStatus_(esComputeCurrent(), Math.round((esComputeCurrent()||{}).total||0), [], []); }catch(e){}
 }
-window.hqsTarget=function(v){ HQS.target=Math.round(+String(v||'').replace(/[^0-9.]/g,'')||0); try{ esUpdateLive(); }catch(e){ fitRender(); } };
-window.hqsDefer=function(label){ try{ esRemoveItem(label); }catch(e){} };
-window.hqsDeferAll=function(){
-  var ls=HQS._defer||[]; HQS._defer=[];
-  ls.forEach(function(l){ try{ esRemoveItem._confirmed=true; esRemoveItem(l); }catch(e){} finally{ try{ esRemoveItem._confirmed=false; }catch(e){} } });
-};
-function fitRender(){
-  var box=document.getElementById('hqs-fit'); if(!box) return;
+/* the value-added service jobs the amount can add, ranked — real Hero DMS codes
+   from labour_master for THIS model, cleaning/wash/greasing only (no new parts). */
+var HQS_ADDONS={};
+var HQS_ADDON_KEEP=/CLEAN|WASH|POLISH|GREAS|LUBRIC|ALIGN|TEFLON|ANTI.?RUST|COAT|WAX|BUFF|DETAIL|TUNING/i;
+var HQS_ADDON_DROP=/\(R\/R|ASSY|\bKIT\b|ACCIDENT|OVERHAUL|DISMANTLE/i;
+var HQS_ADDON_RANK=['WATER WASH','DRIVE CHAIN CLEAN','CARBURETOR CLEAN','CARBURETTOR CLEAN','BRAKE CLEAN','WHEEL BEARING GREAS','ELEMENTAIR','AIR CLEANER','PLUG SPARK','FUEL TANK CLEAN','ALIGN','POLISH','TEFLON','WAX'];
+function hqsAddonRank_(desc){ var u=String(desc||'').toUpperCase(); for(var i=0;i<HQS_ADDON_RANK.length;i++){ if(u.indexOf(HQS_ADDON_RANK[i])>-1) return i; } return 50; }
+function esAddonLadder_(cb){
+  var model=String((ES_COMPOSED&&ES_COMPOSED.model_labour)||curModel()||'').toUpperCase();
+  if(!model){ cb([]); return; }
+  if(HQS_ADDONS[model]){ cb(HQS_ADDONS[model]); return; }
+  var c=kget('addons:'+model); if(c && c.v){ HQS_ADDONS[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
+  if(typeof sbFetch!=='function'){ cb(HQS_ADDONS[model]||[]); return; }
+  sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)
+    +'&select=labour_code,labour_description,rate_pregst,times_billed&rate_pregst=gt.0&limit=500',{method:'GET'})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(rows){
+      if(!Array.isArray(rows)){ cb(HQS_ADDONS[model]||[]); return; }
+      var seen={}, out=[];
+      rows.forEach(function(r){
+        var desc=String(r.labour_description||''), code=String(r.labour_code||'');
+        if(!code || !(+r.rate_pregst>0) || code.indexOf('_OLD')>-1) return;
+        if(!HQS_ADDON_KEEP.test(desc) || HQS_ADDON_DROP.test(desc)) return;
+        if(seen[code]) return; seen[code]=1;
+        out.push({code:code, desc:desc, amt:+r.rate_pregst, rank:hqsAddonRank_(desc), tb:+r.times_billed||0});
+      });
+      out.sort(function(a,b){ return (a.rank-b.rank)||(b.tb-a.tb); });
+      HQS_ADDONS[model]=out; kput('addons:'+model, out); cb(out);
+    })
+    .catch(function(){ cb(HQS_ADDONS[model]||[]); });
+}
+window.hqsSetTarget=function(n){ var i=document.getElementById('hqs-target'); if(i) i.value=n; hqsMarkChips_(n); esTargetApply_(n); };
+window.hqsTypeTarget=function(v){ var n=Math.round(+String(v||'').replace(/[^0-9.]/g,'')||0); hqsMarkChips_(n); esTargetApply_(n); };
+function hqsMarkChips_(n){ try{ Array.prototype.forEach.call(document.querySelectorAll('#hqs-bar .hqs-amt'),function(b){ var on=(+b.getAttribute('data-amt')===+n); b.style.background=on?'#1d4ed8':'#fff'; b.style.color=on?'#fff':'var(--ink,#0f172a)'; b.style.borderColor=on?'#1d4ed8':'var(--line,#d6dbe3)'; }); }catch(e){} }
+var ES_TDEFER=new Set();
+/* THE ONE INTERACTION: dial the amount -> the estimate fills to it, live. */
+function esTargetApply_(amount){
+  amount=Math.round(+amount||0); HQS.target=amount;
+  if(Array.isArray(ES_ADDLAB)) ES_ADDLAB=ES_ADDLAB.filter(function(x){ return !x._tfill; });   /* clear prior fills */
+  ES_TDEFER.forEach(function(l){ try{ ES_REMOVED.delete(l); }catch(e){} }); ES_TDEFER.clear();  /* clear prior defers */
   var c=null; try{ c=esComputeCurrent(); }catch(e){}
-  var inp=document.getElementById('hqs-target');
-  if(inp && c && c.custLast>0 && !inp.value) inp.placeholder='last time '+money(c.custLast);
-  else if(inp && c && !inp.value && c.modelMed>0) inp.placeholder='usual '+money(c.modelMed);
-  if(!c || !(HQS.target>0)){ box.innerHTML=''; HQS._defer=[]; return; }
-  var gst=(typeof GST==='number')?GST:0.18;
-  var total=Math.round(c.total||0), gap=total-HQS.target;
-  if(gap<=0){
-    box.innerHTML='<span style="color:#065f46;font-weight:700">✔ '+money(total)+' is within the '+money(HQS.target)+' target</span>'
-      +(gap<0?(' <span style="color:#475569">— '+money(-gap)+' room for demanded work</span>'):'');
-    HQS._defer=[]; return;
+  if(!c){ try{ esUpdateLive(); }catch(e){} return; }
+  var gst=(typeof GST==='number')?GST:0.18, base=Math.round(c.total||0);
+  if(!amount){ try{ esUpdateLive(); }catch(e){} esTargetStatus_(c, base, [], []); return; }
+  if(amount>base+1){
+    esAddonLadder_(function(ladder){
+      var present={};
+      (c.items.labour||[]).forEach(function(l){ if(l.code) present[String(l.code)]=1; });
+      (ES_ADDLAB||[]).forEach(function(l){ if(l.code) present[String(l.code)]=1; });
+      var added=[], running=base;
+      for(var i=0;i<ladder.length;i++){
+        var a=ladder[i]; if(present[a.code]) continue;
+        var add=Math.round(a.amt*(1+gst));
+        if(running+add>amount) continue;                 /* stay at or under the amount */
+        ES_ADDLAB.push({l:a.desc, p:a.amt, code:String(a.code), _tfill:true, _fromPicker:true, src:'addon'});
+        present[a.code]=1; running+=add; added.push(a);
+      }
+      try{ esUpdateLive(); }catch(e){}
+      var c2=null; try{ c2=esComputeCurrent(); }catch(e){}
+      esTargetStatus_(c2||c, base, added, []);
+    });
+    return;
   }
-  /* what may be deferred: never oil, never the service labour, never a
-     locked fitment line (it goes with its part), never a safety part */
-  var cand=[];
-  (c.items.parts||[]).forEach(function(x){ if(x.src==='consumable' || (x.src==='oil')) return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l, p:+(x.netP!==undefined?x.netP:x.p)||0, kind:'part'}); });
-  (c.items.labour||[]).forEach(function(x){ if(x._locked || x.free || x._mandatory || x.src==='service' || x.src==='express') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l, p:+(x.netP!==undefined?x.netP:x.p)||0, kind:'labour'}); });
-  cand=cand.filter(function(x){ return x.p>0; }).sort(function(a,b){ return b.p-a.p; });
-  var need=gap/(1+gst), pick=[], sum=0;
-  cand.forEach(function(x){ if(sum>=need) return; pick.push(x); sum+=x.p; });
-  HQS._defer=pick.map(function(x){ return x.l; });
-  var kept=(c.items.parts||[]).filter(function(x){ return HQS_SAFETY.test(String(x.l||'')); }).length;
-  var h='<span style="color:#b45309;font-weight:800">'+money(total)+' is '+money(gap)+' over the '+money(HQS.target)+' target.</span> ';
-  if(!pick.length){ h+='<span style="color:#475569">Nothing here can be deferred safely'+(kept?(' — the '+kept+' safety line'+(kept===1?'':'s')+' stay'):'')+'. Use a discount or agree a higher amount.</span>'; box.innerHTML=h; return; }
-  h+='<span style="color:#475569">Defer to next visit:</span> ';
-  h+=pick.map(function(x){ return '<span class="rt-chip" style="margin:2px 4px 2px 0" onclick="hqsDefer('+JSON.stringify(String(x.l)).replace(/"/g,'&quot;')+')">'+esc(x.l)+' '+money(x.p)+' ✕</span>'; }).join('');
-  if(pick.length>1) h+='<span class="rt-chip on" style="margin:2px 0" onclick="hqsDeferAll()">Defer all '+pick.length+'</span>';
-  if(sum<need) h+=' <span style="color:#b45309">(still '+money(Math.round((need-sum)*(1+gst)))+' over after that — safety lines are kept)</span>';
-  box.innerHTML=h;
+  if(amount<base-1){
+    var cand=[];
+    (c.items.parts||[]).forEach(function(x){ if(x.src==='consumable'||x.src==='oil'||x.src==='manual'||x.src==='rule') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l,p:+(x.netP!==undefined?x.netP:x.p)||0}); });
+    (c.items.labour||[]).forEach(function(x){ if(x._locked||x.free||x._mandatory||x.src==='service'||x.src==='fitment'||x.src==='rule'||x.src==='express') return; if(HQS_SAFETY.test(String(x.l||''))) return; cand.push({l:x.l,p:+(x.netP!==undefined?x.netP:x.p)||0}); });
+    cand=cand.filter(function(x){ return x.p>0; }).sort(function(a,b){ return b.p-a.p; });
+    var need=(base-amount)/(1+gst), sum=0, deferred=[];
+    cand.forEach(function(x){ if(sum>=need) return; ES_REMOVED.add(x.l); ES_TDEFER.add(x.l); sum+=x.p; deferred.push(x); });
+    try{ esUpdateLive(); }catch(e){}
+    var c3=null; try{ c3=esComputeCurrent(); }catch(e){}
+    esTargetStatus_(c3||c, base, [], deferred);
+    return;
+  }
+  try{ esUpdateLive(); }catch(e){} esTargetStatus_(c, base, [], []);
+}
+function esTargetStatus_(c, base, added, deferred){
+  var box=document.getElementById('hqs-fit'); if(!box) return;
+  var total=Math.round((c&&c.total)||0), t=HQS.target, gst=(typeof GST==='number')?GST:0.18;
+  if(!t){ box.innerHTML='<span style="color:#475569">Compulsory service for this vehicle is <b>'+money(base)+'</b> (oil + due parts + service labour). Tap an amount to add cleaning / service jobs up to it.</span>'; return; }
+  if(added && added.length){
+    var h='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">(target '+money(t)+') — added:</span> '
+      +added.map(function(a){ return '<span class="rt-chip" style="margin:2px 4px 2px 0">'+esc(String(a.desc).replace(/\s*\(.*\)\s*/,''))+' '+money(Math.round(a.amt*(1+gst)))+'</span>'; }).join('');
+    if(total<t-40) h+=' <span style="color:#475569">— every service job is in; to go higher, add a part the customer approves.</span>';
+    box.innerHTML=h; return;
+  }
+  if(deferred && deferred.length){
+    box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">(target '+money(t)+') — deferred to next visit:</span> '
+      +deferred.map(function(x){ return '<span class="rt-chip" style="margin:2px 4px 2px 0">'+esc(x.l)+'</span>'; }).join('');
+    return;
+  }
+  if(t<base-1){ box.innerHTML='<span style="color:#b45309;font-weight:800">'+money(base)+' is the minimum</span> <span style="color:#475569">for this vehicle’s due maintenance (oil + interval parts). '+money(t)+' would drop a required item — use the discount boxes instead.</span>'; return; }
+  box.innerHTML='<span style="color:#065f46;font-weight:800">✓ '+money(total)+'</span> <span style="color:#475569">matches the target.</span>';
 }
 if(typeof window.rtEnsureStrip==='function'){
   var _rtEnsureStrip=window.rtEnsureStrip;
   window.rtEnsureStrip=function(){ var ok=_rtEnsureStrip.apply(this, arguments); try{ ensureBar(); }catch(e){} return ok; };
 }
-if(typeof window.esUpdateLive==='function'){
-  var _esUpdateLive=window.esUpdateLive;
-  window.esUpdateLive=function(){ var r=_esUpdateLive.apply(this, arguments); try{ fitRender(); }catch(e){} return r; };
-}
+/* re-apply the amount after the composed base changes (service type / km), so
+   the fill always matches the current vehicle. Debounced past the compose call. */
+try{ var _et=document.getElementById('es-type'); if(_et) _et.addEventListener('change', function(){ if(HQS.target>0) setTimeout(function(){ try{ esTargetApply_(HQS.target); }catch(e){} }, 700); }); }catch(e){}
 /* a new vehicle starts with no target */
 if(typeof window.esOnGatePick==='function'){
   var _esOnGatePick=window.esOnGatePick;
-  window.esOnGatePick=function(){ try{ HQS.target=0; var i=document.getElementById('hqs-target'); if(i) i.value=''; }catch(e){} return _esOnGatePick.apply(this, arguments); };
+  window.esOnGatePick=function(){ try{ HQS.target=0; ES_TDEFER.forEach(function(l){ try{ ES_REMOVED.delete(l); }catch(e){} }); ES_TDEFER.clear(); if(Array.isArray(ES_ADDLAB)) ES_ADDLAB=ES_ADDLAB.filter(function(x){ return !x._tfill; }); var i=document.getElementById('hqs-target'); if(i) i.value=''; hqsMarkChips_(0); var fb=document.getElementById('hqs-fit'); if(fb) fb.innerHTML=''; }catch(e){} return _esOnGatePick.apply(this, arguments); };
 }
 try{ ensureBar(); }catch(e){}
 window.HQS=HQS;
 /* exposed for the release smoke test (no login needed): search the phone copy, render, fit */
-window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsFitRender=fitRender; window.hqsTyped=typed;
+window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsTyped=typed; window.esTargetApply_=esTargetApply_; window.esAddonLadder_=esAddonLadder_;
 })();
 
 </script>
@@ -23439,6 +23511,16 @@ window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsFitRender=
   }
   var _f=window.esOnGatePick;
   window.esOnGatePick=function(g){ var r=_f.apply(this, arguments); try{ if(g && g.reg) fill(g.reg); }catch(e){} return r; };
+  /* R81 (Ravi 03-09): "DOS should come from the back end only." Make the Date of
+     Sale box read-only — it is filled from customer_master above, never typed. */
+  try{
+    var dz=document.getElementById('es-dos');
+    if(dz){ dz.readOnly=true; dz.style.background='#f1f5f9'; dz.setAttribute('placeholder','from our records');
+      var fld=dz.closest ? dz.closest('.fld') : dz.parentNode;
+      var oldHint=fld && fld.querySelector ? fld.querySelector('.hint:not(.r80-rec)') : null;
+      if(oldHint) oldHint.textContent='Comes from our records — no typing needed. The estimate still generates if it is blank.';
+    }
+  }catch(e){}
 })();
 </script>
 </body></html>
