@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 70;
-window.HERO_BUILD = 'R85-2026.09.03.1';
+window.HERO_RELEASE = 71;
+window.HERO_BUILD = 'R86-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -23894,6 +23894,307 @@ window.heroDiagUpload=heroDiagUpload;
     alert('Table not created.\n\n' + DDL_MSG);
     if (typeof mdCloseModal === 'function') mdCloseModal('modal-newtable');
   };
+})();
+</script>
+<script>
+/* =====================================================================
+   R86 (03-09-2026) — REGISTER, CEO APPROVAL, AND THE CODE OVER WHATSAPP
+
+   Ravi, 03-09-2026: "Use my whatsapp package api to send message to the user.
+   Give an option for registering. Approval by CEO for that mobile no only."
+
+   Three screens, one mechanism:
+
+     · REGISTER        a person with no login taps "New here? Register" on the
+                       login screen and gives name / mobile / emp no. The CEO is
+                       WhatsApped that somebody is waiting.
+     · CEO APPROVAL    Master Data → Registrations. Approving a request adds
+                       THAT MOBILE NUMBER — and only that one — to the approved
+                       list, and WhatsApps the person that they can now set a
+                       password.
+     · THE CODE        "Forgot password" no longer e-mails through Apps Script.
+                       It asks the `hero-otp` Edge Function, which sends a
+                       6-digit code over Ravi's Pingmate WhatsApp account to the
+                       approved number, and only to an approved number.
+
+   Server side: migration 0072 (hero_registration, hero_approved_mobile,
+   hero_login_otp + nine functions) and the `hero-otp` Edge Function. The code is
+   stored hashed and is never returned to this browser — only the function that
+   sends it ever sees it.
+
+   NO APPS SCRIPT FALLBACK HERE, deliberately. The old path e-mailed a code into
+   a different store; falling back mid-flow would leave a person holding a code
+   this app cannot check. `send_otp` and `reset_password_otp` are simply done
+   with.
+   ===================================================================== */
+(function () {
+  var FN = (typeof SB_URL !== 'undefined' ? SB_URL : '') + '/functions/v1/hero-otp';
+
+  /* Register and "send me a code" are used by someone who is NOT signed in, so
+     they go with the anon key rather than through sbFetch, which needs a token. */
+  function fnAnon(body) {
+    return fetch(FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SB_ANON,
+                 Authorization: 'Bearer ' + SB_ANON },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+
+  /* The approval is made BY the CEO, so it carries the CEO's own token — the
+     decision is recorded against a person, never against a service key. */
+  function fnAuth(body) {
+    return sbFetch('/functions/v1/hero-otp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function el(id) { return document.getElementById(id); }
+  function say(id, text, kind) {
+    var m = el(id); if (!m) return;
+    m.style.color = kind === 'bad' ? 'var(--signal-d)'
+                  : kind === 'good' ? 'var(--ok)' : 'var(--steel)';
+    m.textContent = text;
+  }
+
+  /* ---------------------------------------------------------- the markup -- */
+  var css = '<style>' +
+    '#reg-modal,#regadm-modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;' +
+      'background:rgba(0,0,0,.82);z-index:3000;overflow:auto}' +
+    '#reg-modal .chgpass-box,#regadm-modal .chgpass-box{max-width:520px}' +
+    '.regrow{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:10px;margin-bottom:8px}' +
+    '.regrow b{display:block;font-size:15px}' +
+    '.regrow .sub{color:var(--steel);font-size:12px;margin:2px 0 8px}' +
+    '.regrow .acts{display:flex;gap:8px;flex-wrap:wrap}' +
+    '.regrow input{padding:6px 8px;border:1px solid var(--line,#e2e8f0);border-radius:8px;font-size:13px}' +
+    '</style>';
+
+  var html = css +
+    '<div id="reg-modal"><div class="chgpass-box">' +
+      '<h3>📝 Register for the Hero App</h3>' +
+      '<div class="hint" style="margin-bottom:10px">The CEO approves each mobile number ' +
+        'himself. Once he does, you get a WhatsApp on that number and can set your password.</div>' +
+      '<div class="fld"><label>Your name</label><input id="reg-name" placeholder="Full name"></div>' +
+      '<div class="fld"><label>WhatsApp mobile number</label>' +
+        '<input id="reg-mob" inputmode="numeric" maxlength="14" placeholder="10-digit mobile"></div>' +
+      '<div class="fld"><label>Employee No. (if you have one)</label>' +
+        '<input id="reg-emp" placeholder="e.g. 275507"></div>' +
+      '<div class="fld"><label>Workshop</label><input id="reg-ws" placeholder="e.g. Manjri"></div>' +
+      '<div class="fld"><label>What do you do?</label>' +
+        '<input id="reg-as" placeholder="e.g. Service Advisor"></div>' +
+      '<button class="btn" onclick="regSubmit()">Send request to the CEO</button>' +
+      '<button class="btn ghost block" style="margin-top:8px" onclick="regClose()">Close</button>' +
+      '<div id="reg-msg" class="hint" style="margin-top:10px"></div>' +
+    '</div></div>' +
+    '<div id="regadm-modal"><div class="chgpass-box">' +
+      '<h3>✅ Registrations</h3>' +
+      '<div class="hint" style="margin-bottom:10px">Approving adds <b>that mobile number only</b> ' +
+        'to the approved list. Nothing this app sends can reach a number that is not on it.</div>' +
+      '<div id="regadm-list"><div class="hint">Loading…</div></div>' +
+      '<button class="btn ghost block" style="margin-top:8px" onclick="regAdmClose()">Close</button>' +
+      '<div id="regadm-msg" class="hint" style="margin-top:10px"></div>' +
+    '</div></div>';
+
+  var holder = document.createElement('div');
+  holder.innerHTML = html;
+  document.body.appendChild(holder);
+
+  /* "New here? Register", next to "Forgot password?" on the login screen. */
+  (function addLoginLink() {
+    var fp = document.querySelector('[onclick="fpOpen()"]');
+    if (!fp || !fp.parentNode) return;
+    var sep = document.createElement('span');
+    sep.textContent = '  ·  ';
+    sep.style.cssText = 'color:var(--steel);font-size:12px';
+    var a = document.createElement('span');
+    a.textContent = 'New here? Register';
+    a.style.cssText = 'cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline';
+    a.onclick = function () { regOpen(); };
+    fp.parentNode.appendChild(sep);
+    fp.parentNode.appendChild(a);
+  })();
+
+  /* ------------------------------------------------------------ register -- */
+  window.regOpen = function () {
+    ['reg-name', 'reg-mob', 'reg-emp', 'reg-ws', 'reg-as'].forEach(function (i) {
+      var e = el(i); if (e) e.value = '';
+    });
+    var emp = el('li-emp'); if (emp && emp.value) el('reg-emp').value = emp.value;
+    say('reg-msg', '');
+    el('reg-modal').style.display = 'block';
+  };
+  window.regClose = function () { el('reg-modal').style.display = 'none'; };
+
+  window.regSubmit = function () {
+    var name = (el('reg-name').value || '').trim();
+    var mob = (el('reg-mob').value || '').replace(/\D/g, '').slice(-10);
+    if (!name) { say('reg-msg', 'Enter your name.', 'bad'); return; }
+    if (mob.length !== 10) { say('reg-msg', 'Enter a 10-digit mobile number.', 'bad'); return; }
+    say('reg-msg', 'Sending…');
+    fnAnon({ op: 'register', name: name, mobile: mob,
+             emp_no: (el('reg-emp').value || '').trim() || null,
+             workshop: (el('reg-ws').value || '').trim() || null,
+             as: (el('reg-as').value || '').trim() || null })
+      .then(function (res) {
+        if (!res || res.ok === false) {
+          say('reg-msg', (res && res.error) || 'Could not send the request.', 'bad');
+          return;
+        }
+        say('reg-msg', res.message || 'Request sent to the CEO.', 'good');
+        setTimeout(window.regClose, 4000);
+      })
+      .catch(function () { say('reg-msg', 'No connection. Try again.', 'bad'); });
+  };
+
+  /* --------------------------------------------------- forgot password ---- */
+  /* Same two steps the person already knows. Only the road changes: the code
+     comes by WhatsApp to the number the CEO approved, not by e-mail through a
+     Google account that can lapse. */
+  window.fpSendOtp = function () {
+    var emp = (el('fp-emp').value || '').trim();
+    if (!emp) { say('fp-msg', 'Enter your Employee No. or mobile number.', 'bad'); return; }
+    say('fp-msg', 'Sending the code to your WhatsApp…');
+    fnAnon({ op: 'send', login: emp, purpose: 'reset' })
+      .then(function (res) {
+        if (!res || res.ok === false) {
+          say('fp-msg', (res && (res.detail || res.error)) || 'Could not send the code.', 'bad');
+          return;
+        }
+        el('fp-step1').style.display = 'none';
+        el('fp-step2').style.display = 'block';
+        var m = el('fp-emailmsg');
+        if (m) m.textContent = 'Code sent on WhatsApp to ' + (res.masked || 'your number')
+                             + '. It expires in 10 minutes.';
+        say('fp-msg', '');
+      })
+      .catch(function () { say('fp-msg', 'No connection. Try again.', 'bad'); });
+  };
+
+  window.fpResetPassword = function () {
+    var emp = (el('fp-emp').value || '').trim();
+    var otp = (el('fp-otp').value || '').trim();
+    var newp = el('fp-new').value || '', conf = el('fp-conf').value || '';
+    if (!otp || !newp || !conf) { say('fp-msg', 'All fields required.', 'bad'); return; }
+    if (newp !== conf) { say('fp-msg', 'Passwords do not match.', 'bad'); return; }
+    /* Six, not four: Supabase itself refuses shorter, and telling someone their
+       password is set when the server rejected it is worse than asking twice. */
+    if (newp.length < 6) { say('fp-msg', 'Password must be at least 6 characters.', 'bad'); return; }
+    say('fp-msg', 'Setting your password…');
+    fnAnon({ op: 'reset', login: emp, code: otp, newPass: newp })
+      .then(function (res) {
+        if (!res || res.ok === false) {
+          say('fp-msg', (res && res.error) || 'Could not set the password.', 'bad');
+          return;
+        }
+        say('fp-msg', 'Password set. Sign in with the new one.', 'good');
+        setTimeout(fpClose, 1800);
+      })
+      .catch(function () { say('fp-msg', 'No connection. Try again.', 'bad'); });
+  };
+
+  /* the button still said "Send OTP to my email" */
+  (function relabel() {
+    var b = document.querySelector('#fp-step1 [onclick="fpSendOtp()"]');
+    if (b) b.textContent = 'Send code to my WhatsApp';
+    var lab = document.querySelector('#fp-step2 label');
+    if (lab && /email/i.test(lab.textContent)) lab.textContent = 'Code (check WhatsApp)';
+    var e = el('fp-emp');
+    if (e) e.placeholder = 'Emp No or mobile number';
+  })();
+
+  /* -------------------------------------------------- the CEO's screen ---- */
+  window.regAdmOpen = function () {
+    el('regadm-modal').style.display = 'block';
+    say('regadm-msg', '');
+    regAdmLoad('PENDING');
+  };
+  window.regAdmClose = function () { el('regadm-modal').style.display = 'none'; };
+
+  window.regAdmLoad = function (status) {
+    var box = el('regadm-list');
+    box.innerHTML = '<div class="hint">Loading…</div>';
+    sbRpc('hero_registrations', { p_status: status || 'PENDING' })
+      .then(function (res) {
+        if (!res || res.ok === false) {
+          box.innerHTML = '<div class="hint">' + esc((res && res.error) || 'Could not load.') + '</div>';
+          return;
+        }
+        var rows = res.rows || [];
+        if (!rows.length) {
+          box.innerHTML = '<div class="hint">Nobody is waiting.</div>';
+          return;
+        }
+        box.innerHTML = rows.map(function (r) {
+          var when = String(r.requested_at || '').replace('T', ' ').slice(0, 16);
+          return '<div class="regrow">' +
+            '<b>' + esc(r.full_name) + '</b>' +
+            '<div class="sub">' + esc(r.mobile) +
+              (r.emp_no ? ' · Emp ' + esc(r.emp_no) : '') +
+              (r.workshop ? ' · ' + esc(r.workshop) : '') +
+              (r.requested_as ? ' · ' + esc(r.requested_as) : '') +
+              ' · ' + esc(when) + '</div>' +
+            '<div class="acts">' +
+              '<input id="rc-' + esc(r.id) + '" placeholder="login code" style="width:120px">' +
+              '<button class="btn" style="padding:6px 12px;font-size:13px" ' +
+                'onclick="regAdmDecide(\'' + esc(r.id) + '\',true)">Approve this number</button>' +
+              '<button class="btn ghost" style="padding:6px 12px;font-size:13px" ' +
+                'onclick="regAdmDecide(\'' + esc(r.id) + '\',false)">Reject</button>' +
+            '</div></div>';
+        }).join('');
+      })
+      .catch(function (e) {
+        box.innerHTML = '<div class="hint">' + esc(String(e.message || e)) + '</div>';
+      });
+  };
+
+  window.regAdmDecide = function (id, approve) {
+    var codeBox = el('rc-' + id);
+    say('regadm-msg', approve ? 'Approving…' : 'Rejecting…');
+    fnAuth({ op: 'approve', id: id, approve: !!approve,
+             login_code: codeBox ? (codeBox.value || '').trim() : null })
+      .then(function (res) {
+        if (!res || res.ok === false) {
+          say('regadm-msg', (res && res.error) || 'Could not save the decision.', 'bad');
+          return;
+        }
+        var note = approve
+          ? ('Approved ' + (res.mobile || '') +
+             (res.whatsapp_sent ? ' — WhatsApp sent.' : ' — WhatsApp did NOT go out: ' +
+              (res.whatsapp_detail || 'unknown')))
+          : 'Rejected.';
+        say('regadm-msg', note, approve && res.whatsapp_sent ? 'good' : 'bad');
+        regAdmLoad('PENDING');
+      })
+      .catch(function (e) { say('regadm-msg', String(e.message || e), 'bad'); });
+  };
+
+  /* The CEO reaches it from Master Data, which is already admin ground. The
+     button is added when that screen boots, and only for a CEO. */
+  var origMdBoot = window.mdBoot;
+  if (typeof origMdBoot === 'function') {
+    window.mdBoot = function () {
+      var r = origMdBoot.apply(this, arguments);
+      try {
+        var list = document.getElementById('md-tablelist');
+        if (list && !document.getElementById('md-regbtn')) {
+          var b = document.createElement('button');
+          b.id = 'md-regbtn';
+          b.className = 'btn ghost block';
+          b.style.marginBottom = '8px';
+          b.textContent = '✅ Registrations (approve a mobile number)';
+          b.onclick = window.regAdmOpen;
+          list.parentNode.insertBefore(b, list);
+        }
+      } catch (e) { /* the console still works without the button */ }
+      return r;
+    };
+  }
 })();
 </script>
 </body></html>
