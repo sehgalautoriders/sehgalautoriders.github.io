@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 65;
-window.HERO_BUILD = 'R80-2026.09.03.2';
+window.HERO_BUILD = 'R80-2026.09.03.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -4679,15 +4679,22 @@ function hbPingGas_(){
   if(!navigator.onLine) return;
   let done=false;
   const set=function(ok){ if(done) return; done=true; HB.gas=ok?'ALIVE':'DEAD'; hbSave_(); hbStrip_(); };
-  const timer=setTimeout(function(){ set(false); }, 15000);
-  fetch(jUrl_('gate_sb_status',{_hb:Date.now()},null),{method:'GET',mode:'cors',credentials:'omit',cache:'no-store'})
-    .then(function(r){ return r.text(); })
-    .then(function(t){
+  /* R80 (Ravi 03-09): "It is still saying from yesterday, Reports, masters
+     offline." CAUSE: this ping used fetch(mode:'cors') against the Apps Script
+     /exec URL. Apps Script sends NO CORS headers, so a cross-origin browser
+     fetch ALWAYS fails — the ping marked the backend DEAD every time and the
+     amber strip stuck (HB.gas is saved to localStorage, hence "from yesterday"),
+     even though the backend was answering the whole rest of the app fine over
+     JSONP. Fix: probe over the SAME JSONP path everything else uses. A real
+     gate_sb_status reply ({ok:true,...}) = reports/masters are alive; the
+     network-error sentinel ({ok:false,error:'network'}) = genuinely down. */
+  const timer=setTimeout(function(){ set(false); }, 16000);
+  try{
+    jgetRaw('gate_sb_status', {_hb:Date.now()}, function(res){
       clearTimeout(timer);
-      let j=null; try{ j=JSON.parse(t); }catch(e){}
-      set(!!j);
-    })
-    .catch(function(){ clearTimeout(timer); if(navigator.onLine) set(false); });
+      set(!!(res && res.ok===true));
+    }, 15000);
+  }catch(e){ clearTimeout(timer); set(false); }
 }
 
 function hbMark_(ok, why){
