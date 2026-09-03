@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 64;
-window.HERO_BUILD = 'R79-2026.09.02.1';
+window.HERO_RELEASE = 65;
+window.HERO_BUILD = 'R80-2026.09.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9115,7 +9115,7 @@ function esNewEstimate(){
   const exwr=document.getElementById('es-express-wrap'); if(exwr) exwr.style.display='none';
   /* And the odometer scan: a reading offered but never confirmed on the last
      vehicle must not be sitting there waiting for a tap on this one. */
-  ES_KM_PENDING=0; try{ esKmHint('',''); }catch(e){}
+  ES_KM_PENDING=0; try{ esKmHint('',''); }catch(e){} try{ esKmLock_(true); }catch(e){}
   document.getElementById('es-freestage-wrap').style.display='none';
   ES_ADDLAB=[]; ES_ADDPART=[]; ES_DEMANDED=[]; ES_PRICE_OVERRIDES={}; ES_LINE_DISCOUNTS={}; ES_REMOVED=new Set(); ES_UNDO_STACK=[]; ES_STAGE_MANUAL=false; esRenderUndoBtn&&esRenderUndoBtn(); esDrawChips(); esDrawDemChips(); ES.current=null; esLockForm(false);
   ES_MODEL_CTX={reg:'',gateModel:''}; const emf=document.getElementById('es-model-flag'); if(emf){ emf.style.display='none'; emf.innerHTML=''; } const emm=document.getElementById('es-gate-photos'); if(emm){ emm.style.display='none'; }
@@ -9310,7 +9310,7 @@ function esOnGatePick(g){
   // stay behind — km, date of sale, photos, and added items all belong to ONE row.
   const newId=g.entryId||g.id||('TOKEN:'+(g.token||''));
   const switching = ES.gateId && ES.gateId!==newId;
-  const kmEl=document.getElementById('es-km'); if(kmEl) kmEl.value='';
+  const kmEl=document.getElementById('es-km'); if(kmEl){ kmEl.value=''; try{ esKmLock_(true); }catch(e){} }
   const dosEl0=document.getElementById('es-dos'); if(dosEl0) dosEl0.value='';
   const phBox=document.getElementById('es-gate-photos'); if(phBox){ phBox.innerHTML=''; phBox.style.display='none'; }
   if(switching){
@@ -15616,6 +15616,12 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
        to move the app UNDERNEATH it and the scroll-lock survived the trip. */
     const insf=document.getElementById('insf');
     if(insf){ if(typeof insfClose==='function'){ try{ insfClose(); }catch(e){ insf.remove(); document.body.style.overflow=''; } } else { insf.remove(); document.body.style.overflow=''; } return true; }
+    /* R80 (Ravi 02-09): the Quick-add / Add-work sheet is #rt-panel — its id ends
+       in "-panel", which POPUP_SEL never matched, so back moved the screen behind
+       it instead of closing it ("i click back the back window closes and not the
+       immediate front window"). Close the front sheet first, exactly like #insf. */
+    const rtp=document.getElementById('rt-panel');
+    if(rtp && getComputedStyle(rtp).display!=='none'){ if(typeof rtClose==='function'){ try{ rtClose(); }catch(e){ rtp.style.display='none'; } } else { rtp.style.display='none'; } return true; }
     const ov=topOpenOverlay();
     if(ov){
       closeOverlay(ov);
@@ -16428,9 +16434,24 @@ function esEnsureKmScan(){
   f.id='es-km-file'; f.style.display='none';
   f.addEventListener('change', esOnKmPhoto);
   fld.appendChild(f);
+  /* R80 (Ravi 02-09): "First give odometer scan only... no km entering directly.
+     After scanning, OCR runs and the km is noted. If it is wrong, correction is
+     allowed for the SA \u2014 but not before capturing the odometer photograph."
+     So the box is LOCKED until a photo is taken; tapping it opens the camera.
+     esOnKmPhoto unlocks it the moment a photo is captured. */
+  esKmLock_(true);
+  km.addEventListener('click', function(){ if(km.readOnly) esScanKm(); });
+}
+function esKmLock_(lock){
+  var km=document.getElementById('es-km'); if(!km) return;
+  if(lock){ km.readOnly=true; km.value=''; km.style.background='#eef2f7'; km.style.cursor='pointer';
+            km.setAttribute('placeholder','\ud83d\udcf7 Tap to scan the odometer'); }
+  else { km.readOnly=false; km.style.background=''; km.style.cursor='';
+         km.setAttribute('placeholder','odometer km'); }
 }
 function esScanKm(){
   if(typeof window.geOcrRead!=='function'){
+    esKmLock_(false);
     esKmHint('Photo reading is not available in this build \u2014 type the reading.','warn'); return;
   }
   var f=document.getElementById('es-km-file'); if(f){ f.value=''; f.click(); }
@@ -16492,6 +16513,7 @@ function esKmAcceptPending(){
 function esOnKmPhoto(e){
   var file=e.target.files && e.target.files[0]; if(!file) return;
   ES_KM_PENDING=0;
+  try{ esKmLock_(false); }catch(err){}   /* R80: photo captured — the SA may now correct the reading */
   esKmHint('\u23F3 Reading the meter through Gemini, Cloud Vision and Document AI\u2026','');
   var fr=new FileReader();
   fr.onload=function(){
@@ -22996,11 +23018,25 @@ function render(){
       : 'No parts on record for this model yet. Type a word, or <span class="rt-chip" onclick="hqsBrowse()">Browse by category</span>.')+'</div>';
     body.innerHTML=h; return;
   }
+  /* R80 (Ravi 02-09): "which is front wheel bearing from the lot?? how would an SA
+     know it." Front and rear wheel bearings are the same shape on the shelf, and
+     the model tree does not carry the wheel bearing SKU at all — but labour_master
+     names the job exactly (310003 FRONT WHEEL / 310004 REAR WHEEL). So for a
+     bearing/wheel query, point the SA at the position-named JOB in the labour list;
+     the exact bearing size is a fitment detail, confirmed on inspection. */
+  if(qn && /bearing|bering|bairing|wheel|pahiya|cone|race/.test(qn)){
+    h+='<div style="font-size:11.5px;line-height:1.5;color:#0c4a6e;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:6px 9px;margin:0 0 6px">'
+      +'Front &amp; rear wheel bearings look identical on the shelf. Add the <b>job</b> that names the position (in <b>Labour / jobs</b> below); the exact bearing size is picked at fitment.</div>';
+  }
   HQS._by={};
   rows.forEach(function(r,i){
     HQS._by['p'+i]=r;
     var on=(ES_ADDPART||[]).some(function(x){ return String(x.pn||'')===String(r.pn); });
     var meta=[];
+    /* R80: show the ASSEMBLY (category · sub-category) so a flat list of look-alike
+       parts becomes readable — "Steering · Handlebar" vs "Engine" vs "Wheels". */
+    var asm=(r.cat||'')+((r.sub && r.sub!==r.cat)?(' · '+r.sub):'');
+    if(asm) meta.push(asm);
     if(r.stock!=null && r.stock!=='') meta.push((+r.stock>0)?(Math.round(+r.stock)+' in stock'):'0 here');
     if(r.src==='catalogue') meta.push('Hero catalogue');
     var labs=r.labour||[];
@@ -23014,7 +23050,7 @@ function render(){
       +'<button type="button" class="rt-add'+(on?' done':'')+'" onclick="hqsAddPart(\'p'+i+'\',this)">'+(on?'✓':'＋')+'</button></div>';
   });
   if(lab.length){
-    h+='<div class="rt-sec">Labour</div>';
+    h+='<div class="rt-sec">Labour / jobs — add the exact work</div>';
     lab.forEach(function(l,i){
       HQS._by['l'+i]=l;
       var on=(ES_ADDLAB||[]).some(function(x){ return String(x.code||'')===String(l.code); });
@@ -23302,5 +23338,48 @@ window.HQS=HQS;
 window.hqsLocalSearch=localSearch; window.hqsRender=render; window.hqsFitRender=fitRender; window.hqsTyped=typed;
 })();
 
+</script>
+<!-- ============ R80 — DATE OF SALE + VEHICLE RECORD (03-09-2026) ============ -->
+<script>
+"use strict";
+/* Ravi 02-09: "Date of sale is not coming." The gate-pick path filled it from the
+   Apps Script customer_find, which often omits the field. customer_master is in
+   Supabase (100,621 rows, 67,341 with date_of_sale) and the signed-in SA can read
+   it. On every gate pick we read this vehicle's record by reg and fill Date of Sale
+   when the box is empty, and show last service / insurance so the SA has the same
+   facts the roleplay SA quotes. Additive: wraps esOnGatePick, never blocks it. */
+(function(){
+  if(typeof window==='undefined' || typeof window.esOnGatePick!=='function' || typeof sbFetch!=='function') return;
+  function dmy(v){ if(!v) return ''; var s=String(v); var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[3]+'-'+m[2]+'-'+m[1];
+    if(/^\d{2}-\d{2}-\d{4}$/.test(s)) return s; var d=new Date(s); return isNaN(d.getTime())?'':(('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+d.getFullYear()); }
+  function recLine(text){
+    var el=document.getElementById('es-dos'); if(!el||!el.parentNode) return;
+    var hint=el.parentNode.querySelector('.r80-rec');
+    if(!hint){ hint=document.createElement('div'); hint.className='hint r80-rec'; hint.style.marginTop='4px'; el.parentNode.appendChild(hint); }
+    hint.textContent=text;
+  }
+  function fill(reg){
+    var key=String(reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(key.length<6) return;
+    recLine('Checking our records…');
+    sbFetch('/rest/v1/customer_master?reg_key=eq.'+encodeURIComponent(key)
+            +'&select=date_of_sale,date_of_sale_raw,insurance_expiry_date,last_service_date,model&limit=1',{method:'GET'})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(rows){
+        if(!Array.isArray(rows)||!rows.length){ recLine('This vehicle is not in our records — first visit we can see.'); return; }
+        var v=rows[0];
+        var d=dmy(v.date_of_sale)|| (/^\d{2}-\d{2}-\d{4}$/.test(String(v.date_of_sale_raw||''))?v.date_of_sale_raw:'');
+        var dos=document.getElementById('es-dos');
+        if(d && dos && !String(dos.value||'').trim()){ dos.value=d; try{ esUpdateLive(); }catch(e){} try{ esCompose(); }catch(e){} }
+        var bits=[];
+        if(d) bits.push('sold '+d);
+        if(v.last_service_date) bits.push('last service '+dmy(v.last_service_date));
+        if(v.insurance_expiry_date){ var ex=new Date(v.insurance_expiry_date); bits.push('insurance '+((ex<new Date())?'EXPIRED ':'due ')+dmy(v.insurance_expiry_date)); }
+        recLine(bits.length?('On record: '+bits.join('  ·  ')):'On record, but no sale date stored.');
+      })
+      .catch(function(){ recLine(''); });
+  }
+  var _f=window.esOnGatePick;
+  window.esOnGatePick=function(g){ var r=_f.apply(this, arguments); try{ if(g && g.reg) fill(g.reg); }catch(e){} return r; };
+})();
 </script>
 </body></html>
