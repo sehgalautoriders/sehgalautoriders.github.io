@@ -48,3 +48,7 @@
 # self-contained — Supabase + CDN references only, no customer data, no keys
 # beyond the publishable one that already ships in index.html. By NAME, as above.
 !parts-scanner.html
+# 25-Aug-2026: CLAUDE.md is the working-rules file this repo loads at the start
+# of every Claude session — communication standard, project rules, code traps and
+# the running handover. No customer data, no keys. Whitelisted by NAME, as above.
+!CLAUDE.md
