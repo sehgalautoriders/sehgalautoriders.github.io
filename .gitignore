@@ -26,6 +26,12 @@
 # there would still be ignored, so the structural guarantee holds.
 !assets/
 !assets/*.png
+# R63 (13-Aug-2026): Hero MotoCorp's own Inter type family + the tabular-numeral
+# face, self-hosted for the app-wide type stack (they ship inside Hero's own
+# consumer APK; OFL-licensed). Restricted to *.ttf inside assets/fonts/ — the
+# structural guarantee above holds.
+!assets/fonts/
+!assets/fonts/*.ttf
 # R22.2: digital asset links for the Android TWA package — without this file at
 # /.well-known/assetlinks.json the installed APK shows a browser URL bar.
 !.well-known/
@@ -33,14 +39,16 @@
 # .nojekyll: Pages' Jekyll build silently DROPS dot-folders, so without this
 # file /.well-known/assetlinks.json 404s and the APK grows a browser URL bar.
 !.nojekyll
-#
-# R27 (04-Aug-2026): CLAUDE.md carries Ravi's Level 5 IIMK Human communication
-# standard and the project's working rules. It has to be committed, because that
-# is the only way it loads automatically at the start of every future session —
-# that is the whole point of it. Widened by NAME, one file, per the rule above.
-#
-# NOTE: this repo is public, so CLAUDE.md is readable by anyone. It deliberately
-# holds NO customer data, credentials, GCP project numbers, sheet IDs, .gs code
-# or personal data — only working rules, architecture notes and house style.
-# Keep it that way. Anything confidential belongs somewhere else.
+# 04-Aug-2026: manual.html is the staff owner's manual, English + Marathi in one
+# page with the mascots embedded as data: URIs. It is self-contained on purpose —
+# it can be opened from /manual.html, saved, or sent on WhatsApp as a single file.
+# No customer data of any kind is in it. Whitelisted by NAME, as above.
+!manual.html
+# 12-Aug-2026: parts-scanner.html is the Parts Scanner page (R55). Fully
+# self-contained — Supabase + CDN references only, no customer data, no keys
+# beyond the publishable one that already ships in index.html. By NAME, as above.
+!parts-scanner.html
+# 25-Aug-2026: CLAUDE.md is the working-rules file this repo loads at the start
+# of every Claude session — communication standard, project rules, code traps and
+# the running handover. No customer data, no keys. Whitelisted by NAME, as above.
 !CLAUDE.md

@@ -158,8 +158,11 @@ Out, Parts Scanner, All-India Part Finder, Insurance Renewal CRM, Master Data.
 
 ## Structure
 
-- `index.html` — the whole app. One file, roughly 1 MB, ~21 inline `<script>`
-  blocks. There is no build step and no framework.
+- `index.html` — the whole app. One file, about 1.5 MB at R89, with 26 inline
+  `<script>` blocks. There is no build step and no framework.
+- `manual.html` — the staff owner's manual, English + Marathi, self-contained.
+- `parts-scanner.html` — the standalone Parts Scanner page (R55). The in-app
+  `#view-partscan` div still exists but nothing navigates to it.
 - `sw.js` — service worker. Carries the build string.
 - `assets/` — 33 mascot / character / badge PNGs. Use them; most were unused for
   a long time and Ravi noticed.
@@ -260,46 +263,47 @@ harness before the code.
 
 Update this section whenever work lands. It is the handover to the next chat.
 
-**Last updated: 25-08-26, 18:57 IST.**
-
-Note on dates: the commits for R25–R27 are stamped 03/04-08-26 because the
-build container's clock was wrong while that work was done. The real date of
-all of it is 25-08-26. Trust this line, not the git timestamps.
+**Last updated: 04-09-26, 22:00 IST.**
 
 ## The one line
 
-Branch `claude/estimate-parts-tree-jn37h1`, **PR #1, still a DRAFT, not merged.**
-Build R27-2026.08.03.2. Five commits. **Nothing here is live — the staff are
-still on R24**, because GitHub Pages deploys from `main` and this has not been
-merged into `main`.
+`main` is at **R89-2026.09.04.1** and that is what the staff are running. Branch
+`claude/estimate-parts-tree-jn37h1` / **PR #1 now carries this file and nothing
+else** — all of its code was dropped on 04-09-26 because `main` had moved past it.
 
-## Done and pushed
+## What happened to R25–R27, so it is not attempted again
 
-| Release | What went in |
+The branch was cut from R24 on 25-08-26 and left in draft. `main` then moved 60
+commits to R89 over the next six weeks. By the time it was looked at again, every
+code change on the branch was either already done better on `main` or had been
+deliberately removed. It was merged down to this file only. Nothing was lost —
+the old commits are still in this branch's history, ending at `55e322b`.
+
+| Branch work | Why it was dropped |
 |---|---|
-| R25 | Estimate part search by name or part number, any word order · typed fallback for a part not in the master · part:labour rules — dearest labour kept (⭐), others strikeable, never the last, part removal takes all its labour, untagged labour adopted so it cannot outlive its part · "labour only" button · parts tree in All-India Part Finder · insurance: 26 standard reasons shipped in the app, day board (called today, closed today, MTD, MTD conversion, follow-ups), and the line naming exactly what is filtering the customer list with a "show whole book" button |
-| R26 | Parts Scanner screen rebuilt. 8 of the 33 mascots given real jobs — Hero robot in the banner, parts-box robot on the tip, and the status line changes character with the outcome |
-| R27 | Date of Sale now actually fetches · Model and Date of Sale frozen when they come from DMS records, WM/GM/CEO can unlock |
-| — | This `CLAUDE.md` |
+| R27 Date of Sale fetch | **R80 (03-09-26) already fixes it, better.** Ravi on 02-09: "Date of sale is not coming." R80 reads `customer_master` from Supabase (100,621 rows, 67,341 with `date_of_sale`) on every gate pick. The branch instead re-asked the Apps Script `customer_find`, which is the very call that "often omits the field". |
+| R27 model freeze | **The race cannot happen any more.** R65 deleted `esMaybeAskModel`, `esOpenModelModal`, `esCloseModelModal` and `esModelConfirm` — the SA is no longer asked to confirm a model. The lock itself already works on `main` (`ES_MODEL_SRC.src==='records'` → `es-locked` + `data-locked`, with `esUnlockModel` for WM/GM/CEO). |
+| R25 estimate part search + part:labour panel | **R65 (14-Aug-26) removed the surface it mounted into.** Ravi's instruction is in the code: *"Strip the Add labour / part box whole. Remove it full."* `esDrawChips` is now an empty stub and `es-chips` does not exist. Re-adding it would have undone that decision. |
+| R25 insurance — 26 reasons, day board, scope line | **The module is gone.** `ins2Apply` / `ins2LoadStats` / `ins2Boot` / `ins2-list` are all absent; `ins4` (Insurance Hub → Renewal Workbench, R42/R47/R63) replaced it. Every wrapper was `typeof OLD==='function'`-guarded, so it would have silently done nothing. |
+| R26 Parts Scanner UI | **Orphaned.** `main` ships a standalone `parts-scanner.html` (R55). The in-app `#view-partscan` div still exists but nothing navigates to it. |
+| R25 parts tree in Part Finder | Not carried over. `#pf-live-wrap` still exists on `main`, so it could be redone, but it was never verified against R89. |
 
-## The two R27 root causes, so they are not re-debugged
+### The lesson worth keeping
 
-1. **Date of Sale.** `heroCustLookup` is local-first and short-circuits: if the
-   phone's IndexedDB copy has the reg, it returns and **never asks the server**.
-   `custWriteBatch` writes `dos:r.d`, so a chunk row without `d` is cached with
-   `dos:''` — and from then on that vehicle's sale date could only be typed by
-   hand. Re-syncing cannot fix it; the sync is what writes the blank. Fixed with
-   `heroVehicleResolve()`, which asks the server when the phone's answer is
-   missing a field the estimate needs, then merges.
-2. **Model freeze.** `esOnGatePick` ends with `esMaybeAskModel(g)`, which opened
-   the confirm modal **synchronously** on every gate pick, while the DMS lock ran
-   off an async callback landing afterwards. The SA was always asked, and the
-   freeze arrived too late. Fixed by holding the question until records answer
-   (7-second limit), then freezing without asking.
+A branch left in draft against a repo that ships several times a week goes stale
+fast. **Check `origin/main` before re-applying anything from an old branch**, and
+check whether the bug is still live before fixing it again. Both R27 fixes were
+real when written and both were pointless six weeks later.
+
+Two working notes on this repo:
+
+- The clone starts **shallow**. `git merge` fails with "refusing to merge
+  unrelated histories" until `git fetch --unshallow origin`.
+- **Tag pushes are blocked** (HTTP 403). Branch pushes work.
 
 ## Pending — Ravi's side
 
-- **Merge PR #1**, or say to hold it as draft. Nothing is live until it merges.
+- **Merge PR #1** if this file is wanted on `main`, or say to close it.
 - **Enable Drive API** under Services in the Apps Script project. Console
   setting, not code. Blocks the live Power BI all-India stock fetch. The project
   number is in the on-screen error message — not written here, this repo is
