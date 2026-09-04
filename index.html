@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 73;
-window.HERO_BUILD = 'R88-2026.09.04.1';
+window.HERO_RELEASE = 74;
+window.HERO_BUILD = 'R89-2026.09.04.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -24316,6 +24316,147 @@ window.heroDiagUpload=heroDiagUpload;
       return r;
     };
   }
+})();
+</script>
+<script>
+/* ============================================================================
+   R89 (04-09-2026) — THE DAILY CORE COMES OFF APPS SCRIPT
+
+   WHY
+   ---
+   On 04-09-2026 the Apps Script /exec answered HTTP 403 — the "execute as me"
+   authorization had lapsed, as it does every few weeks — and the WHOLE app went
+   dark, including the screens already served by Supabase, because the daily
+   core still travelled through Apps Script. Ravi: "why is appscript still
+   there. I told already we have to move out of google appscript and move to
+   Supabase only."
+
+   This block moves the five reads that failed that day. It is the same
+   "intercept the transport once" method R84 used for the masters console: no
+   screen is edited, so every call site — including ones the file gains later —
+   moves at once.
+
+     report_today          -> hero_report_today()
+     home_summary          -> hero_home_summary()
+     holdup_summary        -> hero_holdup_summary()
+     ratio_today           -> hero_ratio_today(p_month,p_ws)
+     my_estimates_daywise  -> hero_my_estimates_daywise(p_empno,p_days)
+
+   Verified against the live Apps Script on 04-09-2026 before this shipped:
+   gateEntries 57 / estimates 28 / pending 29 / pendingAll 998 identical;
+   holdup 367 rows with identical buckets; ratio_today byte-identical;
+   my_estimates 30 days / 294 entries with the same day order and totals.
+
+   THREE THINGS THIS DOES THAT R84 DOES NOT — each one is load-bearing
+   -------------------------------------------------------------------
+   1. IT PASSES THE SECOND CALLBACK ARGUMENT. jgetReliable calls back as
+      cb(res,isStale). R84's wrapper calls cb(res) and drops isStale, which is
+      harmless for masters but not here: esLoadGateEntries, ctlLoad,
+      loadHomeStats and loadSaDashboard all branch on it. Dropping it would
+      leave every load looking "fresh", disarming the stale banners and the
+      seven-second empty-list safety net.
+   2. IT WRITES setLastGood. probableRegs() and the loading-flash guard in
+      esLoadGateEntries read getLastGood('report_today',{}) directly. A reroute
+      that never populates it would quietly break the reg autocomplete and make
+      the gate list flash "Loading…" on every open.
+   3. IT SINGLE-FLIGHTS. report_today has five live call sites that fire within
+      milliseconds of each other on a screen open; the jgetReliable we are
+      bypassing collapsed them with JR_INFLIGHT/JR_RECENT. Without the same
+      guard here, one screen open would become five round trips.
+
+   FAILURE MODE — unchanged from yesterday. Any rejection (not signed in, RPC
+   error, network) falls the call straight back to the original transport, so
+   the worst case is the Apps Script path we already had.
+   ========================================================================== */
+(function () {
+  'use strict';
+  if (typeof window.sbRpc !== 'function') return;
+
+  var ROUTES = {
+    report_today:   function () { return window.sbRpc('hero_report_today', {}); },
+    home_summary:   function () { return window.sbRpc('hero_home_summary', {}); },
+    holdup_summary: function () { return window.sbRpc('hero_holdup_summary', {}); },
+    ratio_today:    function (p) {
+      return window.sbRpc('hero_ratio_today', {
+        p_month: (p && p.month) || null,
+        p_ws:    (p && p.ws)    || null });
+    },
+    my_estimates_daywise: function (p) {
+      return window.sbRpc('hero_my_estimates_daywise', {
+        p_empno: String((p && p.empno) || ''),
+        p_days:  Number((p && p.days) || 30) || 30 });
+    }
+  };
+
+  /* Same 4 s freshness window and single-flight the transport already used. */
+  var FRESH_MS = 4000, INFLIGHT = {}, RECENT = {};
+  function keyOf(a, p) { try { return a + ':' + JSON.stringify(p || {}); } catch (e) { return a + ':?'; } }
+
+  window.HERO_R89_FALLBACKS = 0;
+  function noteFallback(action, err) {
+    window.HERO_R89_FALLBACKS++;
+    try { console.warn('[R89] ' + action + ' fell back to Apps Script:', err); } catch (e) {}
+  }
+
+  function saveLastGood(action, params, res) {
+    try {
+      var fn = (typeof window.setLastGood === 'function') ? window.setLastGood
+             : (typeof setLastGood === 'function') ? setLastGood : null;
+      if (fn) fn(action, params || {}, res);
+    } catch (e) { /* the screen still renders without a last-good snapshot */ }
+  }
+
+  function wrapRead(fnName) {
+    var orig = window[fnName];
+    if (typeof orig !== 'function') return;
+
+    window[fnName] = function (action, params) {
+      var route = ROUTES[action];
+      if (!route) return orig.apply(this, arguments);
+
+      var self = this, args = arguments, cb = args[2], key = keyOf(action, params);
+
+      var hit = RECENT[key];
+      if (hit && (Date.now() - hit.at) < FRESH_MS) {
+        try { if (cb) cb(hit.res, false); } catch (e) { }
+        return;
+      }
+      if (INFLIGHT[key]) { INFLIGHT[key].push({ self: self, args: args }); return; }
+      INFLIGHT[key] = [{ self: self, args: args }];
+
+      route(params || {}).then(function (res) {
+        if (!res || res.ok === false) throw new Error('rpc returned not-ok');
+        var waiting = INFLIGHT[key] || [];
+        INFLIGHT[key] = null;
+        RECENT[key] = { at: Date.now(), res: res };
+        saveLastGood(action, params, res);
+        waiting.forEach(function (w) {
+          try { if (w.args[2]) w.args[2](res, false); }
+          catch (e) { try { console.warn('[R89]', e); } catch (_) { } }
+        });
+      }).catch(function (err) {
+        noteFallback(action, err);
+        var waiting = INFLIGHT[key] || [];
+        INFLIGHT[key] = null;
+        waiting.forEach(function (w) {
+          try { orig.apply(w.self, w.args); }
+          catch (e) {
+            try { if (w.args[2]) w.args[2]({ ok: false, error: String((err && err.message) || err) }, false); }
+            catch (_) { }
+          }
+        });
+      });
+    };
+  }
+
+  ['jget', 'jgetRaw', 'jgetReliable'].forEach(wrapRead);
+
+  /* Sync Now must be able to force a real round trip. */
+  var origClear = window.jrClearFresh;
+  window.jrClearFresh = function () {
+    RECENT = {};
+    if (typeof origClear === 'function') return origClear.apply(this, arguments);
+  };
 })();
 </script>
 </body></html>
