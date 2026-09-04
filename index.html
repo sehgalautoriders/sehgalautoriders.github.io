@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 72;
-window.HERO_BUILD = 'R87-2026.09.03.1';
+window.HERO_RELEASE = 73;
+window.HERO_BUILD = 'R88-2026.09.04.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -7694,6 +7694,13 @@ function esBuild(fam, dec, km, modelName){
     L.parts=L.parts.filter(x=>!ES_REMOVED.has(x.l));
     L.labour=L.labour.filter(x=>!ES_REMOVED.has(x.l)||x.free);
   }
+  /* R88 (Ravi 04-09-2026): "engine oil is showing many times." The composer emits
+     an interval item once per milestone reached at this service, so at Service 3
+     (15,000 km) the engine oil arrived 3–5 times and Oil totalled ₹1,350. Collapse
+     identical lines (same description + part number) to one. Genuinely different
+     oils/parts (e.g. engine oil vs gear oil) keep their own line. */
+  L.oil   = esDedupeLines_(L.oil);
+  L.parts = esDedupeLines_(L.parts);
   esDropOwnedDuplicates_(L);
   esFillComplaintCodes_(L);
   esAddWashing_(L);
@@ -7798,6 +7805,16 @@ function esIsExpressLine_(x){
    rather than guarded at each of the five places a line can be added. The
    pickers refuse these codes too (esRejectOwnedCode_); this is the backstop that
    holds even when a route is added later and nobody remembers to guard it. */
+/* R88: collapse identical composed lines (same description + part number). */
+function esDedupeLines_(arr){
+  if(!Array.isArray(arr)) return arr;
+  var seen={}, out=[];
+  arr.forEach(function(x){
+    var k=String(x.l||'').trim().toUpperCase()+'|'+String(x.pn||'').trim().toUpperCase();
+    if(seen[k]) return; seen[k]=1; out.push(x);
+  });
+  return out;
+}
 function esDropOwnedDuplicates_(L){
   var seenWash=false;
   L.labour=L.labour.filter(function(x){
@@ -23533,6 +23550,51 @@ function esAddonLadder_(cb){
     })
     .catch(function(){ cb(HQS_ADDONS[model]||[]); });
 }
+/* ===========================================================================
+   R88 (Ravi 04-09-2026) — THE AMOUNT REBUILDS REAL PARTS + LABOUR
+   "When I change the amount, the parts, labour should change." Going UP now adds,
+   after the cleaning/service jobs, real periodic WEAR parts for THIS model — ranked
+   by how often this workshop actually fits them (model_part_tree.times_used), priced
+   from the tree MRP, each with its own fitment labour from labour_master. Only
+   recognised maintenance/wear items are eligible (KEEP list); assemblies, panels,
+   crash parts, batteries, tyres etc. are never auto-added (DROP list). Every added
+   line is _tfill (clears + recomputes on each change) and the SA can delete any.
+   =========================================================================== */
+var HQS_PART_KEEP=/AIR ?(CLEANER|FILTER)|OIL ?FILTER|SPARK ?PLUG|PLUG ?SPARK|BRAKE ?(SHOE|PAD)|SHOE ?SET|PAD ?SET|CLUTCH ?(PLATE|FRICTION|DISC)|\bCHAIN\b|SPROCKET|COOLANT|BRAKE ?FLUID|GEAR ?OIL|\bCABLE\b|\bBULB\b|BEARING|OIL ?SEAL|GASKET|O.?RING|FILTER ?ELEMENT/i;
+var HQS_PART_DROP=/ASSEMBLY|\bASSY\b|\bKIT\b|ACCIDENT|PANEL|COWL|MIRROR|MUDGUARD|\bGUARD\b|FUEL ?TANK|\bTANK\b|\bSEAT\b|HANDLE ?BAR|FAIRING|HEAD ?(LAMP|LIGHT)|TAIL ?(LAMP|LIGHT)|SILENCER|MUFFLER|\bRIM\b|\bTYRE\b|\bTUBE\b|BATTERY|\bCDI\b|MAGNETO|STATOR|PISTON|CYLINDER|CRANK|OVERHAUL|SPEEDO|\bMETER\b|SWITCH|\bLOCK\b|\bHORN\b|REGULATOR|RECTIFIER|WIRING|HARNESS|\bSTAND\b|FOOT ?REST|\bLEVER\b|\bGRIP\b|R\/R/i;
+function esPartLadder_(){
+  var model=(typeof curModel==='function')?curModel():'';
+  var rows=(typeof HQS!=='undefined' && HQS.tree && HQS.tree[model])||[];
+  var seen={}, out=[];
+  rows.forEach(function(r){
+    var d=String(r.description||''), mrp=+r.mrp||0, pn=String(r.part_no||'');
+    if(!pn || mrp<=0) return;
+    if(!HQS_PART_KEEP.test(d) || HQS_PART_DROP.test(d)) return;
+    var key=d.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(seen[key]) return; seen[key]=1;
+    out.push({pn:pn, desc:d, mrp:mrp, cc:String(r.complaint_code||''), linked_labour:String(r.linked_labour||''), tu:+r.times_used||0});
+  });
+  out.sort(function(a,b){ return (b.tu-a.tu)||(a.mrp-b.mrp); });
+  return out.slice(0,25);
+}
+var HQS_LABMAP={};
+function esLabMap_(cb){
+  var model=String((typeof ES_COMPOSED!=='undefined'&&ES_COMPOSED&&ES_COMPOSED.model_labour)||(typeof curModel==='function'?curModel():'')||'').toUpperCase();
+  if(!model){ cb({}); return; }
+  if(HQS_LABMAP[model]){ cb(HQS_LABMAP[model]); return; }
+  var c=kget('labmap:'+model); if(c && c.v){ HQS_LABMAP[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
+  if(typeof sbFetch!=='function'){ cb(HQS_LABMAP[model]||{}); return; }
+  sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)+'&select=labour_code,labour_description,rate_pregst&rate_pregst=gt.0&limit=1000',{method:'GET'})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(rows){ var m={}; if(Array.isArray(rows)) rows.forEach(function(x){ var cd=String(x.labour_code||''); if(cd) m[cd]={desc:String(x.labour_description||''), rate:+x.rate_pregst||0}; }); HQS_LABMAP[model]=m; kput('labmap:'+model,m); cb(m); })
+    .catch(function(){ cb(HQS_LABMAP[model]||{}); });
+}
+function esEnsureTree_(cb){
+  var m=(typeof curModel==='function')?curModel():'';
+  if(!m){ cb(); return; }
+  if(typeof HQS!=='undefined' && HQS.tree && HQS.tree[m] && HQS.tree[m].length){ cb(); return; }
+  if(typeof loadTree==='function'){ try{ loadTree(m, function(){ cb(); }); }catch(e){ cb(); } } else cb();
+}
 window.hqsSetTarget=function(n){ var i=document.getElementById('hqs-target'); if(i) i.value=n; hqsMarkChips_(n); esTargetApply_(n); };
 /* R86: typing only remembers the number + lights the matching chip — it does NOT
    recompute (that was the slow live behaviour). The Pre-estimate button applies. */
@@ -23553,7 +23615,8 @@ var ES_TDEFER=new Set();
 /* THE ONE INTERACTION: dial the amount -> the estimate fills to it, live. */
 function esTargetApply_(amount){
   amount=Math.round(+amount||0); HQS.target=amount;
-  if(Array.isArray(ES_ADDLAB)) ES_ADDLAB=ES_ADDLAB.filter(function(x){ return !x._tfill; });   /* clear prior fills */
+  if(Array.isArray(ES_ADDLAB)) ES_ADDLAB=ES_ADDLAB.filter(function(x){ return !x._tfill; });   /* clear prior labour fills */
+  if(Array.isArray(ES_ADDPART)) ES_ADDPART=ES_ADDPART.filter(function(x){ return !x._tfill; }); /* R88: clear prior part fills */
   ES_TDEFER.forEach(function(l){ try{ ES_REMOVED.delete(l); }catch(e){} }); ES_TDEFER.clear();  /* clear prior defers */
   var c=null; try{ c=esComputeCurrent(); }catch(e){}
   if(!c){ try{ esUpdateLive(); }catch(e){} return; }
@@ -23572,9 +23635,39 @@ function esTargetApply_(amount){
         ES_ADDLAB.push({l:a.desc, p:a.amt, code:String(a.code), _tfill:true, _fromPicker:true, src:'addon'});
         present[a.code]=1; running+=add; added.push(a);
       }
-      try{ esUpdateLive(); }catch(e){}
-      var c2=null; try{ c2=esComputeCurrent(); }catch(e){}
-      esTargetStatus_(c2||c, base, added, []);
+      /* R88: after the cleaning/service jobs, fill the rest of the amount with real
+         periodic WEAR parts for this model (+ their fitment labour), ranked by how
+         often the workshop fits them. Keeps parts:labour balanced and never pads
+         with assemblies/panels/crash parts. */
+      esLabMap_(function(labmap){
+        esEnsureTree_(function(){
+          var parts=esPartLadder_();
+          var presentP={};
+          (c.items.parts||[]).forEach(function(p){ if(p.pn) presentP['#'+String(p.pn)]=1; presentP['D:'+String(p.l||'').toUpperCase().replace(/[^A-Z0-9]/g,'')]=1; });
+          (ES_ADDPART||[]).forEach(function(p){ if(p.pn) presentP['#'+String(p.pn)]=1; });
+          var partAdded=[];
+          for(var j=0;j<parts.length;j++){
+            if(running>=amount-1) break;
+            var pt=parts[j];
+            if(presentP['#'+pt.pn] || presentP['D:'+pt.desc.toUpperCase().replace(/[^A-Z0-9]/g,'')]) continue;
+            var labCode=(pt.linked_labour.split('|').filter(Boolean)[0])||'';
+            var lab=(labCode && labmap[labCode])?labmap[labCode]:null;
+            var partCost=Math.round(pt.mrp*(1+gst));
+            var labCost=lab?Math.round(lab.rate*(1+gst)):0;
+            if(running+partCost+labCost>amount) continue;              /* stay at or under the amount */
+            ES_ADDPART.push({l:pt.desc, p:pt.mrp, pn:pt.pn, cc:pt.cc, src:'addon', _tfill:true, _fromPicker:true, why:'Periodic wear item — added to reach the SA estimate; remove if not needed.'});
+            running+=partCost; presentP['#'+pt.pn]=1;
+            if(lab && lab.rate>0){
+              ES_ADDLAB.push({l:lab.desc||('Fitment — '+pt.desc), p:lab.rate, code:labCode, _tfill:true, _fromPicker:true, src:'fitment', _fromPart:pt.desc, _fromPn:pt.pn});
+              running+=labCost;
+            }
+            partAdded.push({desc:pt.desc, amt:pt.mrp});
+          }
+          try{ esUpdateLive(); }catch(e){}
+          var c2=null; try{ c2=esComputeCurrent(); }catch(e){}
+          esTargetStatus_(c2||c, base, added.concat(partAdded), []);
+        });
+      });
     });
     return;
   }
