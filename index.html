@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 74;
-window.HERO_BUILD = 'R89-2026.09.04.1';
+window.HERO_RELEASE = 75;
+window.HERO_BUILD = 'R90-2026.09.08.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5108,6 +5108,18 @@ async function sbInsert(table, row){
 }
 /* Direct login: code (guard1 / sa.5004 / parts.1050) + password -> GoTrue,
    then the profile row -> the exact user shape doLogin always saved. */
+/* R90 (08-09-2026) — bound every auth call so a slow or restarting Supabase can
+   never freeze login on "Checking...". A timeout is surfaced as {code:'slow'} so
+   doLogin shows a clear "server waking up" message instead of hanging ~2 minutes
+   and then falling through to the slow Apps Script path. This is the root cause
+   of the recurring morning login outages (unbounded fetch + dead-slow fallback). */
+function sbFetchT_(url, opts, ms){
+  const c=new AbortController();
+  const t=setTimeout(function(){ c.abort(); }, ms||9000);
+  return fetch(url, Object.assign({}, opts||{}, {signal:c.signal})).then(
+    function(r){ clearTimeout(t); return r; },
+    function(e){ clearTimeout(t); if(e && e.name==='AbortError'){ var se=new Error('slow'); se.code='slow'; throw se; } throw e; });
+}
 async function sbLogin(emp, pass){
   const code=String(emp||'').trim().toLowerCase();
   /* Old-sheet logins work EXACTLY (12-Aug): a bare Employee No (275506) is not
@@ -5117,16 +5129,16 @@ async function sbLogin(emp, pass){
   let email=code.indexOf('@')>=0?code:'';
   if(!email){
     try{
-      const rr=await fetch(SB_URL+'/rest/v1/rpc/resolve_login',{method:'POST',
+      const rr=await sbFetchT_(SB_URL+'/rest/v1/rpc/resolve_login',{method:'POST',
         headers:{apikey:SB_ANON,'Content-Type':'application/json'},
-        body:JSON.stringify({p_id:code})});
+        body:JSON.stringify({p_id:code})}, 7000);
       if(rr.ok){ const em=await rr.json(); if(em&&typeof em==='string') email=em; }
-    }catch(e){}
+    }catch(e){ if(e && e.code==='slow') throw e; }
     if(!email) email=code+SB_DOMAIN;
   }
-  const r=await fetch(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',
+  const r=await sbFetchT_(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',
     headers:{apikey:SB_ANON,'Content-Type':'application/json'},
-    body:JSON.stringify({email:email, password:pass})});
+    body:JSON.stringify({email:email, password:pass})}, 9000);
   if(r.status===400){ const e=new Error('bad-creds'); e.code='bad-creds'; throw e; }
   if(!r.ok) throw new Error('auth HTTP '+r.status);
   const s=await r.json(); sbStoreSession(s);
@@ -5272,6 +5284,11 @@ function doLogin(){
       if(err && err.code==='bad-creds'){
         msg.style.color='var(--signal-d)';
         msg.textContent=err.message==='bad-creds'?'Wrong login ID or password.':err.message;
+        return;
+      }
+      if(err && (err.code==='slow' || err.name==='AbortError')){
+        msg.style.color='var(--signal-d)';
+        msg.textContent='Server is waking up. Wait a moment and press Login again.';
         return;
       }
       doLoginLegacy_(emp, pass, msg);   /* network / unexpected — old path */
