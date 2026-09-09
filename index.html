@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 77;
-window.HERO_BUILD = 'R92-2026.09.09.2';
+window.HERO_RELEASE = 78;
+window.HERO_BUILD = 'R93-2026.09.09.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8364,15 +8364,18 @@ function esLabourForEveryPart_(items){
     let link=null;
     try{ link = esFindLinkedLabours(pt.l); }catch(e){ link=null; }
     if(link && link.labours && link.labours.length){
+      var _pushed=0;
       link.labours.forEach(function(lb){
         if(!lb.l || haveLabel.has(key(lb.l))) return;
         if(!(+lb.p>0)) return;
         haveLabel.add(key(lb.l));
         items.labour.push({l:lb.l, p:+lb.p, code:lb.code||'', cc:lb.cc||'',
                            _fromPart:pt.l, _fromPn:pt.pn||'', _auto:true});
-        added.push(lb.l);
+        added.push(lb.l); _pushed++;
       });
-      return;
+      /* R93: a map row with no priced labour for this model is not "labour present" —
+         fall through to the banded fitting so the part never travels without labour */
+      if(_pushed) return;
     }
 
     /* 2. Nothing mapped — a banded fitting charge, named after the part so the
@@ -23688,35 +23691,50 @@ function esAddonLadder_(cb){
   var model=String((ES_COMPOSED&&ES_COMPOSED.model_labour)||curModel()||'').toUpperCase();
   if(!model){ cb([]); return; }
   if(HQS_ADDONS[model]){ cb(HQS_ADDONS[model]); return; }
-  var c=kget('addons2:'+model); if(c && c.v){ HQS_ADDONS[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
-  if(typeof sbFetch!=='function'){ cb(HQS_ADDONS[model]||[]); return; }
-  sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)
-    +'&select=labour_code,labour_description,rate_pregst,times_billed&rate_pregst=gt.0&limit=1000',{method:'GET'})
-    .then(function(r){ return r.ok?r.json():null; })
-    .then(function(rows){
-      if(!Array.isArray(rows)){ cb(HQS_ADDONS[model]||[]); return; }
-      /* R92 (Ravi 09-09-2026 11:07: "parts are getting more and labour is coming less …
-         1:1 parts:labour"): the pool is every labour job this model has EVIDENCE for —
-         billed 20+ times (cleaning jobs 5+), a real rate, up to Rs 400 — minus the
-         service codes, part replacements (R/R — those come WITH their part), engine
-         opening jobs and anything the service labour already covers. Most-billed first. */
-      var seen={}, out=[];
-      rows.forEach(function(r){
-        var desc=String(r.labour_description||''), code=String(r.labour_code||''), tb=+r.times_billed||0, rate=+r.rate_pregst||0;
-        if(!code || !(rate>0) || code.indexOf('_OLD')>-1) return;
-        if(/REGULAR SERVICE|JOYRIDE|EXPRESS|ACCIDENT|ADDITIONAL REPAIR|PAID SERVICE|\bFSC\b|FREE SERVICE|PDI\b/i.test(desc)) return;
-        if(/R\/R|\bASSY\b|\bKIT\b|ENGINE OVERHAUL|ENGINE \(|OVERHAUL.*ENGINE|CYLINDER|CRANK|PISTON|SEAT COVER|STICKER|GRAPHIC/i.test(desc)) return;
-        var clean=HQS_ADDON_KEEP.test(desc);
-        if(clean ? tb<5 : tb<20) return;
-        if(rate>400) return;
-        if(seen[code]) return; seen[code]=1;
-        var needs=/FORK COMP FRONT|FORK .*DISMANTLE/i.test(desc)?'FORK OIL':(/CLUTCH OVERHAUL/i.test(desc)?'CLUTCH':(/BATTERY CHARG/i.test(desc)?'BATTERY':''));
-        out.push({code:code, desc:desc, amt:rate, rank:hqsAddonRank_(desc), tb:tb, needs:needs});
-      });
-      out.sort(function(a,b){ return (b.tb-a.tb)||(a.rank-b.rank); });
-      HQS_ADDONS[model]=out; kput('addons2:'+model, out); cb(out);
-    })
-    .catch(function(){ cb(HQS_ADDONS[model]||[]); });
+  var c=kget('addons3:'+model); if(c && c.v){ HQS_ADDONS[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
+  /* R92/R93 rule: every labour job with EVIDENCE — billed 20+ times on this model or
+     200+ across the estate (cleaning jobs 5+ / 50+), a real rate up to Rs 400 — minus
+     the service codes, part replacements (R/R — those come WITH their part), engine
+     opening jobs, the AVOID carrier code and anything the service labour covers. */
+  var keep=function(desc, code, rate, tbModel, tbAll){
+    if(!code || !(rate>0) || code.indexOf('_OLD')>-1) return false;
+    if(/REGULAR SERVICE|JOYRIDE|EXPRESS|ACCIDENT|ADDITIONAL REPAIR|PAID SERVICE|\bFSC\b|FREE SERVICE|PDI\b/i.test(desc)) return false;
+    if(/R\/R|\bASSY\b|\bKIT\b|ENGINE OVERHAUL|ENGINE \(|OVERHAUL.*ENGINE|CYLINDER|CRANK|PISTON|SEAT COVER|STICKER|GRAPHIC/i.test(desc)) return false;
+    var clean=HQS_ADDON_KEEP.test(desc);
+    if(clean ? (tbModel<5 && tbAll<50) : (tbModel<20 && tbAll<200)) return false;
+    if(rate>400) return false;
+    return true;
+  };
+  var needsOf=function(desc){ return /FORK COMP FRONT|FORK .*DISMANTLE/i.test(desc)?'FORK OIL':(/CLUTCH OVERHAUL/i.test(desc)?'CLUTCH':(/BATTERY CHARG/i.test(desc)?'BATTERY':'')); };
+  var finish=function(out){ out.sort(function(a,b){ return (b.tb-a.tb)||(a.rank-b.rank); }); HQS_ADDONS[model]=out; kput('addons3:'+model, out); cb(out); };
+  var viaRest=function(){
+    if(typeof sbFetch!=='function'){ cb(HQS_ADDONS[model]||[]); return; }
+    sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)
+      +'&select=labour_code,labour_description,rate_pregst,times_billed&rate_pregst=gt.0&limit=1000',{method:'GET'})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(rows){
+        if(!Array.isArray(rows)){ cb(HQS_ADDONS[model]||[]); return; }
+        var seen={}, out=[];
+        rows.forEach(function(r){
+          var desc=String(r.labour_description||''), code=String(r.labour_code||''), tb=+r.times_billed||0, rate=+r.rate_pregst||0;
+          if(!keep(desc, code, rate, tb, 0) || seen[code]) return; seen[code]=1;
+          out.push({code:code, desc:desc, amt:rate, rank:hqsAddonRank_(desc), tb:tb, needs:needsOf(desc), from:model, borrowed:false});
+        });
+        finish(out);
+      })
+      .catch(function(){ cb(HQS_ADDONS[model]||[]); });
+  };
+  if(typeof sbRpc!=='function'){ viaRest(); return; }
+  sbRpc('hero_labour_pool',{p_model:model}).then(function(rows){
+    if(!Array.isArray(rows) || !rows.length){ viaRest(); return; }
+    var seen={}, out=[];
+    rows.forEach(function(r){
+      var desc=String(r.desc||''), code=String(r.code||''), rate=+r.rate||0, tbM=+r.tb_model||0, tbA=+r.tb_all||0;
+      if(!keep(desc, code, rate, tbM, tbA) || seen[code]) return; seen[code]=1;
+      out.push({code:code, desc:desc, amt:rate, rank:hqsAddonRank_(desc), tb:Math.max(tbM, Math.round(tbA/10)), needs:needsOf(desc), from:String(r.from_model||model), borrowed:!!r.borrowed});
+    });
+    finish(out);
+  }).catch(function(){ viaRest(); });
 }
 /* ===========================================================================
    R88 (Ravi 04-09-2026) — THE AMOUNT REBUILDS REAL PARTS + LABOUR
@@ -23778,16 +23796,34 @@ function esPartLadder_(){
   return out.slice(0,80);
 }
 var HQS_LABMAP={};
+/* R93 (Ravi 09-09-2026 15:12, HF Deluxe: "with each part addition there will be labour"):
+   MEASURED — the HF Deluxe tree links 171 labour codes; only 92 have a rate under HF
+   Deluxe in labour_master, 169 have one under some model. A Hero DMS code is the same
+   job on every bike (R72), so the map now comes from hero_labour_map(): the model's own
+   rate first, else the rate of the model that bills that code the most, flagged
+   borrowed so the line prints RATE FROM <model>. The old per-model REST read is the
+   fallback if the RPC is unreachable. */
 function esLabMap_(cb){
   var model=String((typeof ES_COMPOSED!=='undefined'&&ES_COMPOSED&&ES_COMPOSED.model_labour)||(typeof curModel==='function'?curModel():'')||'').toUpperCase();
   if(!model){ cb({}); return; }
   if(HQS_LABMAP[model]){ cb(HQS_LABMAP[model]); return; }
-  var c=kget('labmap:'+model); if(c && c.v){ HQS_LABMAP[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
-  if(typeof sbFetch!=='function'){ cb(HQS_LABMAP[model]||{}); return; }
-  sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)+'&select=labour_code,labour_description,rate_pregst&rate_pregst=gt.0&limit=1000',{method:'GET'})
-    .then(function(r){ return r.ok?r.json():null; })
-    .then(function(rows){ var m={}; if(Array.isArray(rows)) rows.forEach(function(x){ var cd=String(x.labour_code||''); if(cd) m[cd]={desc:String(x.labour_description||''), rate:+x.rate_pregst||0}; }); HQS_LABMAP[model]=m; kput('labmap:'+model,m); cb(m); })
-    .catch(function(){ cb(HQS_LABMAP[model]||{}); });
+  var c=kget('labmap2:'+model); if(c && c.v){ HQS_LABMAP[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
+  var finish=function(m){ HQS_LABMAP[model]=m; kput('labmap2:'+model,m); cb(m); };
+  var viaRest=function(){
+    if(typeof sbFetch!=='function'){ cb(HQS_LABMAP[model]||{}); return; }
+    sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)+'&select=labour_code,labour_description,rate_pregst&rate_pregst=gt.0&limit=1000',{method:'GET'})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(rows){ var m={}; if(Array.isArray(rows)) rows.forEach(function(x){ var cd=String(x.labour_code||''); if(cd) m[cd]={desc:String(x.labour_description||''), rate:+x.rate_pregst||0, from:model, borrowed:false}; }); finish(m); })
+      .catch(function(){ cb(HQS_LABMAP[model]||{}); });
+  };
+  if(typeof sbRpc!=='function'){ viaRest(); return; }
+  sbRpc('hero_labour_map',{p_model:model}).then(function(res){
+    if(!res || typeof res!=='object' || Array.isArray(res)){ viaRest(); return; }
+    var m={};
+    Object.keys(res).forEach(function(cd){ var x=res[cd]||{}; if(!(+x.rate>0)) return; m[cd]={desc:String(x.desc||''), rate:+x.rate||0, from:String(x.from_model||model), borrowed:!!x.borrowed, tb:+x.tb||0}; });
+    if(!Object.keys(m).length){ viaRest(); return; }
+    finish(m);
+  }).catch(function(){ viaRest(); });
 }
 function esEnsureTree_(cb){
   var m=(typeof curModel==='function')?curModel():'';
@@ -23846,7 +23882,7 @@ function esTargetApply_(amount, explicit){
               var lc=codes[q], lm=labmap[lc];
               if(!lm || !(lm.rate>0) || present[lc]) continue;
               if(coveredSvc && typeof esJobCoveredByService_==='function' && esJobCoveredByService_(lm.desc)) continue;
-              return {code:lc, desc:lm.desc, rate:lm.rate};
+              return {code:lc, desc:lm.desc, rate:lm.rate, borrowed:!!lm.borrowed, from:lm.from||''};
             }
             return null;
           };
@@ -23877,12 +23913,13 @@ function esTargetApply_(amount, explicit){
             var lab=pickLab(pt);
             var partCost=Math.round(pt.mrp*(1+gst));
             var labRate=lab?lab.rate:bandFit(pt);
+            if(!(labRate>0)) return false;                                  /* R93 (Ravi): "with each part addition there will be labour" — no job, no part */
             var labCost=labRate>0?Math.round(labRate*(1+gst)):0;
             if(running+partCost+labCost>amount) return false;              /* stay at or under the amount */
             ES_ADDPART.push({l:pt.desc, p:pt.mrp, pn:pt.pn, cc:pt.cc, src:'addon', _tfill:true, _fromPicker:true, _noFit:!!pt._noFit, why:'Added to reach the SA estimate — a most-fitted item on this model; remove if not needed.'});
             running+=partCost; presentP['#'+pt.pn]=1; pSide+=pt.mrp;
             if(lab){
-              ES_ADDLAB.push({l:lab.desc||('Fitment — '+pt.desc), p:lab.rate, code:lab.code, cc:pt.cc, _tfill:true, _fromPicker:true, src:'fitment', _fromPart:pt.desc, _fromPn:pt.pn, why:'Fitment labour for '+pt.desc});
+              ES_ADDLAB.push({l:lab.desc||('Fitment — '+pt.desc), p:lab.rate, code:lab.code, cc:pt.cc, _tfill:true, _fromPicker:true, src:'fitment', _fromPart:pt.desc, _fromPn:pt.pn, why:'Fitment labour for '+pt.desc, _rateBorrowed:!!lab.borrowed, _fromModel:lab.borrowed?lab.from:''});
               present[lab.code]=1;
             }
             running+=labCost; lSide+=labRate;
@@ -23895,13 +23932,15 @@ function esTargetApply_(amount, explicit){
               for(; ji<ladder.length; ji++){
                 var a=ladder[ji]; if(!jobOk(a)) continue;
                 var add=Math.round(a.amt*(1+gst)); if(running+add>amount) continue;
-                ES_ADDLAB.push({l:a.desc, p:a.amt, code:String(a.code), _tfill:true, _fromPicker:true, src:'addon', why:'Added to reach the SA estimate — remove if not needed.'});
+                ES_ADDLAB.push({l:a.desc, p:a.amt, code:String(a.code), _tfill:true, _fromPicker:true, src:'addon', why:'Added to reach the SA estimate — remove if not needed.', _rateBorrowed:!!a.borrowed, _fromModel:a.borrowed?a.from:''});
                 present[a.code]=1; running+=add; lSide+=a.amt; added.push(a); ji++; placed=true; break;
               }
             }
             if(!placed){
               var idx=-1;
-              if(wantLabour){ for(var k=pi;k<Math.min(order.length,pi+12);k++){ var q0=order[k]; if(used[q0.pn]) continue; var lb=pickLab(q0); if(lb && lb.rate>=q0.mrp*0.8){ idx=k; break; } } }
+              /* R93: labour behind → the affordable part with the BEST labour-to-price ratio anywhere
+                 in the ladder (each part brings its DMS job); labour ahead → most-fitted next */
+              if(wantLabour){ var best=-1, bestR=0; for(var k=pi;k<order.length;k++){ var q0=order[k]; if(used[q0.pn]) continue; var lb=pickLab(q0); if(!lb) continue; var r0=lb.rate/Math.max(1,q0.mrp); if(r0>bestR && running+Math.round(q0.mrp*(1+gst))+Math.round(lb.rate*(1+gst))<=amount){ bestR=r0; best=k; } } if(best>=0 && bestR>=0.5) idx=best; }
               if(idx<0){ for(var k2=pi;k2<order.length;k2++){ if(!used[order[k2].pn]){ idx=k2; break; } } }
               if(idx<0) break;                                   /* nothing left to add */
               var pt=order[idx]; used[pt.pn]=1; while(pi<order.length && used[order[pi].pn]) pi++;
