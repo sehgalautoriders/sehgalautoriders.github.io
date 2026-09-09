@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 76;
-window.HERO_BUILD = 'R91-2026.09.09.1';
+window.HERO_RELEASE = 77;
+window.HERO_BUILD = 'R92-2026.09.09.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -729,7 +729,7 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
    nothing on the page may be wider than the phone screen, and long unbroken text
    (customer names with dealer codes, VINs, reg numbers) wraps instead of pushing. */
 html,body{max-width:100%;overflow-x:hidden}
-html.es-active,body.es-active{overscroll-behavior-y:contain}
+html.es-active{overscroll-behavior-y:contain}  /* R92: never on body — it is a non-scrolling scroll container and 'contain' there killed wheel + one-finger scrolling (Ravi 09-09-2026 11:00) */
 .card,.card-b,.ctlitem,.modal-box,.modal-body,.fld,.grid{max-width:100%;box-sizing:border-box}
 /* FIX 16-Jul: 'anywhere' + word-break shrink a flex box to its smallest word — that
    is what collapsed the Gate Out cards into one word per line. 'break-word' wraps
@@ -4660,6 +4660,11 @@ const GATE_CAPTURE_TOKEN='scnH-0DioqjaKYQpQ9cyOpBmoMYjO1k8';
 let HB={state:'UNKNOWN', gas:'UNKNOWN', firstFail:0, lastOk:0, lastPing:0, strikes:0, okTimes:[]};
 try{ Object.assign(HB, JSON.parse(localStorage.getItem(HB_KEY)||'{}')); }catch(e){}
 HB.state=HB.state||'UNKNOWN'; HB.okTimes=HB.okTimes||[];
+/* R92 (Ravi 09-09-2026 10:53: "Reports/Masters offline error is coming — check again why?").
+   A DEAD saved by a previous session painted the amber strip at boot before a single fresh
+   probe had run. The saved value is only a hint now: the strip needs today's evidence. */
+if(HB.gas==='DEAD') HB.gas='UNKNOWN';
+HB.gasStrikes=0;
 function hbSave_(){ try{ localStorage.setItem(HB_KEY, JSON.stringify(HB)); }catch(e){} }
 
 /* R78: the RED cover now tracks SUPABASE, because that is what gate entry and
@@ -4700,13 +4705,27 @@ function hbPingGas_(){
      JSONP. Fix: probe over the SAME JSONP path everything else uses. A real
      gate_sb_status reply ({ok:true,...}) = reports/masters are alive; the
      network-error sentinel ({ok:false,error:'network'}) = genuinely down. */
-  const timer=setTimeout(function(){ set(false); }, 16000);
+  /* R92 (09-09-2026): MEASURED from the PC while Ravi saw the strip — Apps Script
+     answered gate_sb_status in 3.7–4.2 s and version in 3.0–3.3 s, Supabase in 0.1–0.6 s,
+     the hourly watch logged "backend healthy". Nothing was down. The strip came from this
+     probe's own rules: ONE reply slower than 15 s marked Apps Script DEAD at once, and the
+     next re-check was tied to the Supabase cadence (healthy = 10 minutes), so one slow
+     morning reply kept "offline" on every phone for up to ten minutes. Now: the lightest
+     action (version — no Supabase hop inside Apps Script), 25 s, and two consecutive
+     failures 20 s apart before amber; the moment one reply is good, ALIVE. */
+  const fail=function(){
+    if(done) return; done=true;
+    HB.gasStrikes=(HB.gasStrikes||0)+1;
+    if(HB.gasStrikes===1){ setTimeout(function(){ try{ hbPingGas_(); }catch(e){} }, 20000); return; }   /* confirm before alarming */
+    HB.gas='DEAD'; hbSave_(); hbStrip_();
+  };
+  const timer=setTimeout(fail, 26000);
   try{
-    jgetRaw('gate_sb_status', {_hb:Date.now()}, function(res){
+    jgetRaw('version', {_hb:Date.now()}, function(res){
       clearTimeout(timer);
-      set(!!(res && res.ok===true));
-    }, 15000);
-  }catch(e){ clearTimeout(timer); set(false); }
+      if(res && res.ok===true){ HB.gasStrikes=0; set(true); } else fail();
+    }, 25000);
+  }catch(e){ clearTimeout(timer); fail(); }
 }
 
 function hbMark_(ok, why){
@@ -4812,7 +4831,7 @@ function hbStrip_(){
      are affected; gate entry and estimates carry on untouched (amber). */
   const txt = (HB.state==='DEAD')
     ? '&#9940; SERVER DOWN'+(hbSinceTxt_()?' since '+hbSinceTxt_():'')+' &middot; on phone: '+c.n+' &middot; inform Ravi sir'
-    : '&#9888; Reports/masters offline &middot; gate entry &amp; estimates are saving normally';
+    : '&#9888; Google backend slow/offline &middot; gate entry, estimates, reports &amp; masters are working &middot; insurance / parts desk / holdup edits may wait';
   if(!el){
     el=document.createElement('div');
     el.id='hb-strip';
@@ -4828,7 +4847,7 @@ setInterval(function(){
   try{
     /* proven-healthy: relax to 10 min. UNKNOWN or DEAD: stay on 60s so a phone
        that boots into an outage finds out within two minutes, not ten. */
-    const due = HB.lastPing + ((HB.state==='ALIVE'&&!HB.strikes)?HB_ALIVE_EVERY:HB_DEAD_EVERY);
+    const due = HB.lastPing + ((HB.state==='ALIVE'&&!HB.strikes&&HB.gas!=='DEAD'&&!HB.gasStrikes)?HB_ALIVE_EVERY:HB_DEAD_EVERY);   /* R92: an amber strip re-checks every minute */
     if(Date.now()>=due) hbPing_();
     if(HB.state==='DEAD') hbCover_(true);
   }catch(e){}
@@ -5069,9 +5088,15 @@ function sbStoreSession(s){
 }
 async function sbRefresh(){
   const t=sbTokens(); if(!t.rt) return '';
-  const r=await fetch(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',
+  /* R92 (Ravi 09-09-2026: "Reading owners manual is taking a lot of time"): the hourly
+     token refresh ran with NO timeout, and every Supabase read waits behind it. Bounded
+     to 9 s like the login calls (R90); a slow refresh now fails fast and the read
+     retries on the next call instead of hanging "Reading the owner manual…". */
+  let r;
+  try{ r=await sbFetchT_(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',
     headers:{apikey:SB_ANON,'Content-Type':'application/json'},
-    body:JSON.stringify({refresh_token:t.rt})});
+    body:JSON.stringify({refresh_token:t.rt})}, 9000); }
+  catch(e){ return ''; }
   if(!r.ok) return '';
   const s=await r.json(); sbStoreSession(s); return s.access_token||'';
 }
@@ -5085,7 +5110,11 @@ async function sbFetch(path, opts){
   opts=opts||{};
   const doCall=async function(tok){
     const h=Object.assign({apikey:SB_ANON, Authorization:'Bearer '+tok}, opts.headers||{});
-    return await fetch(SB_URL+path, Object.assign({}, opts, {headers:h}));
+    /* R92: a REST read or RPC that has not answered in 25 s is dead for the person
+       waiting — abort it so the screen can say so and try again. Storage uploads
+       (photos) keep their own time. */
+    if(/^\/storage\//.test(String(path||''))) return await fetch(SB_URL+path, Object.assign({}, opts, {headers:h}));
+    return await sbFetchT_(SB_URL+path, Object.assign({}, opts, {headers:h}), 25000);
   };
   let tok=await sbToken();
   if(!tok) throw new Error('not-signed-in');
@@ -8560,6 +8589,18 @@ function esCompose(){
     wrap.style.display='block';
     const h=document.getElementById('es-manual-head');
     if(h) h.innerHTML='Reading the owner manual for '+raviEsc(model)+'…';
+    /* R92: show that it is alive — elapsed seconds, and after 5 s say where the wait is */
+    try{
+      clearInterval(window.__esComposeTick);
+      const t0=Date.now(), myKey=key;
+      window.__esComposeTick=setInterval(function(){
+        if(ES_COMPOSE_KEY!==myKey || ES_COMPOSED || ES_COMPOSE_ERR){ clearInterval(window.__esComposeTick); return; }
+        const sec=Math.round((Date.now()-t0)/1000);
+        const hh=document.getElementById('es-manual-head'); if(!hh) return;
+        hh.innerHTML='Reading the owner manual for '+raviEsc(model)+'… '+sec+' s'
+          +(sec>=5?' <span class="es-warn">— the server answers in under a second; this wait is the phone\'s network</span>':'');
+      }, 1000);
+    }catch(e){}
   }
   const args={p_model:model, p_km:km, p_months:months, p_visit:visit,
               p_reg:reg, p_service:(svc==='free'?('free '+stage):svc)};
@@ -16760,6 +16801,10 @@ function esEnsureKmScan(){
 }
 function esKmLock_(lock){
   var km=document.getElementById('es-km'); if(!km) return;
+  /* R92 (Ravi 09-09-2026): "for my account keep on the kms and date of sale entry" — an
+     admin / CEO login types the odometer directly; the scan-first rule stays for advisors. */
+  var free=false; try{ free=(typeof isAdmin==='function' && isAdmin()) || (typeof heroIsCeo==='function' && heroIsCeo()); }catch(e){}
+  if(lock && free){ km.readOnly=false; km.style.background=''; km.style.cursor=''; km.setAttribute('placeholder','odometer km — type it, or 📷 scan'); return; }
   if(lock){ km.readOnly=true; km.value=''; km.style.background='#eef2f7'; km.style.cursor='pointer';
             km.setAttribute('placeholder','\ud83d\udcf7 Tap to scan the odometer'); }
   else { km.readOnly=false; km.style.background=''; km.style.cursor='';
@@ -23643,26 +23688,33 @@ function esAddonLadder_(cb){
   var model=String((ES_COMPOSED&&ES_COMPOSED.model_labour)||curModel()||'').toUpperCase();
   if(!model){ cb([]); return; }
   if(HQS_ADDONS[model]){ cb(HQS_ADDONS[model]); return; }
-  var c=kget('addons:'+model); if(c && c.v){ HQS_ADDONS[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
+  var c=kget('addons2:'+model); if(c && c.v){ HQS_ADDONS[model]=c.v; cb(c.v); if(fresh(c,HQS_TREE_TTL)) return; }
   if(typeof sbFetch!=='function'){ cb(HQS_ADDONS[model]||[]); return; }
   sbFetch('/rest/v1/labour_master?model=eq.'+encodeURIComponent(model)
-    +'&select=labour_code,labour_description,rate_pregst,times_billed&rate_pregst=gt.0&limit=500',{method:'GET'})
+    +'&select=labour_code,labour_description,rate_pregst,times_billed&rate_pregst=gt.0&limit=1000',{method:'GET'})
     .then(function(r){ return r.ok?r.json():null; })
     .then(function(rows){
       if(!Array.isArray(rows)){ cb(HQS_ADDONS[model]||[]); return; }
+      /* R92 (Ravi 09-09-2026 11:07: "parts are getting more and labour is coming less …
+         1:1 parts:labour"): the pool is every labour job this model has EVIDENCE for —
+         billed 20+ times (cleaning jobs 5+), a real rate, up to Rs 400 — minus the
+         service codes, part replacements (R/R — those come WITH their part), engine
+         opening jobs and anything the service labour already covers. Most-billed first. */
       var seen={}, out=[];
       rows.forEach(function(r){
-        var desc=String(r.labour_description||''), code=String(r.labour_code||'');
-        if(!code || !(+r.rate_pregst>0) || code.indexOf('_OLD')>-1) return;
-        if(!HQS_ADDON_KEEP.test(desc) || HQS_ADDON_DROP.test(desc)) return;
+        var desc=String(r.labour_description||''), code=String(r.labour_code||''), tb=+r.times_billed||0, rate=+r.rate_pregst||0;
+        if(!code || !(rate>0) || code.indexOf('_OLD')>-1) return;
+        if(/REGULAR SERVICE|JOYRIDE|EXPRESS|ACCIDENT|ADDITIONAL REPAIR|PAID SERVICE|\bFSC\b|FREE SERVICE|PDI\b/i.test(desc)) return;
+        if(/R\/R|\bASSY\b|\bKIT\b|ENGINE OVERHAUL|ENGINE \(|OVERHAUL.*ENGINE|CYLINDER|CRANK|PISTON|SEAT COVER|STICKER|GRAPHIC/i.test(desc)) return;
+        var clean=HQS_ADDON_KEEP.test(desc);
+        if(clean ? tb<5 : tb<20) return;
+        if(rate>400) return;
         if(seen[code]) return; seen[code]=1;
-        /* R91 (Ravi 09-09-2026, e/f): "as per necessity" — a job this model has been
-           billed fewer than 5 times in its history is not offered by the amount. */
-        if(!((+r.times_billed||0)>=5)) return;
-        out.push({code:code, desc:desc, amt:+r.rate_pregst, rank:hqsAddonRank_(desc), tb:+r.times_billed||0});
+        var needs=/FORK COMP FRONT|FORK .*DISMANTLE/i.test(desc)?'FORK OIL':(/CLUTCH OVERHAUL/i.test(desc)?'CLUTCH':(/BATTERY CHARG/i.test(desc)?'BATTERY':''));
+        out.push({code:code, desc:desc, amt:rate, rank:hqsAddonRank_(desc), tb:tb, needs:needs});
       });
       out.sort(function(a,b){ return (b.tb-a.tb)||(a.rank-b.rank); });
-      HQS_ADDONS[model]=out; kput('addons:'+model, out); cb(out);
+      HQS_ADDONS[model]=out; kput('addons2:'+model, out); cb(out);
     })
     .catch(function(){ cb(HQS_ADDONS[model]||[]); });
 }
@@ -23703,7 +23755,26 @@ function esPartLadder_(){
     if(seen[key]) return; seen[key]=1;
     out.push({pn:pn, desc:d, mrp:mrp, cc:String(r.complaint_code||''), linked_labour:String(r.linked_labour||''), tu:+r.times_used||0, _noFit:HQS_NOFIT.test(d)});
   });
-  out.sort(function(a,b){ return (b.tu-a.tu)||(a.mrp-b.mrp); });
+  /* R92 (Ravi 09-09-2026 11:10, PC: ₹10,000 added nothing): 27 of 99 models have fewer
+     than 10 parts with any consumption, so "never fitted here" left nothing to offer.
+     When the evidence ladder is short, the wear items the tree lists for the model
+     (plug, filter, shoes, clutch, cables, bulbs, chain, bearings, seals) follow it —
+     in wear-priority order, cheapest first, still with their linked DMS job. */
+  if(out.length<8){
+    var WEAR=/SPARK ?PLUG|PLUG SPARK|AIR ?(CLEANER|FILTER)|ELEMENT|OIL ?FILTER|BRAKE ?(SHOE|PAD)|SHOE ?SET|PAD ?SET|CLUTCH ?(PLATE|FRICTION|DISC|DISK)|PLATE CLUTCH|DISK CLUTCH|\bCHAIN\b|SPROCKET|\bCABLE\b|\bBULB\b|BEARING|OIL ?SEAL|COOLANT|BRAKE ?FLUID|GEAR ?OIL|LEVER|MIRROR/i;
+    var wearRank=function(d){ var u=String(d||'').toUpperCase(); var order=['SPARK','PLUG','AIR','ELEMENT','FILTER','SHOE','PAD','CLUTCH','CABLE','BULB','CHAIN','SPROCKET','BEARING','SEAL','COOLANT','FLUID','LEVER']; for(var i=0;i<order.length;i++){ if(u.indexOf(order[i])>-1) return i; } return 99; };
+    rows.forEach(function(r){
+      var d=String(r.description||''), mrp=+r.mrp||0, pn=String(r.part_no||''), cat=String(r.category||'');
+      if(!pn || mrp<20) return;
+      if(pn.toUpperCase().indexOf('LSP')===0 || /LOCAL CONSUMABLE/i.test(cat) || esIsConsumable_(d, pn)) return;
+      if(HQS_OIL_LIKE.test(d) || HQS_PART_DROP.test(d) || HQS_HARDWARE.test(d)) return;
+      if(!WEAR.test(d)) return;
+      var key=d.toUpperCase().replace(/[^A-Z0-9]/g,'');
+      if(seen[key]) return; seen[key]=1;
+      out.push({pn:pn, desc:d, mrp:mrp, cc:String(r.complaint_code||''), linked_labour:String(r.linked_labour||''), tu:0, wr:wearRank(d), _noFit:HQS_NOFIT.test(d)});
+    });
+  }
+  out.sort(function(a,b){ var wa=(a.wr===undefined?99:a.wr), wb=(b.wr===undefined?99:b.wr); return (b.tu-a.tu)||(wa-wb)||(a.mrp-b.mrp); });
   return out.slice(0,80);
 }
 var HQS_LABMAP={};
@@ -23759,31 +23830,15 @@ function esTargetApply_(amount, explicit){
       var present={};
       (c.items.labour||[]).forEach(function(l){ if(l.code) present[String(l.code)]=1; });
       (ES_ADDLAB||[]).forEach(function(l){ if(l.code) present[String(l.code)]=1; });
-      var added=[], running=base;
-      /* the phone keeps this list for 12 h — apply the evidence rule here too, so a list
-         cached before R91 still obeys it: most-billed first, fewer than 5 billings out */
+      /* the phone keeps this list for 12 h — apply the evidence rule here too */
       ladder=(ladder||[]).filter(function(a){ return (+a.tb||0)>=5; }).sort(function(a,b){ return ((+b.tb||0)-(+a.tb||0))||((a.rank||0)-(b.rank||0)); });
-      for(var i=0;i<ladder.length;i++){
-        var a=ladder[i]; if(present[a.code]) continue;
-        /* R91 (Ravi 09-09-2026, 3): "When it is applied, we dont need to apply greasing etc separately." */
-        if(coveredSvc && typeof esJobCoveredByService_==='function' && esJobCoveredByService_(a.desc)) continue;
-        var add=Math.round(a.amt*(1+gst));
-        if(running+add>amount) continue;                 /* stay at or under the amount */
-        ES_ADDLAB.push({l:a.desc, p:a.amt, code:String(a.code), _tfill:true, _fromPicker:true, src:'addon', why:'Added to reach the SA estimate — remove if not needed.'});
-        present[a.code]=1; running+=add; added.push(a);
-      }
-      /* R88/R91: after the service jobs, fill the rest of the amount with this model's
-         parts in consumption order (+ each part's own fitment labour). R91 (g): the
-         objective is 1 : 1, so parts that bring a fitment job go first; parts with no
-         linked job go last. */
+      var added=[], running=base;
       esLabMap_(function(labmap){
         esEnsureTree_(function(){
           var parts=esPartLadder_();
           var presentP={};
           var mark=function(p){ if(p.pn) presentP['#'+String(p.pn)]=1; presentP['D:'+String(p.l||p.desc||'').toUpperCase().replace(/[^A-Z0-9]/g,'')]=1; };
           (c.items.parts||[]).forEach(mark); (c.items.oil||[]).forEach(mark); (ES_ADDPART||[]).forEach(mark);
-          /* the linked job for a part: first code with a real rate for this model, not already
-             on the estimate, and never a job the service labour already covers (greasing…). */
           var pickLab=function(pt){
             if(pt._noFit) return null;                                   /* a spray can is sold, not fitted */
             var codes=String(pt.linked_labour||'').split('|').filter(Boolean);
@@ -23795,36 +23850,71 @@ function esTargetApply_(amount, explicit){
             }
             return null;
           };
-          /* what the estimate itself will add as fitting when no DMS job is linked (esLabourForEveryPart_) */
           var bandFit=function(pt){ if(pt._noFit) return 0; try{ return esIsConsumable_(pt.desc, pt.pn)?0:(+esFitLabourFor_(pt.mrp)||0); }catch(e){ return 0; } };
           var withLab=[], noLab=[];
-          parts.forEach(function(pt){ if(pickLab(pt)) withLab.push(pt); else noLab.push(pt); });
+          parts.forEach(function(pt){ if(presentP['#'+pt.pn] || presentP['D:'+pt.desc.toUpperCase().replace(/[^A-Z0-9]/g,'')]) return; if(pickLab(pt)) withLab.push(pt); else noLab.push(pt); });
           var order=withLab.concat(noLab);
-          var partAdded=[];
-          for(var j=0;j<order.length;j++){
-            if(running>=amount-1) break;
-            var pt=order[j];
-            if(presentP['#'+pt.pn] || presentP['D:'+pt.desc.toUpperCase().replace(/[^A-Z0-9]/g,'')]) continue;
+          /* R92 (Ravi 09-09-2026): "We have to ensure whatever amount is entered 1:1
+             parts:Labour." The two sides are tracked pre-GST from the composed base and
+             the fill ALTERNATES: while labour is behind, the next evidence-backed job goes
+             in (a job that needs a part — fork oil, clutch, battery — waits for that part);
+             when labour is ahead, the next most-fitted part goes in with its own DMS job.
+             When labour is behind and no job is left, a labour-rich part (job worth 80%+
+             of the part) is preferred among the next twelve. Hero's labour rates are small
+             next to part prices, so the line below says the ratio actually reached. */
+          var pSide=(+c.parts||0)+(+c.oil||0), lSide=(+c.labour||0);
+          var lineRe=function(re){ return (c.items.parts||[]).concat(c.items.oil||[], ES_ADDPART||[]).some(function(x){ return re.test(String(x.l||'')); }); };
+          var jobOk=function(a){
+            if(present[a.code]) return false;
+            if(coveredSvc && typeof esJobCoveredByService_==='function' && esJobCoveredByService_(a.desc)) return false;
+            if(a.needs==='FORK OIL') return lineRe(/FORK OIL/i);
+            if(a.needs==='CLUTCH')   return lineRe(/CLUTCH/i);
+            if(a.needs==='BATTERY')  return lineRe(/BATTERY/i);
+            return true;
+          };
+          var partAdded=[], used={}, ji=0, pi=0, guard=0;
+          var addPart=function(pt){
             var lab=pickLab(pt);
             var partCost=Math.round(pt.mrp*(1+gst));
             var labRate=lab?lab.rate:bandFit(pt);
             var labCost=labRate>0?Math.round(labRate*(1+gst)):0;
-            if(running+partCost+labCost>amount) continue;              /* stay at or under the amount */
+            if(running+partCost+labCost>amount) return false;              /* stay at or under the amount */
             ES_ADDPART.push({l:pt.desc, p:pt.mrp, pn:pt.pn, cc:pt.cc, src:'addon', _tfill:true, _fromPicker:true, _noFit:!!pt._noFit, why:'Added to reach the SA estimate — a most-fitted item on this model; remove if not needed.'});
-            running+=partCost; presentP['#'+pt.pn]=1;
+            running+=partCost; presentP['#'+pt.pn]=1; pSide+=pt.mrp;
             if(lab){
               ES_ADDLAB.push({l:lab.desc||('Fitment — '+pt.desc), p:lab.rate, code:lab.code, cc:pt.cc, _tfill:true, _fromPicker:true, src:'fitment', _fromPart:pt.desc, _fromPn:pt.pn, why:'Fitment labour for '+pt.desc});
               present[lab.code]=1;
             }
-            running+=labCost;
+            running+=labCost; lSide+=labRate;
             partAdded.push({desc:pt.desc, amt:pt.mrp+labRate, kind:'part', _pn:pt.pn});
+            return true;
+          };
+          while(running<amount-1 && guard++<400){
+            var wantLabour=(lSide<pSide), placed=false;
+            if(wantLabour){
+              for(; ji<ladder.length; ji++){
+                var a=ladder[ji]; if(!jobOk(a)) continue;
+                var add=Math.round(a.amt*(1+gst)); if(running+add>amount) continue;
+                ES_ADDLAB.push({l:a.desc, p:a.amt, code:String(a.code), _tfill:true, _fromPicker:true, src:'addon', why:'Added to reach the SA estimate — remove if not needed.'});
+                present[a.code]=1; running+=add; lSide+=a.amt; added.push(a); ji++; placed=true; break;
+              }
+            }
+            if(!placed){
+              var idx=-1;
+              if(wantLabour){ for(var k=pi;k<Math.min(order.length,pi+12);k++){ var q0=order[k]; if(used[q0.pn]) continue; var lb=pickLab(q0); if(lb && lb.rate>=q0.mrp*0.8){ idx=k; break; } } }
+              if(idx<0){ for(var k2=pi;k2<order.length;k2++){ if(!used[order[k2].pn]){ idx=k2; break; } } }
+              if(idx<0) break;                                   /* nothing left to add */
+              var pt=order[idx]; used[pt.pn]=1; while(pi<order.length && used[order[pi].pn]) pi++;
+              if(addPart(pt)) placed=true; else continue;        /* too dear for what is left — try the next */
+            }
+            if(!placed) break;
           }
           try{ esUpdateLive(); }catch(e){}
           var c2=null; try{ c2=esComputeCurrent(); }catch(e){}
           /* never over the number: if a banded fitting line pushed the total past it, take the
              last-added parts back off until it fits */
-          var guard=0;
-          while(c2 && Math.round(c2.total)>amount+1 && partAdded.length && guard++<40){
+          var g2=0;
+          while(c2 && Math.round(c2.total)>amount+1 && partAdded.length && g2++<40){
             var last=partAdded.pop();
             ES_ADDPART=ES_ADDPART.filter(function(x){ return !(x._tfill && x.pn===last._pn); });
             ES_ADDLAB=ES_ADDLAB.filter(function(x){ return !(x._tfill && x._fromPn===last._pn); });
@@ -23894,7 +23984,8 @@ function esTargetStatus_(c, base, added, deferred){
     var nP=added.filter(function(a){ return a.kind==='part'; }).length, nJ=added.length-nP, sum=0;
     added.forEach(function(a){ sum+=Math.round((+a.amt||0)*(1+gst)); });
     var what=[]; if(nJ) what.push(nJ+' job'+(nJ===1?'':'s')); if(nP) what.push(nP+' part'+(nP===1?'':'s')+' (with fitting where a job is linked)');
-    var h='<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> built to your '+inr_(t)+' — '+what.join(' + ')+' added ('+inr_(sum)+'). Each one is tagged ⚡ in the estimate below; ✕ drops it.</div>';
+    var pS=((c&&c.parts)||0)+((c&&c.oil)||0), lS=(c&&c.labour)||0, ratio=lS>0?(pS/lS):0;
+    var h='<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> '+(total<t-40?('— as far as the evidence for this model goes towards your '+inr_(t)):('built to your '+inr_(t)))+' — '+what.join(' + ')+' added ('+inr_(sum)+'). Parts : labour now <b>'+(lS>0?ratio.toFixed(2):'—')+' : 1</b>'+(ratio>1.15?' — every labour job this model has evidence for is in; Hero labour rates are small next to part prices':'')+'. Each line is tagged ⚡ below; ✕ drops it.</div>';
     if(total<t-40) h+='<div class="hqs-note">Everything the model tree offers within the amount is in; to go higher, add a part the customer asks for.</div>';
     h+=list('Show what was added ('+added.length+')', added, function(a){ return String(a.desc||'').replace(/\s*\(.*\)\s*/,''); }, function(a){ return Math.round((+a.amt||0)*(1+gst)); });
     box.innerHTML=h; return;
@@ -23907,6 +23998,11 @@ function esTargetStatus_(c, base, added, deferred){
   }
   if(t<base-1 || zero){
     box.innerHTML='<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — the least this visit can be (wash'+((c&&c.expressFee>0)?' + express':'')+'). Raise the amount to bring work back.</div>';
+    return;
+  }
+  if(t>total+40){
+    var known=0; try{ known=((typeof HQS!=='undefined' && HQS.tree && HQS.tree[(typeof curModel==='function')?curModel():''])||[]).length; }catch(e){}
+    box.innerHTML='<div class="hqs-note" style="color:#b45309">⚠ Could not build up to '+inr_(t)+' — nothing more with evidence for this model fits under it (the tree lists '+known+' part'+(known===1?'':'s')+' for it). The estimate stays at <b>'+inr_(total)+'</b>; add a part the customer asks for, or scan the odometer so the manual composes the due items.</div>';
     return;
   }
   box.innerHTML='<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> matches the SA estimate.</div>';
@@ -23993,10 +24089,10 @@ window.heroDiagUpload=heroDiagUpload;
        Please enable it also. System back end taking is fine. But should be editable by
        the SA also." Never read-only: a recorded date is shown, and the SA may correct
        it — the correction is saved back and the old value is kept (0075). */
-    if(on){ dz.readOnly=false; dz.style.background='#f8fafc'; dz.setAttribute('placeholder','dd-mm-yyyy');
-      if(oldHint) oldHint.textContent='From our records — correct it here if the customer says otherwise; the correction is saved.'; }
-    else { dz.readOnly=false; dz.style.background=''; dz.setAttribute('placeholder','dd-mm-yyyy');
-      if(oldHint) oldHint.textContent='Not in our records. If the customer knows it, type it (dd-mm-yyyy) — we will save it.'; }
+    if(on){ dz.readOnly=false; dz.disabled=false; dz.style.background='#fff'; dz.setAttribute('placeholder','dd-mm-yyyy');
+      if(oldHint) oldHint.textContent='From our records — EDITABLE: tap and correct it if the customer says otherwise; the correction is saved.'; }
+    else { dz.readOnly=false; dz.disabled=false; dz.style.background='#fff'; dz.setAttribute('placeholder','dd-mm-yyyy');
+      if(oldHint) oldHint.textContent='Not in our records — EDITABLE: type it (dd-mm-yyyy) if the customer knows it; we will save it.'; }
   }
   function fill(reg){
     var key=String(reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(key.length<6) return;
