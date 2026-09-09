@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 78;
-window.HERO_BUILD = 'R93-2026.09.09.3';
+window.HERO_RELEASE = 79;
+window.HERO_BUILD = 'R94-2026.09.09.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -7793,6 +7793,15 @@ function esBuild(fam, dec, km, modelName){
   }
   /* R91 (Ravi 09-09-2026, d): a Joyride member pays no PMS labour on this visit. */
   try{ if(typeof window.esApplyJoyride_==='function') window.esApplyJoyride_(L, dec); }catch(e){}
+  /* R94 (Ravi 09-09-2026 15:36): "If it is a Paid Service then Paid Service Labour will
+     come under any cost. So there will be a minimum." The visit's service labour is
+     compulsory — padlocked on screen, never trimmed by the amount. (A Joyride member's
+     line is the same lock at Rs 0.) */
+  if(esServiceCovers_(dec)) L.labour.forEach(function(x){
+    if(x.src!=='service') return;
+    x._mandatory=true;
+    x.why=(x.why||'Service labour for this visit')+' — compulsory on a '+String((dec&&dec.label)||'service').toLowerCase()+' visit.';
+  });
   ES_ADDLAB.forEach(x=>L.labour.push({...x}));
   ES_ADDPART.forEach(x=>L.parts.push({...x}));
   if(ES_REMOVED.size){
@@ -23977,7 +23986,8 @@ function esTargetApply_(amount, explicit){
     var linkedOf=function(p){ return (linked['#'+String(p.pn||'')]||[]).concat(linked['D:'+String(p.l||'').toUpperCase()]||[]); };
     var val_=function(x){ return +(x.netP!==undefined?x.netP:x.p)||0; };
     var cand=[], taken={};
-    (c.items.oil||[]).forEach(function(x){ cand.push({l:x.l, p:val_(x), r:6, tu:0}); });
+    /* R94: the engine oil issued for this service is part of the minimum — the amount
+       never takes it off; only the SA's own ✕ does (rule a: no force, but we add it). */
     (c.items.parts||[]).forEach(function(x){
       var r=x._tfill?0:(x.src==='addon'||x._fromPicker)?1:(x.src==='consumable')?2:(x.src==='rule')?3:(x.src==='manual')?5:3;
       var extra=0; linkedOf(x).forEach(function(lb){ extra+=val_(lb); taken[lb.l]=1; });   /* its labour leaves with it */
@@ -23989,6 +23999,13 @@ function esTargetApply_(amount, explicit){
       cand.push({l:x.l, p:val_(x), r:r, tu:0});
     });
     cand=cand.filter(function(x){ return x.p>0; }).sort(function(a,b){ return (a.r-b.r)||(a.tu-b.tu)||(b.p-a.p); });
+    /* R94: the floor this visit cannot go under — service labour + wash + engine oil (+ express if ticked) */
+    var trimmable=0; cand.forEach(function(x){ trimmable+=x.p; });
+    HQS.floor=Math.max(0, Math.round(base-trimmable*(1+gst)));
+    HQS.floorLines=[];
+    (c.items.labour||[]).forEach(function(x){ if(x._mandatory||x.src==='washing') HQS.floorLines.push({l:x.l, p:val_(x)}); });
+    (c.items.oil||[]).forEach(function(x){ HQS.floorLines.push({l:x.l, p:val_(x)}); });
+    if(c.expressFee>0) HQS.floorLines.push({l:'Express delivery', p:+c.expressFee||0});
     var need=(base-amount)/(1+gst), sum=0, deferred=[];
     cand.forEach(function(x){ if(sum>=need-0.5) return; sum+=x.p; deferred.push(x); });
     /* give back what the amount no longer needs removed — most valuable first — so the
@@ -24029,14 +24046,19 @@ function esTargetStatus_(c, base, added, deferred){
     h+=list('Show what was added ('+added.length+')', added, function(a){ return String(a.desc||'').replace(/\s*\(.*\)\s*/,''); }, function(a){ return Math.round((+a.amt||0)*(1+gst)); });
     box.innerHTML=h; return;
   }
+  var floorNote=function(){
+    var fl=+HQS.floor||0; if(!(fl>0) || !(t<fl-1)) return '';
+    var comp=(HQS.floorLines||[]).map(function(x){ return esc(String(x.l).replace(/\s*\(.*\)\s*/,''))+' '+inr_(Math.round((+x.p||0)*(1+gst))); }).join(' + ');
+    return '<div class="hqs-note" style="color:#b45309">⚠ <b>'+inr_(t)+' is below the minimum for this visit.</b> The minimum is <b>'+inr_(fl)+'</b>'+(comp?' = '+comp:'')+' — the paid-service labour and the engine oil issued are not removed by the amount (untick express, or ✕ the oil yourself if the customer refuses it).</div>';
+  };
   if(deferred && deferred.length){
     var sumD=0; deferred.forEach(function(x){ sumD+=Math.round((+x.p||0)*(1+gst)); });
-    box.innerHTML='<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — trimmed to your '+inr_(t)+': '+deferred.length+' line'+(deferred.length===1?'':'s')+' deferred to the next visit ('+inr_(sumD)+'). The wash stays; untick express if not wanted.</div>'
+    box.innerHTML=floorNote()+'<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — trimmed towards your '+inr_(t)+': '+deferred.length+' line'+(deferred.length===1?'':'s')+' deferred to the next visit ('+inr_(sumD)+').</div>'
       +list('Show what was deferred ('+deferred.length+')', deferred, function(x){ return x.l; }, function(x){ return Math.round((+x.p||0)*(1+gst)); });
     return;
   }
   if(t<base-1 || zero){
-    box.innerHTML='<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — the least this visit can be (wash'+((c&&c.expressFee>0)?' + express':'')+'). Raise the amount to bring work back.</div>';
+    box.innerHTML=floorNote()+'<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — the least this visit can be. Raise the amount to bring work back.</div>';
     return;
   }
   if(t>total+40){
