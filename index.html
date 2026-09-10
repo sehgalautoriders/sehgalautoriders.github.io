@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 79;
-window.HERO_BUILD = 'R94-2026.09.09.4';
+window.HERO_BUILD = 'R95-2026.09.10.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2635,7 +2635,9 @@ body{background:var(--page);font-family:var(--font-ui)}
 let INS5={
   view:'today', q:'', rows:[], counts:null, sel:-1, tab:'overview',
   outcome:'', built:false, saving:false, details:Object.create(null),
-  countsAt:0, loadSeq:0, waLang:'en', waEdited:null, online:true, outbox:0
+  countsAt:0, loadSeq:0, waLang:'en', waEdited:null, online:true, outbox:0,
+  /* R95: her whole allocated day, once, in memory and in IndexedDB. */
+  day:{date:'',rows:[],at:0}, backoff:8000, denied:''
 };
 
 /* The seven outcomes. This vocabulary is fixed on the server (0049) — the
@@ -2812,8 +2814,78 @@ function i5Del(store,key){
     });
   });
 }
-function i5CacheKey(){ return i5Me()+'|'+INS5.view+'|'+(INS5.q.trim().toUpperCase()); }
+/* R95 — ONE DOWNLOAD A DAY, THEN THE PHONE DOES THE SLICING.
+   Ravi, 20-Aug-2026: "Each lady can max call 150 customers in a day so the
+   indexeddb should be also like that only."  The five day tabs (Due today /
+   Tomorrow / 2-7 / 8-15 / My 150) are five views of the SAME 150 rows the
+   server already allocated her, so they are cut on the device:
+
+     * her list is on the screen before the network is asked anything,
+     * moving between the five tabs costs nothing at all,
+     * typing in the search box filters her 150 at typing speed,
+     * a basement with no signal keeps working.
+
+   Before this, every tab was its own round trip and the cache key carried no
+   date, so the first paint of the morning was yesterday's list. */
+const I5_DAY_TTL=300000;                       /* re-ask the server every 5 min */
+function i5WorkDate(){ return i5IstPlus(0); }  /* IST, the day the server allocates */
+function i5DayKey(){ return 'day|'+i5Me()+'|'+i5WorkDate(); }
+function i5CacheKey(){ return i5Me()+'|'+INS5.view+'|'+(INS5.q.trim().toUpperCase())+'|'+i5WorkDate(); }
 function i5Cap(){ return i5View(INS5.view).src==='day'?I5_CAP_DAY:I5_CAP_MONTH; }
+const I5_BUCKET={today:1,tomorrow:2,week:3,fortnight:4};
+function i5DaySlice(view,q){
+  var b=I5_BUCKET[view]||0, out=INS5.day.rows||[];
+  if(b) out=out.filter(function(r){ return Number(r.bucket)===b; });
+  var s=String(q||'').trim().toUpperCase();
+  if(s.length>=2){
+    out=out.filter(function(r){
+      return (String(r.customer||'')+' '+String(r.reg_no||'')+' '+String(r.mobile||'')
+             +' '+String(r.chassis||'')+' '+String(r.model||'')).toUpperCase().indexOf(s)>=0;
+    });
+  }
+  return out;
+}
+function i5DayFresh(){ return INS5.day.date===i5WorkDate() && (INS5.day.rows||[]).length>0; }
+function i5DayStore(rows){
+  INS5.day={date:i5WorkDate(), rows:rows||[], at:Date.now()};
+  i5Put('cache',{date:INS5.day.date,rows:INS5.day.rows,at:INS5.day.at}, i5DayKey());
+  i5DayPrune();
+}
+/* Yesterday's 150 must never paint as today's, and must not sit on her phone
+   for a month either. EVERY key in this store now ends in |<work date> — the
+   day key and the month/book view keys alike — so one rule clears the lot:
+   anything not dated today goes. Deliberately not scoped to the employee
+   code: a counter phone gets used by whoever is on shift, and the woman who
+   used it last week has no business leaving her customers on it. */
+function i5DayPrune(){
+  var today=i5WorkDate(), rx=/\|(\d{4}-\d{2}-\d{2})$/;
+  i5Db().then(function(db){
+    if(!db) return;
+    try{
+      var os=db.transaction('cache','readwrite').objectStore('cache');
+      var rq=os.openCursor();
+      rq.onsuccess=function(e){
+        var c=e.target.result; if(!c) return;
+        var m=rx.exec(String(c.key||''));
+        if(m && m[1]!==today) os.delete(c.key);
+        c.continue();
+      };
+    }catch(e){}
+  });
+}
+/* The nine tiles and the tab counters. The server owns them, but if the counts
+   RPC has not answered yet - or has refused - the day numbers still come off
+   the 150 rows on this device instead of showing nine zeros. */
+function i5Counts(){
+  var k=INS5.counts||{}, d=INS5.day.rows||[], out={}, i;
+  for(i in k) out[i]=k[i];
+  if(d.length){
+    var b=function(x){ return d.filter(function(r){ return Number(r.bucket)===x; }).length; };
+    var loc={today:b(1),tomorrow:b(2),week:b(3),fortnight:b(4),remaining:d.length};
+    for(i in loc) if(out[i]==null) out[i]=loc[i];
+  }
+  return out;
+}
 
 /* ---------------------------------------------------------------------------
    Boot / shell
@@ -2901,7 +2973,7 @@ function i5BuildShell(root){
    Header furniture
    --------------------------------------------------------------------------- */
 function i5PaintKpis(){
-  var k=INS5.counts||{}, el=document.getElementById('i5-kpis'); if(!el) return;
+  var k=i5Counts(), el=document.getElementById('i5-kpis'); if(!el) return;
   var conv=(k.month_worked>0)?Math.round((Number(k.month_won||0)*100)/Number(k.month_worked))+'%':'—';
   var tile=function(cls,n,lbl,view,pos){
     return '<button class="i5-kpi '+cls+' k'+pos+'"'+(view?(' onclick="i5Go(\''+view+'\')"'):'')+'>'
@@ -2919,7 +2991,7 @@ function i5PaintKpis(){
     +tile('good',conv,                'Converted · month','won',9);
 }
 function i5PaintTabs(){
-  var k=INS5.counts||{}, el=document.getElementById('i5-tabs'); if(!el) return;
+  var k=i5Counts(), el=document.getElementById('i5-tabs'); if(!el) return;
   el.innerHTML=I5_VIEWS.map(function(v){
     if(v.sep) return '<span class="i5-tabsep"></span>';
     var n=(v.k&&k[v.k]!=null)?('<u>'+i5N(k[v.k])+'</u>'):'';
@@ -2966,12 +3038,20 @@ var _i5qt=null;
 function i5Search(v){
   INS5.q=String(v||'');
   clearTimeout(_i5qt);
+  /* R95: a day view is filtered on the device - instant, and offline. Only the
+     month lists and the whole customer book still go to the server. */
+  if(i5View(INS5.view).src==='day'){
+    INS5.sel=-1; i5PaintRail();
+    INS5.rows=i5DaySlice(INS5.view,INS5.q);
+    i5Render(false);
+    return;
+  }
   var need=(INS5.view==='book')?3:2;
   if(INS5.q.trim().length && INS5.q.trim().length<need) return;
   _i5qt=setTimeout(function(){ INS5.sel=-1; i5PaintRail(); i5Load(); },320);
 }
 function i5Reload(manual){
-  INS5.countsAt=0;
+  INS5.countsAt=0; INS5.day.at=0; INS5.backoff=8000; INS5.denied='';
   i5Load().then(function(){ if(manual) i5Toast('Refreshed from the server'); });
 }
 function i5PaintCachedThenLoad(){
@@ -2979,8 +3059,27 @@ function i5PaintCachedThenLoad(){
      answer AFTER the network on a fast connection, so the cache path must
      never repaint over rows the server has already delivered. */
   INS5.painted=false;
+  var v=i5View(INS5.view), seq=INS5.loadSeq;
+  if(v.src==='day'){
+    /* HER LIST COMES FIRST. Already in memory - paint it now, no skeleton at
+       all. Otherwise read the one day key out of IndexedDB and paint that. */
+    if(i5DayFresh()){
+      INS5.rows=i5DaySlice(INS5.view,INS5.q);
+      i5Render(true); i5PaintKpis(); i5PaintTabs();
+    }else{
+      i5Skeleton();
+      i5Get('cache', i5DayKey()).then(function(o){
+        if(INS5.painted||seq!==INS5.loadSeq) return;
+        if(o&&o.date===i5WorkDate()&&o.rows&&o.rows.length){
+          INS5.day={date:o.date,rows:o.rows,at:o.at||0};
+          INS5.rows=i5DaySlice(INS5.view,INS5.q);
+          i5Render(true); i5PaintKpis(); i5PaintTabs();
+        }
+      }).catch(function(){});
+    }
+    return i5Load();
+  }
   i5Skeleton();
-  var seq=INS5.loadSeq;
   i5Get('cache', i5CacheKey()).then(function(o){
     if(INS5.painted||seq!==INS5.loadSeq) return;
     if(o&&o.rows&&o.rows.length){ INS5.rows=o.rows; i5Render(true); }
@@ -2996,31 +3095,65 @@ function i5Load(){
   if(typeof sbRpc!=='function'){ ins4Classic(); return Promise.resolve(); }
   var seq=++INS5.loadSeq, v=i5View(INS5.view), q=INS5.q.trim();
   var need=!INS5.counts||(Date.now()-INS5.countsAt>25000);
-  return Promise.all([
-    i5Fetch(v,q),
-    need?sbRpc('insurance_my_counts',{}):Promise.resolve(INS5.counts)
-  ]).then(function(res){
+  var fresh=(v.src==='day') && i5DayFresh() && (Date.now()-INS5.day.at<I5_DAY_TTL);
+  /* R95: a day view asks for the WHOLE allocated day once (p_scope 'queue'),
+     never once per tab. The rows and the counts are settled separately, so a
+     refused or slow counts call can no longer blank the list, and a refused
+     list no longer hides the month numbers. That single Promise.all is what
+     turned one 42501 into a dead screen. */
+  var rowsP = (v.src==='day')
+    ? (fresh ? Promise.resolve({skip:true})
+             : sbRpc('insurance_my_queue',{p_scope:'queue',p_q:''})
+                 .then(function(rs){return {rows:rs};},function(e){return {err:e};}))
+    : i5Fetch(v,q).then(function(rs){return {rows:rs};},function(e){return {err:e};});
+  var cntP = need ? sbRpc('insurance_my_counts',{}).then(function(c){return c;},function(){return null;})
+                  : Promise.resolve(INS5.counts);
+  return Promise.all([rowsP,cntP]).then(function(res){
     if(seq!==INS5.loadSeq) return;
-    INS5.rows=Array.isArray(res[0])?res[0].slice(0,i5Cap()):[];
-    if(res[1]){ INS5.counts=res[1]; INS5.countsAt=Date.now(); }
-    INS5.online=true;
-    i5Put('cache',{rows:INS5.rows,at:Date.now()},i5CacheKey());
-    i5PaintKpis(); i5PaintTabs(); i5PaintHint(); i5Render(false); i5Head();
-  }).catch(function(e){
-    if(seq!==INS5.loadSeq) return;
-    var msg=String(e&&e.message||e);
-    if(/not-signed-in|401/.test(msg)){
-      i5Toast('Sign-in session missing — opening the classic screen');
-      ins4Classic(); return;
+    var r=res[0]||{}, c=res[1];
+    if(c){ INS5.counts=c; INS5.countsAt=Date.now(); }
+    if(r.err){ i5Fail(r.err,seq); }
+    else{
+      INS5.online=true; INS5.denied=''; INS5.backoff=8000;
+      if(!r.skip){
+        if(v.src==='day') i5DayStore(Array.isArray(r.rows)?r.rows:[]);
+        else{
+          INS5.rows=Array.isArray(r.rows)?r.rows.slice(0,i5Cap()):[];
+          i5Put('cache',{rows:INS5.rows,at:Date.now()},i5CacheKey());
+        }
+      }
+      if(v.src==='day') INS5.rows=i5DaySlice(INS5.view,INS5.q);
+      i5Render(false);
     }
-    INS5.online=false; i5Head();
-    if(!INS5.rows.length){
-      var tb=document.getElementById('i5-tb');
-      if(tb) tb.innerHTML='<tr><td colspan="7" style="white-space:normal;color:var(--danger2);padding:16px">'
-        +'Could not reach the server — still trying. '+i5Esc(msg.slice(0,90))+'</td></tr>';
-    }
-    setTimeout(function(){ if(seq===INS5.loadSeq) i5Load(); },8000);
+    i5PaintKpis(); i5PaintTabs(); i5PaintHint(); i5Head();
   });
+}
+/* A refusal is not a network problem, and must not be retried for ever. The
+   old catch retried every 8 s whatever the reason, so one "not allowed" became
+   an endless loop against the database. */
+function i5Fail(e,seq){
+  var msg=String((e&&(e.server||e.message))||e);
+  if(/not-signed-in/.test(msg)||(e&&e.status===401)){
+    i5Toast('Sign-in session missing — opening the classic screen');
+    ins4Classic(); return;
+  }
+  var denied=(e&&e.status===403)||/not allowed|42501|permission denied/i.test(msg);
+  INS5.online=false; INS5.denied=denied?msg:''; i5Head();
+  if(!INS5.rows.length){
+    var tb=document.getElementById('i5-tb');
+    if(tb) tb.innerHTML='<tr><td colspan="7" style="white-space:normal;color:var(--danger2);padding:16px">'
+      +(denied
+        ? ('<b>This login is not allowed on the Insurance day queue.</b><br>'
+           +'<span style="opacity:.75">'+i5Esc(msg.slice(0,140))+'</span><br>'
+           +'Ask for the Insurance CRM module on this login — or use '
+           +'<b>Search all customers</b>, which every manager can open.')
+        : ('Could not reach the server — still trying. '+i5Esc(msg.slice(0,110))))
+      +'</td></tr>';
+  }
+  if(denied) return;
+  var wait=Math.min(INS5.backoff||8000,60000);
+  INS5.backoff=Math.min(wait*2,60000);
+  setTimeout(function(){ if(seq===INS5.loadSeq) i5Load(); },wait);
 }
 function i5Head(){
   var d=document.getElementById('i5-dot'), s=document.getElementById('i5-src');
@@ -3285,10 +3418,18 @@ function i5Save(){
     INS5.saving=false; INS5.outcome='';
     /* On a day view the row has been worked and leaves; on a month view she is
        still working the same person, so it stays and simply re-renders. */
-    if(i5View(INS5.view).src==='day'){ INS5.rows.splice(i,1); INS5.sel=-1; i5RailClose(); }
-    else { INS5.details[String(r.book_id||'')]=null; i5Load360(r); i5PaintRail(); }
+    if(i5View(INS5.view).src==='day'){
+      INS5.rows.splice(i,1); INS5.sel=-1; i5RailClose();
+      /* R95: the day cache is the master copy of her 150 now, so she has to
+         come off that too - otherwise the next tab shows her again. */
+      var bid=String(r.book_id||'');
+      i5DayStore((INS5.day.rows||[]).filter(function(x){ return String(x.book_id||'')!==bid; }));
+    }
+    else {
+      INS5.details[String(r.book_id||'')]=null; i5Load360(r); i5PaintRail();
+      i5Put('cache',{rows:INS5.rows,at:Date.now()},i5CacheKey());
+    }
     i5Render(false);
-    i5Put('cache',{rows:INS5.rows,at:Date.now()},i5CacheKey());
   };
   sbRpc('insurance_log_outcome',payload).then(function(res){
     if(!(res&&res.ok)) throw new Error((res&&res.error)||'save failed');
@@ -5125,7 +5266,17 @@ async function sbFetch(path, opts){
 async function sbRpc(name, args){
   const res=await sbFetch('/rest/v1/rpc/'+name,{method:'POST',
     headers:{'Content-Type':'application/json'}, body:JSON.stringify(args||{})});
-  if(!res.ok) throw new Error('rpc '+name+' HTTP '+res.status);
+  /* R95: PostgREST puts the real reason in the body. Throwing only the status
+     turned every refusal in the app into a meaningless "HTTP 403", which is how
+     an Insurance CRM that was plainly answering "not allowed" read for three
+     weeks as "Could not reach the server". */
+  if(!res.ok){
+    let msg='';
+    try{ const b=await res.json(); msg=String((b&&(b.message||b.hint||b.details))||''); }catch(e){}
+    const err=new Error(msg?(msg+' (rpc '+name+' HTTP '+res.status+')'):('rpc '+name+' HTTP '+res.status));
+    err.status=res.status; err.rpc=name; err.server=msg;
+    throw err;
+  }
   return await res.json();
 }
 async function sbInsert(table, row){
