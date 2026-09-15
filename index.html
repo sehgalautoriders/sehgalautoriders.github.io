@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 79;
-window.HERO_BUILD = 'R96-2026.09.15.1';
+window.HERO_BUILD = 'R97-2026.09.15.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -7948,10 +7948,20 @@ function esBuild(fam, dec, km, modelName){
      come under any cost. So there will be a minimum." The visit's service labour is
      compulsory — padlocked on screen, never trimmed by the amount. (A Joyride member's
      line is the same lock at Rs 0.) */
+  /* R97 (Ravi, 15-09-2026) — THE MINIMUM IS GONE. R94 padlocked this line and put
+     it beyond the amount's reach ("Paid Service Labour will come under any cost.
+     So there will be a minimum."). Ravi replaced that rule today: "don't keep a
+     minimum in any case ... A customer says 4300 is too costly and he is going
+     then harley service negotiation can happen in 3500 ... Or he will go local.
+     We want to preserve all customers also." The line is still COMPOSED by
+     default and still explained — it simply is not compulsory: the SA can ✕ it,
+     and the amount can trim it, late (after the fills, the extras, the
+     consumables and the rule parts, and still before the PM parts and the oil —
+     R91 rule f, Ravi's own order). Keeping the customer beats holding a floor he
+     was never going to pay. */
   if(esServiceCovers_(dec)) L.labour.forEach(function(x){
     if(x.src!=='service') return;
-    x._mandatory=true;
-    x.why=(x.why||'Service labour for this visit')+' — compulsory on a '+String((dec&&dec.label)||'service').toLowerCase()+' visit.';
+    x.why=(x.why||'Service labour for this visit')+' — normally charged on a '+String((dec&&dec.label)||'service').toLowerCase()+' visit; ✕ it, or let the amount trim it, if the customer is negotiating.';
   });
   ES_ADDLAB.forEach(x=>L.labour.push({...x}));
   ES_ADDPART.forEach(x=>L.parts.push({...x}));
@@ -9097,28 +9107,53 @@ function esComputeCurrent(){
         them a new model — carried a cap below what their own visit must cost.
         The fallback (model_n) is here because a phone may still be holding a
         reply from the pre-0078 function.
-     b) A CAP BELOW THE COMPULSORY MINIMUM IS A LOCKED DOOR, NOT A CAP. R94
-        settled what a service visit must always carry — the service labour, the
-        wash and the engine oil issued — and the amount control itself never
-        trims them. The gate may never ask for less than that. Harley X440: cap
-        Rs 228 against a compulsory Rs 4,000-odd of oil + labour + wash, so no
-        amount the advisor could reach was ever acceptable.
-     c) AND IT NO LONGER BLOCKS — see esGenerate. It asks once and generates. */
+     b) AND IT NO LONGER BLOCKS ANYTHING AT ALL — see esGenerate.
+
+     R97 (Ravi, 15-09-2026, the same afternoon) REPLACED what (b) used to be, and
+     went further than R96 did. R96 had lifted the cap to "the compulsory minimum
+     of the visit" so a cap would always be reachable. Ravi:
+
+       "See why keep a minimum. I had already updated you don't keep a minimum in
+        any case. A customer says 4300 is too costly and he is going then harley
+        service negotiation can happen in 3500. Anyways when oil is removed it
+        comes down in 1 thousand. So already it is there. In 3500 atleast customer
+        will get oil and service done. Or he will go local. We want to preserve
+        all customers also."
+       "Don't keep minimum in any case. Just make them aware while they are
+        generating the estimate that the average cost for this model and this
+        service is this and min is this."
+
+     The premise behind R96(b) was wrong: the same HARLEY X440 sits at Rs 1,391
+     the moment the oil comes off, so there was never a Rs 4,341 minimum to floor
+     a cap on. THE ESTATE NOW KEEPS NO MINIMUM ANYWHERE. What replaces it is
+     information — the advisor is TOLD the model's average and its lowest (0079)
+     and how far this estimate can come down, and then he decides. A quote above
+     the norm is stated, never questioned and never blocked. anchorCap survives
+     only as the "usual up to" number on that strip. */
   const _anchNet_=x=>+((x&&x.netP!==undefined)?x.netP:(x&&x.p))||0;
-  const mandatoryPre=(items.oil||[]).reduce((s,x)=>s+_anchNet_(x),0)
-                    +(items.labour||[]).filter(x=>x&&(x._mandatory||x.src==='washing')).reduce((s,x)=>s+_anchNet_(x),0)
+  /* R97: how low the amount can take THIS estimate. Everything is trimmable now
+     except the wash (R91 rule f: "the wash stays, express is the tick box"), so
+     this is wash + express — and it is shown, not enforced. */
+  const trimFloorPre=(items.labour||[]).filter(x=>x&&x.src==='washing').reduce((s,x)=>s+_anchNet_(x),0)
                     +(+expressFee||0);
-  const mandatoryTotal=Math.round(mandatoryPre*(1+GST));
+  const trimFloor=Math.round(trimFloorPre*(1+GST));
   const modelN=anch?(+anch.model_n||0):0;
   const anchorMinN=anch?(+anch.anchor_min_n||5):5;
   const modelAnchorOk=anch?((anch.model_anchor_ok!==undefined)?!!anch.model_anchor_ok:(modelN>=anchorMinN)):false;
-  const modelMedShown=anch?(+anch.model_median||0):0;   /* what the advisor is told */
-  const modelMed=modelAnchorOk?modelMedShown:0;          /* what is allowed to gate */
+  const modelMedShown=anch?(+anch.model_median||0):0;
+  const modelMed=modelAnchorOk?modelMedShown:0;
+  /* R97 / migration 0079 — the two numbers Ravi asked the advisor to be shown.
+     Unlike the median these are shown at ANY n, with the count beside them:
+     "across 1 estimate" is honest information in a negotiation, where it was
+     dishonest as a gate. */
+  const modelAvg=anch?(+anch.model_avg||0):0;
+  const modelMin=anch?(+anch.model_min||0):0;
+  const modelMax=anch?(+anch.model_max||0):0;
   const anchorBase=custLast||modelMed;
-  const anchorCap=anchorBase?Math.max(Math.round(anchorBase*1.5), mandatoryTotal):0;
-  const overCap=(dec.type==='paid') && anchorCap>0 && total>anchorCap;
+  const anchorCap=anchorBase?Math.round(anchorBase*1.5):0;
+  const overCap=(dec.type==='paid') && anchorCap>0 && total>anchorCap;   /* informational only */
   return {modelName,fam,km,dos,dec,items,parts,oil,labour,pre,rawPre,protection:protectionTotal,protectionLabel,floor,initial,inc,disc,lineDisc,otherDisc,requestedDisc,discLab,discParts,expressFee,tax,total,count,type:dec.type,changed,belowFloor,
-          anchor:anch,custRows,custLast,modelMed,modelMedShown,modelN,anchorMinN,modelAnchorOk,mandatoryTotal,anchorBase,anchorCap,overCap};
+          anchor:anch,custRows,custLast,modelMed,modelMedShown,modelN,anchorMinN,modelAnchorOk,modelAvg,modelMin,modelMax,trimFloor,anchorBase,anchorCap,overCap};
 }
 function esUpdateLive(){
   /* The parts:labour strip is redrawn on every live recalculation, whatever
@@ -9174,19 +9209,28 @@ function esUpdateLiveInner_(){
         if(!a) return '';
         const hist=(c.custRows||[]).map(r=>inr(+r.total||0)+' <span style="opacity:.7">('+String(r.saved_at||'')+' · '+String(r.service||'').replace(/ Service/i,'')+')</span>').join(' · ');
         let s='<div style="padding:4px 6px;margin-bottom:4px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:7px;font-size:11px;color:#0c4a6e">';
-        /* R96: say what is actually true. A median over one or two estimates is
-           shown as what it is — too little to judge by — instead of being quoted
-           as "the usual" and then enforced. */
-        s+= hist ? ('📊 This customer before: '+hist)
-                 : (c.modelMedShown
-                     ? ('📊 '+(c.modelAnchorOk?'Usual ':'')+String(c.dec.type||'')+' estimate for '+raviEsc(c.modelName)+': <b class="mono">'+inr(c.modelMedShown)+'</b> <span style="opacity:.7">(across '+(c.modelN||0)+' estimate'+((c.modelN||0)===1?'':'s')+(c.modelAnchorOk?'':' — too few to go by yet')+')</span>')
-                     : '📊 First estimate we have for this customer and model.');
-        if(c.anchorCap){
-          s+= c.overCap
-            ? '<div style="margin-top:3px;color:#b45309;font-weight:700">⚠ '+inr(c.total)+' is well above '+(c.custLast?'their last visit':'the usual for this model')+' (<b class="mono">'+inr(c.anchorCap)+'</b>). Trim or discount lines below, or generate it anyway — it will ask you once.</div>'
-            : '<div style="margin-top:3px;color:#065f46">✔ Within range for this customer (up to <b class="mono">'+inr(c.anchorCap)+'</b>).</div>';
-        } else if(c.type==='paid' && c.modelMedShown && !c.modelAnchorOk){
-          s+='<div style="margin-top:3px;color:#475569">No price guidance for this model yet — quote it on the job, not on the history.</div>';
+        /* R97 (Ravi, 15-09-2026): "Just make them aware while they are generating
+           the estimate that the average cost for this model and this service is
+           this and min is this." This strip is now the NEGOTIATION CARD and
+           nothing else — the model's average and lowest, the customer's own last
+           visits, and how far this estimate can be brought down. It states; it
+           never warns him off and it never gates. Advisor-side only: none of it
+           reaches the printed estimate or the WhatsApp text. */
+        const svcWord=String(c.dec.type||'')+' service';
+        if(c.modelN){
+          s+='📊 '+raviEsc(c.modelName)+' · '+svcWord+' — average <b class="mono">'+inr(c.modelAvg)+'</b> · lowest <b class="mono">'+inr(c.modelMin)+'</b>'
+            +' <span style="opacity:.7">(across '+c.modelN+' estimate'+(c.modelN===1?'':'s')+')</span>';
+        } else {
+          s+='📊 First '+svcWord+' we have for '+raviEsc(c.modelName)+' — no average to go by yet.';
+        }
+        if(hist) s+='<div style="margin-top:3px">🧾 This customer before: '+hist+'</div>';
+        /* Where this estimate stands against those numbers, and how low it can go.
+           Both are facts on the screen, not permissions. */
+        s+='<div style="margin-top:3px">This estimate <b class="mono">'+inr(c.total)+'</b>'
+          +(c.trimFloor?' · can come down to <b class="mono">'+inr(c.trimFloor)+'</b> <span style="opacity:.7">(wash'+(c.expressFee>0?' + express':'')+' — type any amount below)</span>':'')
+          +'</div>';
+        if(c.overCap){
+          s+='<div style="margin-top:3px;color:#b45309">Above the usual <b class="mono">'+inr(c.anchorCap)+'</b> for this '+(c.custLast?'customer':'model')+'. It will still generate — trim or discount only if the customer asks.</div>';
         }
         s+='</div>';
         return s;
@@ -9348,26 +9392,14 @@ function esGenerate(){
     }
   }
   if(!ONLINE){ document.getElementById('es-msg').style.color='var(--signal-d)'; document.getElementById('es-msg').textContent='No internet connection — cannot generate.'; return; }
-  /* R63 guarded the CAP instead of the floor and REFUSED above it. R96 (Ravi,
-     15-09-2026) keeps the guidance and drops the refusal: the advisor is shown
-     the two numbers and decides. A quote 50% above the norm is worth a question;
-     it is not worth a vehicle leaving without an estimate. Whichever way he
-     answers is recorded on the estimate (overCap / overCapAccepted) so the
-     deviation stays measurable. */
-  const cchk=esComputeCurrent();
-  esGenerate._overCapOk=false;
-  if(cchk && cchk.overCap){
-    const m0=document.getElementById('es-msg');
-    const ok=confirm('This estimate is above the usual for this '+(cchk.custLast?'customer':'model')+'.\n\n'+
-                     'This estimate:  '+inr(cchk.total)+'\n'+
-                     'Usual up to:    '+inr(cchk.anchorCap)+'\n\n'+
-                     'Generate it anyway?');
-    if(!ok){
-      if(m0){ m0.style.color='var(--signal-d)'; m0.textContent='Not generated. Trim or discount lines to come within '+inr(cchk.anchorCap)+', or press Generate again and confirm.'; }
-      return;
-    }
-    esGenerate._overCapOk=true;
-  }
+  /* R63 REFUSED above the cap. R96 turned the refusal into one confirm. R97
+     (Ravi, 15-09-2026) removes even the question: "Don't keep minimum in any
+     case. Just make them aware while they are generating the estimate that the
+     average cost for this model and this service is this and min is this."
+     The awareness lives on the strip above (average · lowest · how far this one
+     can come down); the press itself is unconditional. Nothing stands between
+     the advisor and the estimate any more. The deviation is still recorded on
+     the record so the billing report can measure it later — recorded, not asked. */
   const msg=document.getElementById('es-msg'); msg.style.color='var(--steel)'; msg.textContent='';
   // v11.4 compulsory fields — block + popup listing only what's missing
   /* R70 (Ravi, 17-Aug-2026) — TWO FIELDS LEAVE THIS LIST.
@@ -9403,7 +9435,7 @@ function esGenerate(){
     model:c.modelName,fam:c.fam.name,km:c.km,mo:esMonthsSince(c.dos),service:c.dec.label,type:c.type,items:{...c.items,demanded:ES_DEMANDED.slice()},demanded:ES_DEMANDED.slice(),
     parts:c.parts,oil:c.oil,labour:c.labour,protection:c.protection,initial:c.initial,pre:c.pre,disc:c.disc,lineDiscount:c.lineDisc||0,tax:c.tax,total:c.total,floor:c.floor,
     anchorBase:c.anchorBase||0,anchorCap:c.anchorCap||0,anchorSrc:c.custLast?'customer':(c.modelMed?'model':''),
-    overCap:!!c.overCap,overCapAccepted:!!(c.overCap&&esGenerate._overCapOk),anchorN:c.modelN||0};
+    overCap:!!c.overCap,anchorN:c.modelN||0,modelAvg:c.modelAvg||0,modelMin:c.modelMin||0,trimFloor:c.trimFloor||0};
   esRender(ES.current); esLockForm(true); esPushSheet(ES.current);
   try{ if(typeof window.esJoyrideOnGenerate_==='function') window.esJoyrideOnGenerate_(ES.current); }catch(e){}   /* R91: a Joyride visit is counted */
   try{ if(typeof window.esDraftClear_==='function') window.esDraftClear_(); }catch(e){}                            /* R91: a generated estimate is done — no draft to resume */
@@ -24204,14 +24236,33 @@ function esTargetApply_(amount, explicit){
       var r=x._tfill?0:(x.src==='addon'||x._fromPicker)?1:(x.src==='linked'||x.src==='fitment')?2:(x.src==='service')?4:3;
       cand.push({l:x.l, p:val_(x), r:r, tu:0});
     });
+    /* R97 (Ravi, 15-09-2026): "don't keep a minimum in any case". The engine oil
+       sat outside the candidate list entirely (R94), so a typed amount stopped
+       dead above it. It is a candidate now at rank 6 — LAST, behind everything
+       else including the service labour and the PM parts, exactly R91 rule f
+       ("engine oil last"). L.oil already respects ES_REMOVED, so deferring it
+       here takes it off the same way the SA's own ✕ does. Ravi: "when oil is
+       removed it comes down in 1 thousand. So already it is there." */
+    (c.items.oil||[]).forEach(function(x){ cand.push({l:x.l, p:val_(x), r:6, tu:0}); });
     cand=cand.filter(function(x){ return x.p>0; }).sort(function(a,b){ return (a.r-b.r)||(a.tu-b.tu)||(b.p-a.p); });
-    /* R94: the floor this visit cannot go under — service labour + wash + engine oil (+ express if ticked) */
-    var trimmable=0; cand.forEach(function(x){ trimmable+=x.p; });
-    HQS.floor=Math.max(0, Math.round(base-trimmable*(1+gst)));
+    /* R97: what is left once everything trimmable has gone — the wash, and express
+       while it is ticked. Not a minimum: a fact about where this estimate now is.
+       (R94 counted the service labour and the engine oil in here too.) */
+    /* R97: build the remaining lines FIRST and price them directly. Two reasons the
+       old `base - trimmable*(1+gst)` had to go: it listed the ENGINE OIL as a line
+       that cannot be removed, which stopped being true the moment the oil became a
+       trim candidate above; and subtracting a GST-inflated sum from the base carried
+       every line's rounding into the answer, printing Rs 330 where the strip's own
+       wash + express figure (esComputeCurrent's trimFloor) says Rs 329. Two numbers
+       on one screen for the same thing must agree, so both are now the same sum. */
     HQS.floorLines=[];
-    (c.items.labour||[]).forEach(function(x){ if(x._mandatory||x.src==='washing') HQS.floorLines.push({l:x.l, p:val_(x)}); });
-    (c.items.oil||[]).forEach(function(x){ HQS.floorLines.push({l:x.l, p:val_(x)}); });
-    if(c.expressFee>0) HQS.floorLines.push({l:'Express delivery', p:+c.expressFee||0});
+    var _hasExpLine=false;
+    (c.items.labour||[]).forEach(function(x){
+      if(x._mandatory||x.src==='washing'){ HQS.floorLines.push({l:x.l, p:val_(x)}); if(x.src==='express') _hasExpLine=true; }
+    });
+    if(c.expressFee>0 && !_hasExpLine) HQS.floorLines.push({l:'Express delivery', p:+c.expressFee||0});
+    var floorPre=0; HQS.floorLines.forEach(function(x){ floorPre+=(+x.p||0); });
+    HQS.floor=Math.max(0, Math.round(floorPre*(1+gst)));
     var need=(base-amount)/(1+gst), sum=0, deferred=[];
     cand.forEach(function(x){ if(sum>=need-0.5) return; sum+=x.p; deferred.push(x); });
     /* give back what the amount no longer needs removed — most valuable first — so the
@@ -24255,7 +24306,10 @@ function esTargetStatus_(c, base, added, deferred){
   var floorNote=function(){
     var fl=+HQS.floor||0; if(!(fl>0) || !(t<fl-1)) return '';
     var comp=(HQS.floorLines||[]).map(function(x){ return esc(String(x.l).replace(/\s*\(.*\)\s*/,''))+' '+inr_(Math.round((+x.p||0)*(1+gst))); }).join(' + ');
-    return '<div class="hqs-note" style="color:#b45309">⚠ <b>'+inr_(t)+' is below the minimum for this visit.</b> The minimum is <b>'+inr_(fl)+'</b>'+(comp?' = '+comp:'')+' — the paid-service labour and the engine oil issued are not removed by the amount (untick express, or ✕ the oil yourself if the customer refuses it).</div>';
+    /* R97: no longer a refusal. Everything trimmable has already gone; what is
+       left is the wash (and express while ticked), so the note says what the
+       estimate now IS rather than what the advisor may not do. */
+    return '<div class="hqs-note" style="color:#b45309">⚠ <b>'+inr_(t)+'</b> is below what is left on this estimate. Everything else has been trimmed — this visit now stands at <b>'+inr_(fl)+'</b>'+(comp?' = '+comp:'')+'. Untick express to go lower.</div>';
   };
   if(deferred && deferred.length){
     var sumD=0; deferred.forEach(function(x){ sumD+=Math.round((+x.p||0)*(1+gst)); });
