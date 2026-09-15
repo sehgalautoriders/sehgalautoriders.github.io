@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 79;
-window.HERO_BUILD = 'R97-2026.09.15.2';
+window.HERO_BUILD = 'R98-2026.09.15.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -24103,6 +24103,7 @@ function esTargetApply_(amount, explicit){
   if(Array.isArray(ES_ADDLAB)) ES_ADDLAB=ES_ADDLAB.filter(function(x){ return !x._tfill; });   /* clear prior labour fills */
   if(Array.isArray(ES_ADDPART)) ES_ADDPART=ES_ADDPART.filter(function(x){ return !x._tfill; }); /* R88: clear prior part fills */
   ES_TDEFER.forEach(function(l){ try{ ES_REMOVED.delete(l); }catch(e){} }); ES_TDEFER.clear();  /* clear prior defers */
+  HQS.altTotal=0; HQS.altDrop='';                                                              /* R98: and the prior "to go under" note */
   var c=null; try{ c=esComputeCurrent(); }catch(e){}
   if(!c){ try{ esUpdateLive(); }catch(e){} return; }
   var gst=(typeof GST==='number')?GST:0.18, base=Math.round(c.total||0);
@@ -24265,9 +24266,39 @@ function esTargetApply_(amount, explicit){
     HQS.floor=Math.max(0, Math.round(floorPre*(1+gst)));
     var need=(base-amount)/(1+gst), sum=0, deferred=[];
     cand.forEach(function(x){ if(sum>=need-0.5) return; sum+=x.p; deferred.push(x); });
+    /* R98 (Ravi, 15-09-2026: "Came down properly. Then again told to go up.. bam doesnot
+       go.. bug.."). THE ESTIMATE NOW LANDS CLOSEST TO THE NUMBER, NOT MERELY AT OR UNDER IT.
+
+       Both passes below insist on sum >= need, i.e. the estimate must end at or BELOW the
+       amount. On a vehicle whose cheap lines add up to less than the gap, the only way to
+       satisfy that is to drop one big line and undershoot badly. Measured on Ravi's Harley
+       (oil Rs 2,500 + service labour Rs 900 + wash Rs 129 + express Rs 150 + parts Rs 347
+       = Rs 4,751): typing Rs 3,000 dropped the Rs 2,950 engine oil and landed Rs 1,801 —
+       Rs 1,199 UNDER the ask — while keeping the oil and dropping the spark plug, the
+       service labour and the air filter lands Rs 3,280, only Rs 280 over. Rs 2,500 and
+       Rs 2,000 all collapsed to the same Rs 1,801 for the same reason.
+
+       Worse, it read as "it will not go back up": he was already at Rs 1,801, typed
+       Rs 3,000, and got Rs 1,801 again — the same screen, so nothing appeared to happen.
+
+       So we keep the prefix one line SHORT of the crossing (the best answer above the
+       number) beside the at-or-below answer, and take whichever is nearer. The removal
+       ORDER is untouched — least necessary first, engine oil last (R91 rule f). */
+    var aboveList=deferred.slice(0,-1), aboveSum=0; aboveList.forEach(function(x){ aboveSum+=x.p; });
     /* give back what the amount no longer needs removed — most valuable first — so the
        trim lands as close to the SA's number as the lines allow */
     deferred.slice().sort(function(a,b){ return (b.r-a.r)||(b.tu-a.tu)||(b.p-a.p); }).forEach(function(x){ if(sum-x.p>=need-0.5){ sum-=x.p; deferred.splice(deferred.indexOf(x),1); } });
+    var _totFor=function(s){ return base-Math.round(s*(1+gst)); };
+    var _below=_totFor(sum), _above=_totFor(aboveSum);
+    HQS.altTotal=0; HQS.altDrop='';
+    if(Math.abs(_above-amount) < Math.abs(_below-amount)){
+      /* going over is nearer. Name the line that would take it under, so the advisor can
+         drop it himself in one tap if the customer actually wants the lower number. */
+      var _extra=deferred.filter(function(x){ return aboveList.indexOf(x)<0; });
+      HQS.altTotal=_below;
+      HQS.altDrop=_extra.map(function(x){ return String(x.l).replace(/\s*\(.*\)\s*/,''); }).join(', ');
+      deferred=aboveList; sum=aboveSum;
+    }
     deferred.forEach(function(x){ ES_REMOVED.add(x.l); ES_TDEFER.add(x.l); });
     try{ esUpdateLive(); }catch(e){}
     var c3=null; try{ c3=esComputeCurrent(); }catch(e){}
@@ -24311,13 +24342,31 @@ function esTargetStatus_(c, base, added, deferred){
        estimate now IS rather than what the advisor may not do. */
     return '<div class="hqs-note" style="color:#b45309">⚠ <b>'+inr_(t)+'</b> is below what is left on this estimate. Everything else has been trimmed — this visit now stands at <b>'+inr_(fl)+'</b>'+(comp?' = '+comp:'')+'. Untick express to go lower.</div>';
   };
+  /* R98: say which side of the number it landed on and by how much — "trimmed towards
+     your ₹3,000" was printed over a ₹1,801 result, which is ₹1,199 under and reads as a
+     failure to move. When going over was the nearer answer, name the line that would take
+     it under and where that lands, so the choice is the advisor's and takes one tap. */
+  var _off=Math.round(total-t);
+  var _wayDown=(HQS.altTotal&&HQS.altDrop)
+    ? '<div class="hqs-note">To come under '+inr_(t)+' the next line to drop is <b>'+esc(HQS.altDrop)+'</b> — that lands at <b>'+inr_(HQS.altTotal)+'</b>. ✕ it below if the customer does not want it.</div>'
+    : '';
   if(deferred && deferred.length){
     var sumD=0; deferred.forEach(function(x){ sumD+=Math.round((+x.p||0)*(1+gst)); });
-    box.innerHTML=floorNote()+'<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — trimmed towards your '+inr_(t)+': '+deferred.length+' line'+(deferred.length===1?'':'s')+' deferred to the next visit ('+inr_(sumD)+').</div>'
+    var _head = (Math.abs(_off)<=40) ? ('trimmed to your '+inr_(t))
+              : (_off>0 ? ('the closest these lines come to your '+inr_(t)+' — '+inr_(_off)+' over')
+                        : ('trimmed towards your '+inr_(t)+' — '+inr_(-_off)+' under'));
+    box.innerHTML=floorNote()+'<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — '+_head+': '+deferred.length+' line'+(deferred.length===1?'':'s')+' deferred to the next visit ('+inr_(sumD)+').</div>'
+      +_wayDown
       +list('Show what was deferred ('+deferred.length+')', deferred, function(x){ return x.l; }, function(x){ return Math.round((+x.p||0)*(1+gst)); });
     return;
   }
   if(t<base-1 || zero){
+    /* R98: nothing was deferred. Either there is nothing left to trim, or dropping the
+       next line would land FURTHER from the number than the full estimate does. */
+    if(!zero && total>=base-1){
+      box.innerHTML=floorNote()+'<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — already the closest to your '+inr_(t)+' ('+inr_(_off>0?_off:-_off)+' '+(_off>0?'over':'under')+'); dropping the next line takes it further away.</div>'+_wayDown;
+      return;
+    }
     box.innerHTML=floorNote()+'<div class="hqs-note ok">✓ <b>'+inr_(total)+'</b> — the least this visit can be. Raise the amount to bring work back.</div>';
     return;
   }
