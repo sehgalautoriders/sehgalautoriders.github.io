@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 79;
-window.HERO_BUILD = 'R95-2026.09.10.1';
+window.HERO_BUILD = 'R96-2026.09.15.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9083,12 +9083,42 @@ function esComputeCurrent(){
   const svcPfx=String(dec.type||'').toLowerCase();
   const custMatch=custRows.find(r=>String(r.service||'').toLowerCase().indexOf(svcPfx)===0);
   const custLast=custMatch?(+custMatch.total||0):0;
-  const modelMed=anch?(+anch.model_median||0):0;
+  /* R96 (Ravi 15-09-2026, "Harley estimates not able to make" — HARLEY X440
+     could not be quoted at all). THREE corrections to the R63 gate, all of them
+     about what counts as EVIDENCE. R63's own comment said "blocking without
+     evidence is the exact mistake the floors made" — and then treated ONE row
+     as evidence, including rows that were never a paid service.
+
+     a) THE MODEL MEDIAN NEEDS A REAL SAMPLE. Migration 0078 returns
+        model_anchor_ok = (model_n >= anchor_min_n, 5). Below that the median is
+        still SHOWN to the advisor but it does not gate. Measured 15-09-2026:
+        28 of 47 models had fewer than 5 paid rows, and 7 models — HARLEY X440,
+        XOOM, V1 PRO, V2 PRO, V1 PLUS, VIDA VX2 PLUS, PASSION XTEC, every one of
+        them a new model — carried a cap below what their own visit must cost.
+        The fallback (model_n) is here because a phone may still be holding a
+        reply from the pre-0078 function.
+     b) A CAP BELOW THE COMPULSORY MINIMUM IS A LOCKED DOOR, NOT A CAP. R94
+        settled what a service visit must always carry — the service labour, the
+        wash and the engine oil issued — and the amount control itself never
+        trims them. The gate may never ask for less than that. Harley X440: cap
+        Rs 228 against a compulsory Rs 4,000-odd of oil + labour + wash, so no
+        amount the advisor could reach was ever acceptable.
+     c) AND IT NO LONGER BLOCKS — see esGenerate. It asks once and generates. */
+  const _anchNet_=x=>+((x&&x.netP!==undefined)?x.netP:(x&&x.p))||0;
+  const mandatoryPre=(items.oil||[]).reduce((s,x)=>s+_anchNet_(x),0)
+                    +(items.labour||[]).filter(x=>x&&(x._mandatory||x.src==='washing')).reduce((s,x)=>s+_anchNet_(x),0)
+                    +(+expressFee||0);
+  const mandatoryTotal=Math.round(mandatoryPre*(1+GST));
+  const modelN=anch?(+anch.model_n||0):0;
+  const anchorMinN=anch?(+anch.anchor_min_n||5):5;
+  const modelAnchorOk=anch?((anch.model_anchor_ok!==undefined)?!!anch.model_anchor_ok:(modelN>=anchorMinN)):false;
+  const modelMedShown=anch?(+anch.model_median||0):0;   /* what the advisor is told */
+  const modelMed=modelAnchorOk?modelMedShown:0;          /* what is allowed to gate */
   const anchorBase=custLast||modelMed;
-  const anchorCap=anchorBase?Math.round(anchorBase*1.5):0;
+  const anchorCap=anchorBase?Math.max(Math.round(anchorBase*1.5), mandatoryTotal):0;
   const overCap=(dec.type==='paid') && anchorCap>0 && total>anchorCap;
   return {modelName,fam,km,dos,dec,items,parts,oil,labour,pre,rawPre,protection:protectionTotal,protectionLabel,floor,initial,inc,disc,lineDisc,otherDisc,requestedDisc,discLab,discParts,expressFee,tax,total,count,type:dec.type,changed,belowFloor,
-          anchor:anch,custRows,custLast,modelMed,anchorBase,anchorCap,overCap};
+          anchor:anch,custRows,custLast,modelMed,modelMedShown,modelN,anchorMinN,modelAnchorOk,mandatoryTotal,anchorBase,anchorCap,overCap};
 }
 function esUpdateLive(){
   /* The parts:labour strip is redrawn on every live recalculation, whatever
@@ -9116,9 +9146,15 @@ function esUpdateLiveInner_(){
        small. The floors that pushed quotes to 3000-4000 no longer gate. */
     const gbtn=document.getElementById('es-genbtn');
     if(gbtn && !ES.locked){
-      gbtn.disabled=!!c.overCap||!ONLINE;
+      /* R96: the cap NEVER disables Generate. Ravi, 15-09-2026, on a HARLEY X440
+         that could not be quoted at all: "On clicking generate estimate it is
+         not generating the estimate." A dead button with no reachable amount is
+         a broken screen, not a protection — the same lesson as R95 rule (c).
+         The advisor is told the number and asked once on press; the estimate is
+         his call. Only being offline still stops it. */
+      gbtn.disabled=!ONLINE;
       gbtn.style.opacity='';
-      if(c.overCap) gbtn.setAttribute('title','Keep the total within '+inr(c.anchorCap)+' for this customer');
+      if(c.overCap) gbtn.setAttribute('title','Above the usual '+inr(c.anchorCap)+' for this customer — it will ask you to confirm');
       else gbtn.removeAttribute('title');
     }
     const fmsg=document.getElementById('es-msg');
@@ -9138,12 +9174,19 @@ function esUpdateLiveInner_(){
         if(!a) return '';
         const hist=(c.custRows||[]).map(r=>inr(+r.total||0)+' <span style="opacity:.7">('+String(r.saved_at||'')+' · '+String(r.service||'').replace(/ Service/i,'')+')</span>').join(' · ');
         let s='<div style="padding:4px 6px;margin-bottom:4px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:7px;font-size:11px;color:#0c4a6e">';
+        /* R96: say what is actually true. A median over one or two estimates is
+           shown as what it is — too little to judge by — instead of being quoted
+           as "the usual" and then enforced. */
         s+= hist ? ('📊 This customer before: '+hist)
-                 : (c.modelMed?('📊 Usual '+String(c.dec.type||'')+' estimate for '+raviEsc(c.modelName)+': <b class="mono">'+inr(c.modelMed)+'</b> <span style="opacity:.7">(across '+(a.model_n||0)+' estimates)</span>'):'📊 First estimate we have for this customer and model.');
+                 : (c.modelMedShown
+                     ? ('📊 '+(c.modelAnchorOk?'Usual ':'')+String(c.dec.type||'')+' estimate for '+raviEsc(c.modelName)+': <b class="mono">'+inr(c.modelMedShown)+'</b> <span style="opacity:.7">(across '+(c.modelN||0)+' estimate'+((c.modelN||0)===1?'':'s')+(c.modelAnchorOk?'':' — too few to go by yet')+')</span>')
+                     : '📊 First estimate we have for this customer and model.');
         if(c.anchorCap){
           s+= c.overCap
-            ? '<div style="margin-top:3px;color:#b45309;font-weight:700">⚠ '+inr(c.total)+' is well above '+(c.custLast?'their last visit':'the usual for this model')+' — keep within <b class="mono">'+inr(c.anchorCap)+'</b> to bill smoothly. Trim or discount lines below.</div>'
+            ? '<div style="margin-top:3px;color:#b45309;font-weight:700">⚠ '+inr(c.total)+' is well above '+(c.custLast?'their last visit':'the usual for this model')+' (<b class="mono">'+inr(c.anchorCap)+'</b>). Trim or discount lines below, or generate it anyway — it will ask you once.</div>'
             : '<div style="margin-top:3px;color:#065f46">✔ Within range for this customer (up to <b class="mono">'+inr(c.anchorCap)+'</b>).</div>';
+        } else if(c.type==='paid' && c.modelMedShown && !c.modelAnchorOk){
+          s+='<div style="margin-top:3px;color:#475569">No price guidance for this model yet — quote it on the job, not on the history.</div>';
         }
         s+='</div>';
         return s;
@@ -9305,14 +9348,25 @@ function esGenerate(){
     }
   }
   if(!ONLINE){ document.getElementById('es-msg').style.color='var(--signal-d)'; document.getElementById('es-msg').textContent='No internet connection — cannot generate.'; return; }
-  /* R63: the refusal now guards the CAP, not the floor — even if the button
-     state was bypassed somehow, a paid quote above 1.5x the customer's anchor
-     does not generate. Small estimates always generate. */
+  /* R63 guarded the CAP instead of the floor and REFUSED above it. R96 (Ravi,
+     15-09-2026) keeps the guidance and drops the refusal: the advisor is shown
+     the two numbers and decides. A quote 50% above the norm is worth a question;
+     it is not worth a vehicle leaving without an estimate. Whichever way he
+     answers is recorded on the estimate (overCap / overCapAccepted) so the
+     deviation stays measurable. */
   const cchk=esComputeCurrent();
+  esGenerate._overCapOk=false;
   if(cchk && cchk.overCap){
     const m0=document.getElementById('es-msg');
-    if(m0){ m0.style.color='var(--signal-d)'; m0.textContent='Keep the total within '+inr(cchk.anchorCap)+' for this customer — trim or discount lines first.'; }
-    return;
+    const ok=confirm('This estimate is above the usual for this '+(cchk.custLast?'customer':'model')+'.\n\n'+
+                     'This estimate:  '+inr(cchk.total)+'\n'+
+                     'Usual up to:    '+inr(cchk.anchorCap)+'\n\n'+
+                     'Generate it anyway?');
+    if(!ok){
+      if(m0){ m0.style.color='var(--signal-d)'; m0.textContent='Not generated. Trim or discount lines to come within '+inr(cchk.anchorCap)+', or press Generate again and confirm.'; }
+      return;
+    }
+    esGenerate._overCapOk=true;
   }
   const msg=document.getElementById('es-msg'); msg.style.color='var(--steel)'; msg.textContent='';
   // v11.4 compulsory fields — block + popup listing only what's missing
@@ -9348,7 +9402,8 @@ function esGenerate(){
   ES.current={id:'EST'+Date.now().toString().slice(-7),ts:Date.now(),name:val('es-name'),mob:val('es-mob'),reg:val('es-reg').toUpperCase(),
     model:c.modelName,fam:c.fam.name,km:c.km,mo:esMonthsSince(c.dos),service:c.dec.label,type:c.type,items:{...c.items,demanded:ES_DEMANDED.slice()},demanded:ES_DEMANDED.slice(),
     parts:c.parts,oil:c.oil,labour:c.labour,protection:c.protection,initial:c.initial,pre:c.pre,disc:c.disc,lineDiscount:c.lineDisc||0,tax:c.tax,total:c.total,floor:c.floor,
-    anchorBase:c.anchorBase||0,anchorCap:c.anchorCap||0,anchorSrc:c.custLast?'customer':(c.modelMed?'model':'')};
+    anchorBase:c.anchorBase||0,anchorCap:c.anchorCap||0,anchorSrc:c.custLast?'customer':(c.modelMed?'model':''),
+    overCap:!!c.overCap,overCapAccepted:!!(c.overCap&&esGenerate._overCapOk),anchorN:c.modelN||0};
   esRender(ES.current); esLockForm(true); esPushSheet(ES.current);
   try{ if(typeof window.esJoyrideOnGenerate_==='function') window.esJoyrideOnGenerate_(ES.current); }catch(e){}   /* R91: a Joyride visit is counted */
   try{ if(typeof window.esDraftClear_==='function') window.esDraftClear_(); }catch(e){}                            /* R91: a generated estimate is done — no draft to resume */
