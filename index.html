@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 80;
-window.HERO_BUILD = 'R99-2026.09.16.1';
+window.HERO_RELEASE = 81;
+window.HERO_BUILD = 'R100-2026.09.16.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8078,7 +8078,47 @@ function esFillComplaintCodes_(L){
    A washing line already returned by estimate_compose is left alone — this adds
    one, it never doubles one.
    ========================================================================= */
-var ES_WASH_AMT=129;
+/* R100 — 16-09-2026, Ravi: "Every vehicle above 125 cc - 143 Rs Washing charge
+   is there, that mistake was there."
+   The wash was a flat Rs 129 on every bike since R70. Hero's own labour master
+   bills WATER WASH (101002) at Rs 121 + GST = Rs 142.78 on the bigger engines
+   and Rs 109 + GST = Rs 128.62 on the rest, and the app quoted the small
+   figure for everybody — measured 149 of 1,465 estimates in the book carried
+   Rs 129 where the vehicle is above 125 cc.
+   THE RATE IS NOT DECIDED HERE. migration 0081 gives every model an engine size
+   (hero_model_engine, 139 of 151 model strings resolved from the owner manuals,
+   the model's own name or a sibling on the same engine) and estimate_compose
+   returns `wash_rate` with the composition. This screen only reads it.
+   The local fallback below fires ONLY when the manual could not be read at all,
+   and only on a number printed in the model's own name — it never guesses a
+   bigger engine from a family name, because the failure it must avoid is
+   charging a customer Rs 14 more on a guess. */
+var ES_WASH_AMT=129;          /* the floor, and what a 125 cc and below still pays */
+var ES_WASH_AMT_BIG=143;      /* above 125 cc */
+function esCcAbove125_(model){
+  var s=String(model||'').toUpperCase();
+  if(/VIDA|^V[12]\s*(PRO|PLUS)|VX2/.test(s)) return false;           /* EV: no engine */
+  var toks=s.match(/[0-9]+(\.[0-9]+)?/g)||[];
+  for(var i=0;i<toks.length;i++){
+    if(toks[i].indexOf('.')>=0) continue;                            /* 2.0 / 3.4 are trims, not cc */
+    var n=Number(toks[i]);
+    if(n>=126 && n<=999) return true;
+  }
+  return false;
+}
+function esWashAmt_(){
+  try{
+    var C=ES_COMPOSED;
+    if(C && C.wash_rate!=null && isFinite(Number(C.wash_rate))) return Number(C.wash_rate);
+    return esCcAbove125_(val('es-model'))?ES_WASH_AMT_BIG:ES_WASH_AMT;
+  }catch(e){ return ES_WASH_AMT; }
+}
+function esWashWhy_(){
+  var amt=esWashAmt_();
+  return amt>ES_WASH_AMT
+    ? 'Compulsory on every vehicle — ₹'+amt+' above 125 cc.'
+    : 'Compulsory on every vehicle — every estimate carries the wash.';
+}
 function esIsWashLine_(x){
   if(!x) return false;
   if(String(x.code||'').replace(/\.0+$/,'')===ES_WASH_CODE) return true;
@@ -8115,14 +8155,15 @@ function esDropOwnedDuplicates_(L){
     if(esIsWashLine_(x)){
       if(seenWash) return false;
       seenWash=true;
-      /* The wash is COMPULSORY AT Rs 129 — Ravi's price, not the model master's.
-         A wash arriving from the composed payload at the model's own rate would
-         otherwise quote a different figure on different bikes for the same fixed
-         charge. The line is normalised to the compulsory price and to the
-         compulsory status, whichever route it came in by. */
-      x.p=ES_WASH_AMT; x.baseP=ES_WASH_AMT; x.netP=ES_WASH_AMT; x.lineDiscount=0;
+      /* The wash is COMPULSORY, and its price is Ravi's rule, not the model
+         master's: Rs 129 up to 125 cc, Rs 143 above it (R100). A wash arriving
+         from the composed payload at some other rate is normalised here to the
+         compulsory price and the compulsory status, whichever route it came in
+         by — so the same bike never shows two different wash figures. */
+      var wamt=esWashAmt_();
+      x.p=wamt; x.baseP=wamt; x.netP=wamt; x.lineDiscount=0;
       x.code=x.code||ES_WASH_CODE; x.src='washing'; x._mandatory=true; x._locked=true; x.free=false;
-      x.why='Compulsory on every vehicle — every estimate carries the wash.';
+      x.why=esWashWhy_();
     }
     return true;
   });
@@ -8136,8 +8177,8 @@ function esAddWashing_(L){
      the pitch engine's curated list, where it was doing nothing but offering a
      second wash. */
   L.labour.push({
-    l:'Washing', p:ES_WASH_AMT, code:ES_WASH_CODE,
-    why:'Compulsory on every vehicle — every estimate carries the wash.',
+    l:'Washing', p:esWashAmt_(), code:ES_WASH_CODE,
+    why:esWashWhy_(),
     src:'washing', _locked:true, _mandatory:true
   });
   return L;
@@ -8161,7 +8202,7 @@ function esExpressToggle(){
 function esRejectOwnedCode_(code){
   var c=String(code||'').replace(/\.0+$/,'');
   if(c===ES_WASH_CODE){
-    alert('Washing is already on every estimate at ₹'+ES_WASH_AMT+' — it is compulsory and cannot be added twice.');
+    alert('Washing is already on every estimate at ₹'+esWashAmt_()+' — it is compulsory and cannot be added twice.');
     return true;
   }
   if(c===ES_EXPRESS_CODE){
@@ -8908,6 +8949,31 @@ function esRenderManual(){
       +' · engine oil every '+C.oil_interval_km+' km'
       +(schedNorm && schedNorm!==askedNorm
         ? ' <span class="es-warn">nearest manual to '+raviEsc(C.model_asked)+'</span>' : '');
+    /* R100 (Ravi 16-09): "Harley all models some or the other issue is coming.
+       X 440 is different x t 440 is different."
+       A model with no master data of its own reads its nearest relative's — an
+       X440T has no part tree, so it composes from the X440's. That borrow is
+       correct (an empty screen helps nobody) but it was SILENT, which is how
+       two different machines looked like one. estimate_compose now names the
+       model it actually used, and the advisor is told in one line. */
+    try{
+      var bp=C.model_parts_borrowed||'', bl=C.model_labour_borrowed||'';
+      if(bp||bl){
+        var who=[];
+        if(bp && bl && bl===bp) who.push('parts and labour from <b>'+raviEsc(bp)+'</b>');
+        else {
+          if(bp) who.push('parts from <b>'+raviEsc(bp)+'</b>');
+          if(bl) who.push('labour from <b>'+raviEsc(bl)+'</b>');
+        }
+        head.innerHTML+='<div class="es-warn" style="margin-top:4px">⚠ <b>'
+          +raviEsc(C.model_canonical||C.model_asked)+'</b> has no master of its own — '
+          +who.join(' · ')+'. Check anything specific to this variant.</div>';
+      }
+      if(C.model_cc!=null && Number(C.wash_rate)>129){
+        head.innerHTML+='<div style="margin-top:3px;font-size:12px;color:#4f5660">'
+          +'Engine '+raviEsc(String(C.model_cc))+' cc — water wash ₹'+raviEsc(String(C.wash_rate))+' (above 125 cc).</div>';
+      }
+    }catch(e){}
     /* R83 (Ravi 03-09): "near due, oil near due — say 6000 km is oil change,
        then from 5500 to 6500 it should flag. ±500 km." */
     try{
