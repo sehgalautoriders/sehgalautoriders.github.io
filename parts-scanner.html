@@ -82,6 +82,12 @@
   #log table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   #log td { padding: 4px 8px; border-top: 1px solid #eee; white-space: nowrap; }
   #log td.desc { white-space: normal; }
+  /* 16-09-2026: the CEO's ✕ / ↩ and how a removed row reads. */
+  #log button.rm { border: 1px solid #e5e2dc; background: #fff; color: var(--bad); border-radius: 6px;
+    padding: 2px 7px; font-size: 12.5px; line-height: 1.4; cursor: pointer; }
+  #log button.rm:disabled { opacity: .55; cursor: wait; }
+  #log tr.gone td { color: #9aa1a9; text-decoration: line-through; }
+  #log tr.gone td button.rm { color: var(--ok); text-decoration: none; }
   #log .m-exact, #log .m-key, #log .m-superseded, #log .m-suffix_s { color: var(--ok); font-weight: 700; }
   /* A corrected match is a real identification, but it was reached by reasoning
      rather than by reading, so it gets its own colour — someone auditing the
@@ -171,6 +177,12 @@ const $ = (id) => document.getElementById(id)
 let profile = null
 let pending = null          // the scan awaiting SAVE
 let scanPreviewUrl = ''
+// 16-09-2026 — Ravi: "Give an option of removing any parts scanned in part
+// scanner to ceo id." The answer is the server's, not this page's: migration
+// 0080's ps_can_remove_scan() decides, a trigger on scanned_parts enforces it,
+// and a removal is a MARK (removed_at / removed_by / removed_reason) with an
+// audit row — never a delete. This flag only decides whether the ✕ is drawn.
+let canRemove = false
 
 // ---------------------------------------------------------------- helpers
 function toast(msg) {
@@ -227,6 +239,8 @@ async function enter() {
   if (!user) return
   const { data: p } = await sb.from('profiles').select('display_name, login_code, role').eq('id', user.id).single()
   profile = p || { display_name: user.email, login_code: '' }
+  // Ask the server, never assume from the role text on this page.
+  try { const { data: can } = await sb.rpc('ps_can_remove_scan'); canRemove = can === true } catch { canRemove = false }
   $('who').innerHTML = `${profile.display_name}<br>${profile.login_code}`
   $('loginView').classList.add('hidden')
   $('scanView').classList.remove('hidden')
@@ -720,21 +734,52 @@ async function manualFind() {
 // ---------------------------------------------------------------- today log
 async function refreshLog() {
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const { data } = await sb.from('scanned_parts')
-    .select('scanned_at, part_no, description, ai_name, mrp, qty, match_method')
+  // A removed scan is gone from this list for everyone EXCEPT the CEO id, who
+  // keeps seeing it struck through with a ↩ so a wrong ✕ costs one tap to undo.
+  let q = sb.from('scanned_parts')
+    .select('id, scanned_at, part_no, description, ai_name, mrp, qty, match_method, removed_at')
     .gte('scanned_at', today.toISOString())
-    .order('scanned_at', { ascending: false }).limit(200)
+  if (!canRemove) q = q.is('removed_at', null)
+  const { data } = await q.order('scanned_at', { ascending: false }).limit(200)
   const rows = data || []
-  $('nToday').textContent = rows.reduce((s, r) => s + (r.qty || 1), 0)
-  $('vToday').textContent = Math.round(rows.reduce((s, r) => s + (Number(r.mrp) || 0) * (r.qty || 1), 0)).toLocaleString('en-IN')
-  $('log').innerHTML = '<table>' + rows.map((r) => `
-    <tr>
+  const live = rows.filter((r) => !r.removed_at)
+  $('nToday').textContent = live.reduce((s, r) => s + (r.qty || 1), 0)
+  $('vToday').textContent = Math.round(live.reduce((s, r) => s + (Number(r.mrp) || 0) * (r.qty || 1), 0)).toLocaleString('en-IN')
+  $('log').innerHTML = '<table>' + rows.map((r) => {
+    const gone = !!r.removed_at
+    const label = (r.part_no || r.description || r.ai_name || 'this scan').replace(/"/g, '')
+    const act = canRemove
+      ? `<td><button class="rm" data-id="${r.id}" data-label="${label}" data-act="${gone ? 'restore' : 'remove'}"
+           title="${gone ? 'Put this scan back' : 'CEO only: remove this scan'}">${gone ? '↩' : '✕'}</button></td>`
+      : ''
+    return `
+    <tr${gone ? ' class="gone"' : ''}>
       <td>${new Date(r.scanned_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
       <td class="m-${r.match_method}">${r.part_no || '(no number)'}</td>
       <td class="desc">${r.description || r.ai_name || ''}</td>
       <td>${r.qty}×</td>
-      <td>${money(r.mrp)}</td>
-    </tr>`).join('') + '</table>'
+      <td>${money(r.mrp)}</td>${act}
+    </tr>`
+  }).join('') + '</table>'
+  $('log').querySelectorAll('button.rm').forEach((b) => { b.onclick = () => removeScan(b) })
+}
+
+/** CEO only. Remove = mark removed (0080), never delete: the row keeps its
+ *  photo, its OCR text and its price, an audit_log line records who and why,
+ *  and ↩ puts it straight back. */
+async function removeScan(btn) {
+  const id = btn.dataset.id, label = btn.dataset.label || 'this scan'
+  const restoring = btn.dataset.act === 'restore'
+  if (!restoring && !confirm(`Remove ${label} from the scanned parts list?\n\nNothing is deleted — it can be put back.`)) return
+  const why = restoring ? '' : (prompt('Why is it being removed? (optional)', '') || '')
+  btn.disabled = true
+  const { error } = restoring
+    ? await sb.rpc('ps_restore_scan', { p_id: id })
+    : await sb.rpc('ps_remove_scan', { p_id: id, p_reason: why })
+  btn.disabled = false
+  if (error) { toast(error.message || 'Could not do that'); return }
+  toast(restoring ? `${label} is back` : `${label} removed`)
+  refreshLog()
 }
 
 // ---------------------------------------------------------------- wiring
