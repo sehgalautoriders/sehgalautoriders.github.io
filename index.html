@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 82;
-window.HERO_BUILD = 'R101-2026.09.16.3';
+window.HERO_RELEASE = 83;
+window.HERO_BUILD = 'R102-2026.09.16.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5272,7 +5272,9 @@ async function sbFetch(path, opts){
        waiting — abort it so the screen can say so and try again. Storage uploads
        (photos) keep their own time. */
     if(/^\/storage\//.test(String(path||''))) return await fetch(SB_URL+path, Object.assign({}, opts, {headers:h}));
-    return await sbFetchT_(SB_URL+path, Object.assign({}, opts, {headers:h}), 25000);
+    /* R102: a caller that knows its work takes longer (the scanner's Edge
+       Function reads for 8-20 s AFTER a mobile upload) names its own budget. */
+    return await sbFetchT_(SB_URL+path, Object.assign({}, opts, {headers:h}), opts.timeoutMs||25000);
   };
   let tok=await sbToken();
   if(!tok) throw new Error('not-signed-in');
@@ -5314,6 +5316,11 @@ async function sbInsert(table, row){
 function sbFetchT_(url, opts, ms){
   const c=new AbortController();
   const t=setTimeout(function(){ c.abort(); }, ms||9000);
+  /* R102 (16-09-2026): a caller's OWN signal is honoured too. Object.assign
+     used to replace it, so the parts scanner's 55 s budget silently became
+     this 25 s one — and every scan that took longer died as "(slow)". */
+  const outer=opts&&opts.signal;
+  if(outer){ if(outer.aborted) c.abort(); else outer.addEventListener('abort', function(){ c.abort(); }, {once:true}); }
   return fetch(url, Object.assign({}, opts||{}, {signal:c.signal})).then(
     function(r){ clearTimeout(t); return r; },
     function(e){ clearTimeout(t); if(e && e.name==='AbortError'){ var se=new Error('slow'); se.code='slow'; throw se; } throw e; });
@@ -18561,7 +18568,11 @@ function psPickPhoto(mode){
     try{
       const c=await psUpright(f,2048);
       const blob=await new Promise(function(res,rej){
-        c.toBlob(function(b){ b?res(b):rej(new Error('Could not prepare JPEG')); },'image/jpeg',0.90);
+        /* R102: q0.85 instead of q0.90 — about a quarter fewer bytes on the
+           mobile upload that was eating the scanner's time budget; the label
+           text survives it (measured: Gemini + Vision read Ravi's 16-09 photo
+           in full at this size). */
+        c.toBlob(function(b){ b?res(b):rej(new Error('Could not prepare JPEG')); },'image/jpeg',0.85);
       });
       if(PS_LAST.previewUrl){ try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){} }
       const previewUrl=URL.createObjectURL(blob);
@@ -18823,24 +18834,82 @@ function psApplyIdentified_(j,barcode){
   if(typeof psDrillShow==='function') psDrillShow(g);
   psEngineState('Read by '+provider+(tried&&tried!==provider?' · '+tried:''),'ok');
 }
+/* R102 (16-09-2026) — WHY EVERY SCAN DIED AS "(slow)" ON RAVI'S PHONE.
+   Measured the same afternoon: the deployed identify-part read his 15:21 photo
+   correctly from a PC in 9.7 s (part 64206KRY970ZES, Gemini confirmed by
+   Vision, all three engines READY). On the phone the same call was killed at
+   25 s, because sbFetch wraps EVERY call in the R92 REST budget and replaced
+   the scanner's own 55 s signal. On mobile data a ~1 MB upload takes 5-15 s
+   BEFORE the server's 8-15 s read starts, so 25 s was crossed on 7 of 8
+   attempts — 1 AI read saved all afternoon, 24 parts typed in by hand.
+   Three changes: (1) the scanner's own transport — XMLHttpRequest, the only
+   way to SHOW upload progress — with a 120 s budget (the Edge Function's wall
+   clock is 150 s); (2) the wait is visible every second: upload %, then server
+   seconds; (3) a failure offers "Retry this photo" instead of a retake. */
+function psPostForm_(path, form, o){
+  o=o||{};
+  const once=function(tok){ return new Promise(function(res,rej){
+    const x=new XMLHttpRequest(); x.open('POST', SB_URL+path, true);
+    x.timeout=o.timeoutMs||120000;
+    x.setRequestHeader('apikey', SB_ANON); x.setRequestHeader('Authorization','Bearer '+tok);
+    x.upload.onprogress=function(ev){ if(ev.lengthComputable&&o.onUpload) o.onUpload(ev.loaded, ev.total); };
+    x.upload.onload=function(){ if(o.onUploaded) o.onUploaded(); };
+    x.onload=function(){ let j={}; try{ j=JSON.parse(x.responseText||'{}'); }catch(e){} res({status:x.status, json:j}); };
+    x.onerror=function(){ const e=new Error('network'); e.code='network'; rej(e); };
+    x.ontimeout=function(){ const e=new Error('slow'); e.code='slow'; rej(e); };
+    x.onabort=function(){ const e=new Error('cancelled'); e.code='cancelled'; rej(e); };
+    x.send(form);
+  }); };
+  return sbToken().then(function(tok){
+    if(!tok) throw new Error('not-signed-in');
+    return once(tok).then(function(r){
+      if(r.status!==401) return r;
+      return sbRefresh().then(function(t2){ if(!t2) throw new Error('not-signed-in'); return once(t2); });
+    });
+  });
+}
+function psFmtMs_(ms){
+  try{ return Object.keys(ms).map(function(k){ return k+' '+(Number(ms[k])/1000).toFixed(1)+' s'; }).join(' · '); }catch(e){ return ''; }
+}
+function psShowRetry_(){
+  const st=document.getElementById('ps-status'); if(!st||!PS_LAST||!PS_LAST.photoBlob) return;
+  const b=document.createElement('button'); b.type='button'; b.className='btn sm'; b.id='ps-retry-btn';
+  b.style.cssText='display:block;margin:8px auto 0;font-weight:800'; b.textContent='↻ Retry this photo';
+  b.onclick=function(){ psSetBusy(true); psStatus('Retrying the same photo…'); psAnalyze(PS_LAST.photoBlob); };
+  st.appendChild(b);
+}
 async function psAnalyzeEdge_(imageBlob){
   psEnsureRawUI(); PS_LAST.think=[]; document.getElementById('ps-raw').value='';
-  psThink('Photo capped at 2048 px before OCR to protect phone memory.');
-  psEngineState('Checking Gemini → Vision → DocAI','busy');
+  const kb=Math.round((imageBlob&&imageBlob.size||0)/1024);
+  psThink('Photo prepared on the phone at 2048 px / '+kb+' KB; the server reads it at that size.');
+  psEngineState('Uploading photo…','busy');
   const canvas=await psUpright(imageBlob,2048);
   const barcodePromise=psBarcode(canvas).catch(function(){ return null; }).then(function(v){
     canvas.width=1; canvas.height=1; return v;
   });
-  const call=async function(){
-    const ctl=new AbortController(), timer=setTimeout(function(){ ctl.abort(); },55000);
-    const form=new FormData(); form.append('image',imageBlob,'scan.jpg'); form.append('store','1');
-    try{ return await sbFetch('/functions/v1/identify-part',{method:'POST',body:form,signal:ctl.signal}); }
-    finally{ clearTimeout(timer); }
+  const t0=Date.now(); let phase='upload', upPct=0;
+  const tick=function(){
+    const s=Math.round((Date.now()-t0)/1000);
+    if(phase==='upload') psStatus('⬆ Uploading photo ('+kb+' KB) — '+upPct+'% · '+s+' s');
+    else psStatus('🔍 Server is reading the label — Gemini, checked by Cloud Vision · '+s+' s (usually 8–15 s; the app waits up to 120 s on a slow link)');
   };
-  let res=await call();
-  if(res.status===429){ psStatus('AI is busy — one retry in 3 seconds…'); await new Promise(function(ok){ setTimeout(ok,3000); }); res=await call(); }
-  let j={}; try{ j=await res.json(); }catch(e){}
-  if(!res.ok) throw new Error(j.error||('Scanner HTTP '+res.status));
+  tick(); const timer=setInterval(tick,1000);
+  const call=function(){
+    const form=new FormData(); form.append('image',imageBlob,'scan.jpg'); form.append('store','1');
+    return psPostForm_('/functions/v1/identify-part', form, {timeoutMs:120000,
+      onUpload:function(l,t){ upPct=t?Math.min(100,Math.round(l*100/t)):0; if(upPct>=100){ phase='server'; psEngineState('Reading: Gemini → Vision','busy'); } tick(); },
+      onUploaded:function(){ phase='server'; psEngineState('Reading: Gemini → Vision','busy'); tick(); }});
+  };
+  let res;
+  try{
+    res=await call();
+    if(res.status===429){ psStatus('AI is busy — one retry in 3 seconds…'); await new Promise(function(ok){ setTimeout(ok,3000); }); res=await call(); }
+  } finally { clearInterval(timer); }
+  const secs=((Date.now()-t0)/1000).toFixed(1);
+  const j=res.json||{};
+  if(res.status<200||res.status>=300) throw new Error(j.error||('Scanner HTTP '+res.status));
+  PS_LAST.readMs=Date.now()-t0;
+  psThink('Answer in '+secs+' s end to end'+(j.ms?' — server: '+psFmtMs_(j.ms):'')+'.');
   const barcode=await barcodePromise;
   psApplyIdentified_(j,barcode);
 }
@@ -18853,7 +18922,18 @@ async function psAnalyze(dataUrl){
   if(SB_ON && !(await sbToken())){ psSetBusy(false); psEngineState('Sign in required','error'); psStatus('Sign in again to use the scanner (session expired).','err'); return; }
   if(SB_ON){
     try{ await psAnalyzeEdge_(dataUrl instanceof Blob?dataUrl:(PS_LAST.photoBlob||dataUrl)); }
-    catch(e){ psSetBusy(false); psEngineState('Scan failed · retry','error'); psStatus('Could not read this photo ('+String(e.message||e).slice(0,120)+'). Try a closer, straighter shot with more light.','err'); }
+    catch(e){
+      psSetBusy(false); psEngineState('Scan failed · retry','error');
+      /* R102: name the REAL reason. "Try a closer shot" over a timeout sent Ravi
+         retaking a perfectly readable label seven times on 16-09-2026. */
+      const m=String(e.message||e);
+      const why= (e&&e.code==='slow') ? 'The server did not answer within 120 s — weak signal or a very slow read.'
+               : (e&&e.code==='network') ? 'The connection dropped while uploading the photo.'
+               : (m==='not-signed-in') ? 'Your sign-in expired.'
+               : 'Could not read this photo ('+m.slice(0,120)+').';
+      psStatus(why+' Tap ↻ Retry to read the SAME photo again, or retake closer with more light.','err');
+      psShowRetry_();
+    }
     return;
   }
   const key=SB_ON?'':((typeof geVisionKey==='function')?geVisionKey():'');

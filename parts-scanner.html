@@ -294,7 +294,7 @@ async function onPhoto(file) {
     const form = new FormData()
     form.append('image', small, 'scan.jpg')
     const ctl = new AbortController()
-    const timer = setTimeout(() => ctl.abort(), 55000)
+    const timer = setTimeout(() => ctl.abort(), 120000)  // R102: 55 s died on mobile uploads; the Edge Function may take up to 150 s
     const res = await fetch(`${SUPABASE_URL}/functions/v1/identify-part`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY },
