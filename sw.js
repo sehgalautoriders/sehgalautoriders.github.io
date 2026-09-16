@@ -29,7 +29,7 @@
 /* Must match window.HERO_RELEASE / window.HERO_BUILD in index.html exactly.
    release.ps1 bumps both together and refuses to publish on a mismatch. */
 const HERO_RELEASE = 82;
-const HERO_BUILD = 'R102-2026.09.16.4';
+const HERO_BUILD = 'R103-2026.09.16.5';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
 /* Throttle for the background shell refresh — see the fetch handler. */
 let LAST_SHELL_REFRESH = 0;

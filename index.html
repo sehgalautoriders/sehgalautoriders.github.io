@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 83;
-window.HERO_BUILD = 'R102-2026.09.16.4';
+window.HERO_RELEASE = 84;
+window.HERO_BUILD = 'R103-2026.09.16.5';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -19717,14 +19717,25 @@ function psLoadRecent(){
     const rows=res.rows||[];
     PS_ROWS_BY_ID={};
     rows.forEach(function(r){ if(r&&r['Id']) PS_ROWS_BY_ID[String(r['Id'])]=r; });
-    if(count){ count.textContent=String(rows.length); count.style.display=rows.length?'inline-flex':'none'; }
+    /* R103 (16-09-2026): the badge used to print rows.length with the list
+       capped at 20 — so it read "20" for ever while the day's scans grew
+       (60 saved between 16:05 and 16:52 on 16-09; Ravi: "It is showing 20
+       still"). Now: today's count, and a line that says how many are shown. */
+    const MON_=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const now_=new Date(), todayKey_=('0'+now_.getDate()).slice(-2)+'-'+MON_[now_.getMonth()]+'-'+now_.getFullYear();
+    const todayRows_=rows.filter(function(r){ return String(r['Timestamp']||'').indexOf(todayKey_)===0 && String(r['Removed']||'')!=='Y'; });
+    const todayN_=todayRows_.reduce(function(s,r){ return s+(Number(r['Qty'])||1); },0);
+    const todayV_=todayRows_.reduce(function(s,r){ return s+(Number(r['MRP'])||0)*(Number(r['Qty'])||1); },0);
+    if(count){ count.textContent=todayN_+' today'; count.style.display=rows.length?'inline-flex':'none'; }
+    const summary_=rows.length?('<div class="ps2-recent-state" style="text-align:left;font-weight:700">Today: '+todayN_+' part'+(todayN_===1?'':'s')+' saved'
+      +(todayV_?' · ₹'+Math.round(todayV_).toLocaleString('en-IN'):'')+' · latest '+rows.length+' shown'+(rows.length>=PS_RECENT_LIMIT?' (older ones are in Excel)':'')+'</div>'):'';
     if(!rows.length){
       el.innerHTML=PS_SHOW_REMOVED
         ?'<div class="ps2-recent-state">Nothing has been removed.</div>'
         :'<div class="ps2-recent-state"><img src="assets/16_parts_box_character.png" alt="" onerror="this.style.display=\'none\'">No scans saved yet.<br>Start with the camera above.</div>';
       return;
     }
-    el.innerHTML=rows.map(function(r){
+    el.innerHTML=summary_+rows.map(function(r){
       const part=r['Part No']||r['AI Guess']||'Unnumbered part';
       const desc=r['Description']||r['Remarks']||'No description saved';
       const meta=[];
@@ -19753,9 +19764,11 @@ function psLoadRecent(){
         +'<div class="ps2-scan-act">'+conf+act+'</div></div>';
     }).join('');
   };
-  if(SB_ON) sbRpc('ps_recent_sb',{p_limit:20,p_include_removed:PS_SHOW_REMOVED}).then(psRecentHandle_).catch(function(e){ psRecentHandle_({ok:false,error:String(e.message||e)}); });
-  else jget('ps_recent',{limit:20},psRecentHandle_);   /* Apps Script has no removal — can_remove stays false and no button is drawn */
+  if(SB_ON) sbRpc('ps_recent_sb',{p_limit:PS_RECENT_LIMIT,p_include_removed:PS_SHOW_REMOVED}).then(psRecentHandle_).catch(function(e){ psRecentHandle_({ok:false,error:String(e.message||e)}); });
+  else jget('ps_recent',{limit:PS_RECENT_LIMIT},psRecentHandle_);   /* Apps Script has no removal — can_remove stays false and no button is drawn */
 }
+/* R103: a stock-count afternoon is 60+ scans; a list of 20 read as "it stopped". */
+const PS_RECENT_LIMIT=300;
 function psRmBusy_(id,on,txt){
   const b=document.getElementById('ps-rm-'+id); if(!b) return;
   b.disabled=!!on; if(txt) b.textContent=txt;
