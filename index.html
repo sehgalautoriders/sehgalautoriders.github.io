@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 81;
-window.HERO_BUILD = 'R100-2026.09.16.2';
+window.HERO_RELEASE = 82;
+window.HERO_BUILD = 'R101-2026.09.16.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8093,8 +8093,25 @@ function esFillComplaintCodes_(L){
    and only on a number printed in the model's own name — it never guesses a
    bigger engine from a family name, because the failure it must avoid is
    charging a customer Rs 14 more on a guess. */
-var ES_WASH_AMT=129;          /* the floor, and what a 125 cc and below still pays */
-var ES_WASH_AMT_BIG=143;      /* above 125 cc */
+/* R101 — 16-09-2026, Ravi: "The washing rates have changed. So change them in
+   our estimate also. 129, 143 i said right?"
+   Yes, 129 and 143 — and both are the price WITH GST. Hero's labour master bills
+   WATER WASH 101002 at Rs 109 + 18% = Rs 128.62 and Rs 121 + 18% = Rs 142.78;
+   Ravi's two figures are those bills to the rupee. This screen puts every line
+   BEFORE GST and adds 18% once, at the bottom — and R70/R100 put 129 / 143 on the
+   line, so the total carried Rs 152.22 / Rs 168.74 for a wash DMS bills at
+   Rs 128.62 / Rs 142.78. Measured live 16-09 as a staff profile: Rs 23.60 too
+   much on every small bike, Rs 25.96 on the Harley group, Rs 40.12 on XPULSE 200
+   / XTREME 160R / XOOM 160. GST was being charged on a price that already held it.
+   The PRICE (with GST) is Ravi's number and stays whole here; the LINE is the
+   price less its GST — 109 / 121, DMS's own rates — and it says both.
+   Migration 0082 made estimate_compose's wash_rate that same before-GST figure,
+   so the server and this fallback cannot disagree. */
+var ES_WASH_GST=0.18;                                            /* labour GST on 101002 */
+var ES_WASH_PRICE=129;        /* WITH GST — what a 125 cc and below pays (Ravi) */
+var ES_WASH_PRICE_BIG=143;    /* WITH GST — above 125 cc (Ravi) */
+var ES_WASH_AMT=Math.round(ES_WASH_PRICE/(1+ES_WASH_GST));         /* 109 — the LINE, before GST */
+var ES_WASH_AMT_BIG=Math.round(ES_WASH_PRICE_BIG/(1+ES_WASH_GST)); /* 121 */
 function esCcAbove125_(model){
   var s=String(model||'').toUpperCase();
   if(/VIDA|^V[12]\s*(PRO|PLUS)|VX2/.test(s)) return false;           /* EV: no engine */
@@ -8106,6 +8123,7 @@ function esCcAbove125_(model){
   }
   return false;
 }
+/* The wash LINE, BEFORE GST — what goes into the estimate's labour. */
 function esWashAmt_(){
   try{
     var C=ES_COMPOSED;
@@ -8113,11 +8131,15 @@ function esWashAmt_(){
     return esCcAbove125_(val('es-model'))?ES_WASH_AMT_BIG:ES_WASH_AMT;
   }catch(e){ return ES_WASH_AMT; }
 }
+/* The wash PRICE, WITH GST, to the rupee — Ravi's figure: 109 -> 129, 121 -> 143. */
+function esWashPrice_(amt){
+  var a=(amt==null)?esWashAmt_():Number(amt);
+  return Math.round((isFinite(a)?a:ES_WASH_AMT)*(1+ES_WASH_GST));
+}
 function esWashWhy_(){
   var amt=esWashAmt_();
-  return amt>ES_WASH_AMT
-    ? 'Compulsory on every vehicle — ₹'+amt+' above 125 cc.'
-    : 'Compulsory on every vehicle — every estimate carries the wash.';
+  return 'Compulsory on every vehicle — ₹'+amt+' + GST = ₹'+esWashPrice_(amt)
+    +(amt>ES_WASH_AMT?' (above 125 cc).':'.');
 }
 function esIsWashLine_(x){
   if(!x) return false;
@@ -8156,7 +8178,8 @@ function esDropOwnedDuplicates_(L){
       if(seenWash) return false;
       seenWash=true;
       /* The wash is COMPULSORY, and its price is Ravi's rule, not the model
-         master's: Rs 129 up to 125 cc, Rs 143 above it (R100). A wash arriving
+         master's: Rs 129 up to 125 cc, Rs 143 above it (R100), both WITH GST —
+         so the line carries 109 / 121 before GST (R101). A wash arriving
          from the composed payload at some other rate is normalised here to the
          compulsory price and the compulsory status, whichever route it came in
          by — so the same bike never shows two different wash figures. */
@@ -8202,7 +8225,7 @@ function esExpressToggle(){
 function esRejectOwnedCode_(code){
   var c=String(code||'').replace(/\.0+$/,'');
   if(c===ES_WASH_CODE){
-    alert('Washing is already on every estimate at ₹'+esWashAmt_()+' — it is compulsory and cannot be added twice.');
+    alert('Washing is already on every estimate at ₹'+esWashAmt_()+' + GST = ₹'+esWashPrice_()+' — it is compulsory and cannot be added twice.');
     return true;
   }
   if(c===ES_EXPRESS_CODE){
@@ -8969,9 +8992,12 @@ function esRenderManual(){
           +raviEsc(C.model_canonical||C.model_asked)+'</b> has no master of its own — '
           +who.join(' · ')+'. Check anything specific to this variant.</div>';
       }
-      if(C.model_cc!=null && Number(C.wash_rate)>129){
+      /* R101: wash_rate is the line BEFORE GST (0082); the header names the
+         price the customer pays, with GST, beside it. */
+      if(C.model_cc!=null && C.wash_rate!=null && Number(C.wash_rate)>ES_WASH_AMT){
         head.innerHTML+='<div style="margin-top:3px;font-size:12px;color:#4f5660">'
-          +'Engine '+raviEsc(String(C.model_cc))+' cc — water wash ₹'+raviEsc(String(C.wash_rate))+' (above 125 cc).</div>';
+          +'Engine '+raviEsc(String(C.model_cc))+' cc — water wash ₹'+raviEsc(String(esWashPrice_(C.wash_rate)))
+          +' with GST (₹'+raviEsc(String(C.wash_rate))+' + GST, above 125 cc).</div>';
       }
     }catch(e){}
     /* R83 (Ravi 03-09): "near due, oil near due — say 6000 km is oil change,
@@ -23683,6 +23709,13 @@ function insbExport(){
 if(typeof window==='undefined') return;
 var HQS={model:'', q:'', rows:[], labour:[], srv:false, t:null, seq:0, tree:{}, alias:null, _by:{}, target:0, prefetching:false};
 var HQS_TREE_TTL=12*3600e3, HQS_ALIAS_TTL=6*3600e3, HQS_RESULT_TTL=24*3600e3, HQS_COMPOSE_TTL=12*3600e3;
+/* R101: a compose answer carries wash_rate, and migration 0082 changed what that
+   number means (it was the price WITH GST, it is now the line BEFORE GST). An
+   answer kept on the phone from before 0082 would put GST on the wash twice for
+   up to 12 hours, so every cached answer is stamped with this version and an
+   unstamped one is never painted. Same keys, so an old answer is simply
+   overwritten by the next live one — nothing piles up. */
+var HQS_COMPOSE_V=2;
 var HQS_STOP=/^(hai|hain|ha|he|ho|ka|ki|ke|ko|se|me|mein|aur|and|the|of|to|for|nahi|nahin|na|karna|karo|kar|karke|change|badal|badalna|badlo|badalo|lagana|lagao|laga|dalna|dalo|check|dekho|dekhna|problem|issue|awaaz|awaz|sound|noise|new|naya|nayi|purana|old|wala|wali|hua|hui|gaya|gayi|raha|rahi|tha|thi|please|plz|bhi|sir|ji)$/i;
 var HQS_SAFETY=/BRAKE|SHOE|PAD\b|DISC|TYRE|TIRE|TUBE|BEARING|CONE SET|STEERING|HANDLE|BULB|LAMP|HEADLIGHT|WINKER|INDICATOR|HORN|CHAIN|SPROCKET|CABLE|FORK|SHOCK|CUSHION|ABSORBER|AXLE|WHEEL|SPOKE|RIM\b|LEVER|SWITCH|BATTERY|HARNESS|FUEL|PETROL|OIL SEAL|SEAL/i;
 
@@ -23698,6 +23731,8 @@ function curModel(){ try{ return String((typeof esCurrentModelUP==='function'?es
 function kget(k){ try{ var o=HKV.get('hqs:'+k); return (o&&o.v!==undefined)?o:null; }catch(e){ return null; } }
 function kput(k,v){ try{ var o={t:Date.now(), v:v}; HKV.set('hqs:'+k,o); hkvPut('hqs:'+k,o); }catch(e){} }
 function fresh(o,ttl){ return !!(o && (Date.now()-(o.t||0))<ttl); }
+function kputCompose(k,v){ try{ var o={t:Date.now(), v:v, cv:HQS_COMPOSE_V}; HKV.set('hqs:'+k,o); hkvPut('hqs:'+k,o); }catch(e){} }
+function cfresh(o){ return !!(o && o.cv===HQS_COMPOSE_V && fresh(o,HQS_COMPOSE_TTL)); }
 
 /* ---- the model's own parts, kept on the phone ---- */
 function loadTree(model, cb){
@@ -23982,7 +24017,7 @@ if(typeof window.sbRpc==='function'){
         try{
           if(!res || !res.ok) return;
           var sv=String(args.p_service||'paid'), svc=sv.split(' ')[0], stage=(svc==='free')?(sv.split(' ')[1]||'I'):'';
-          kput(ckey(args.p_model, svc, stage, args.p_reg||'', args.p_visit), res);
+          kputCompose(ckey(args.p_model, svc, stage, args.p_reg||'', args.p_visit), res);
         }catch(e){}
       }).catch(function(){});
     }
@@ -24001,7 +24036,7 @@ if(typeof window.esCompose==='function'){
         var months=(typeof esMonthsSince==='function')?(esMonthsSince(gv('es-dos'))||null):null;
         var key=[model,km,months,svc,stage,reg,visit].join('|');
         var c=kget(ckey(model,svc,stage,reg,visit));
-        if(c && c.v && c.v.ok && ES_COMPOSE_KEY!==key && fresh(c,HQS_COMPOSE_TTL)){
+        if(c && c.v && c.v.ok && ES_COMPOSE_KEY!==key && cfresh(c)){
           ES_COMPOSED=c.v; ES_COMPOSE_ERR='';
           try{ if(typeof esResetRemoved==='function') esResetRemoved(); }catch(e){}
           try{ esRenderManual(); }catch(e){}
@@ -24027,7 +24062,7 @@ function prefetch(){
       var visit=(typeof esVisitNo==='function')?esVisitNo(model,km):null;
       var stage=(svc==='free')?(['I','I','II','III','IV','V'][Math.min(5,Math.max(1,visit||1))]||'I'):'';
       var reg=String(g.reg||'');
-      if(fresh(kget(ckey(model,svc,stage,reg,visit)),HQS_COMPOSE_TTL)) continue;
+      if(cfresh(kget(ckey(model,svc,stage,reg,visit)))) continue;
       jobs.push({p_model:model, p_km:km, p_months:null, p_visit:visit, p_reg:pnKey(reg), p_service:(svc==='free'?('free '+stage):svc)});
     }
     if(!jobs.length) return;
