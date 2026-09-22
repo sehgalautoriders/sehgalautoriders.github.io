@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 84;
-window.HERO_BUILD = 'R103-2026.09.16.5';
+window.HERO_RELEASE = 85;
+window.HERO_BUILD = 'R104-2026.09.22.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -4021,7 +4021,12 @@ window.addEventListener('offline',function(){ INS5.online=false; i5Head(); });
   </div>
 </div>
 <script>
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbyqpp3MpPyshEtIrBuu5vpHe-PGtFc2JI_GwKqGvqJh7-IXL5k16kZPVl7qGCHpRK6n/exec";
+/* R104 (22-09-2026): Apps Script is retired. This is no longer a backend URL —
+   it is a name that cannot resolve, kept only because BACKEND_NS (the phone cache
+   namespace) is derived from it, and the queue code checks that it is non-empty.
+   Every read and write is routed to Supabase in the R104 block at the end of
+   this file; nothing in this build calls script.google.com. */
+const SHEET_URL = "https://apps-script-retired.invalid/hero";
 const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
 const num=n=>Math.round(n).toLocaleString('en-IN');
 const val=id=>document.getElementById(id).value.trim();
@@ -9836,6 +9841,27 @@ function esBuildPDF(source){
   doc.setFontSize(13); doc.text('TOTAL ESTIMATE (Rs.)',52,yy+22); doc.setFontSize(15); doc.text(num(d.total),W-52,yy+22,{align:'right'});
   yy+=62; doc.setTextColor(120,120,120); doc.setFont('helvetica','normal'); doc.setFontSize(8);
   doc.text('Estimate based on service schedule, odometer and date of sale. Final amount may vary with vehicle condition.',40,yy);
+  /* R104 (Ravi 22-09-2026): the customer confirms the estimate with a WhatsApp
+     OTP before it becomes final. Until then the sheet says so, across the page,
+     so nobody can mistake a draft for the confirmed price. */
+  try{
+    if(d.status==='FINAL' && d.otpVerifiedAt){
+      var _vt=new Date(d.otpVerifiedAt); var _vs=isNaN(_vt.getTime())?String(d.otpVerifiedAt):_vt.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      doc.setTextColor(6,95,70); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      doc.text('FINAL ESTIMATE - confirmed by the customer via WhatsApp OTP on '+_vs+(d.otpMobile?' - ******'+String(d.otpMobile).slice(-4):''),40,yy+12);
+    } else {
+      doc.setTextColor(180,83,9); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      doc.text('PROVISIONAL - awaiting customer confirmation by WhatsApp OTP. Not a final estimate.',40,yy+12);
+      try{
+        if(doc.saveGraphicsState) doc.saveGraphicsState();
+        if(doc.setGState && doc.GState) doc.setGState(new doc.GState({opacity:0.12}));
+        doc.setFontSize(48); doc.setTextColor(120,120,120);
+        doc.text('PROVISIONAL',W/2,doc.internal.pageSize.getHeight()/2,{align:'center',angle:30});
+        if(doc.restoreGraphicsState) doc.restoreGraphicsState();
+      }catch(e){}
+    }
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
+  }catch(e){}
   doc.line(60,yy+48,200,yy+48); doc.line(W-200,yy+48,W-60,yy+48);
   doc.setTextColor(91,100,112); doc.text('Service Advisor',60,yy+60); doc.text('Customer signature',W-200,yy+60);
   return doc;
@@ -13646,7 +13672,9 @@ function heroKpiFromCache(boxId){
       name:e.name||e.customer||'', mob:e.mob||e.mobile||'', reg:raviNormalizeReg(e.reg||''), model:e.model||'',
       fam:'', km:Number(e.km||e.odometer||e['Odometer']||0),
       mo:Number(e.mo||e.age_mo||e['Age (mo)']||0), service:e.service||'', type:e.type||'', items:items,
-      parts:Number(e.parts||0), oil:Number(e.oil||0), labour:Number(e.labour||0), pre:pre, disc:Number(e.discount||e.disc||0), tax:tax, total:total, floor:Number(e.floor||0)
+      parts:Number(e.parts||0), oil:Number(e.oil||0), labour:Number(e.labour||0), pre:pre, disc:Number(e.discount||e.disc||0), tax:tax, total:total, floor:Number(e.floor||0),
+      /* R104-OTP: the row's confirmation state travels with it into the PDF and the send gate */
+      status:e.status||e.estimate_status||'', otpVerifiedAt:e.otpVerifiedAt||e.customer_otp_verified_at||'', otpMobile:e.otpMobile||e.customer_otp_mobile||''
     };
   }
   window.raviUseExistingEstimate = function(i, action){
@@ -13734,7 +13762,7 @@ function heroKpiFromCache(boxId){
      estimates with their View / PDF / WhatsApp buttons. */
   function esHistDayItemsHtml(list){
     window.RAVI_SA_EST_CACHE=list;
-    return list.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(e.reg||'')} · ${raviEsc(e.model||'')}</div>
+    return list.map((e,i)=>`<div class="ctlitem"><div><div class="big">${i+1}. ${raviEsc(e.reg||'')} · ${raviEsc(e.model||'')} ${(typeof window.esOtpBadgeHtml==='function')?window.esOtpBadgeHtml(e):''}</div>
       <div class="small">${raviEsc(e.name||'')} · ${raviEsc(e.service||'')} · ${inr(e.total||0)}</div>
       <div class="ravi-actions">
         <button onclick="raviUseExistingEstimate(${i},'view')">View</button>
@@ -25736,6 +25764,1009 @@ window.heroDiagUpload=heroDiagUpload;
   };
   (function(){ var _g=window.esOnGatePick; if(typeof _g!=='function') return; window.esOnGatePick=function(g){ var r=_g.apply(this, arguments); try{ joyLoad(g&&g.reg); }catch(e){} return r; }; })();
   (function(){ var _n=window.esNewEstimate; if(typeof _n!=='function') return; window.esNewEstimate=function(){ var r=_n.apply(this, arguments); try{ var J=window.ES_JOYRIDE; J.reg=''; J.member=false; J.apply=false; joyRender(); }catch(e){} return r; }; })();
+})();
+</script>
+
+<!-- ============ R104-OTP — CUSTOMER CONFIRMS THE ESTIMATE BY WHATSAPP CODE (22-09-2026) ============ -->
+<script>
+/* ===========================================================================
+   otp_client.js — CUSTOMER OTP ON THE ESTIMATE  (22-09-2026)
+
+   Ravi, 22-09-2026: "on generation of estimate a whatsapp flows to the customer
+   with the OTP. Transactional OTP is already generated in pingmate. Use that
+   only. Customer gives the OTP and then only the Final estimate is generated."
+
+   PASTE THIS BLOCK INTO index.html IMMEDIATELY AFTER THE R86 BLOCK.
+   It is a self-contained IIFE: it adds nothing to the page until it is called,
+   defines no globals except the five window.esOtp* entry points, and touches no
+   existing function. Nothing here edits index.html by itself.
+
+   WIRING THE MAIN SESSION STILL HAS TO DO (three one-line changes):
+     1. esGenerate(), right after `esPushSheet(ES.current);`
+             try{ window.esOtpStart(ES.current); }catch(e){}
+     2. the three send buttons — first line of each handler:
+             esSendWAtext : if(!window.esOtpGate('wa')) return;
+             esDownloadPDF: if(!window.esOtpGate('pdf')) return;   (preview is
+                            allowed: pass 'preview' to let a PROVISIONAL through)
+             esSharePDF   : if(!window.esOtpGate('wapdf')) return;
+        and in the estimate register's row actions (the action==='pdf' / 'wa' /
+        'wapdf' switch) the same gate, with that row's estimate.
+     3. the register rows — append window.esOtpBadgeHtml(row) to the row's title.
+
+   THE SERVER SIDE (already live, migration 0082 + hero-otp v17):
+     POST /functions/v1/hero-otp  { op:'est_send',  est_no, mobile? }
+     POST /functions/v1/hero-otp  { op:'est_verify', est_no, code }
+     POST /functions/v1/hero-otp  { op:'est_status', est_no }
+   The code is never in any reply. The number is always masked: ******9529.
+   =========================================================================== */
+(function () {
+  'use strict';
+
+  var FN = '/functions/v1/hero-otp';
+  var LSK = 'hero_est_otp:';
+  var RESEND_LOCK_MS = 30000;
+
+  /* ------------------------------------------------------------- helpers -- */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function hhmm(v) {
+    if (!v) return '';
+    var d = (v instanceof Date) ? v : new Date(v);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  }
+  function estNoOf(est) {
+    if (!est) return '';
+    return String(est.id || est.estimate_no || est.estNo || est.no || '').trim();
+  }
+  /* Every network failure is SHOWN. A silent catch here is how an advisor ends
+     up believing a customer got a code that Pingmate refused. */
+  function post(body) {
+    return sbFetch(FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.text().then(function (txt) {
+        var j = null;
+        try { j = JSON.parse(txt); } catch (e) { /* not JSON */ }
+        if (j) return j;
+        return { ok: false, error: 'Server answered HTTP ' + res.status + ': ' + txt.slice(0, 160) };
+      });
+    }, function (err) {
+      var m = (err && (err.message || err.code)) ? String(err.message || err.code) : String(err);
+      if (m === 'not-signed-in') m = 'You are signed out. Sign in again and retry.';
+      else if (m === 'slow') m = 'The server did not answer in time. Check the internet and retry.';
+      return { ok: false, error: m };
+    });
+  }
+
+  function lsGet(estNo) {
+    try { return JSON.parse(localStorage.getItem(LSK + estNo) || 'null'); }
+    catch (e) { return null; }
+  }
+  function lsSet(estNo, obj) {
+    try { localStorage.setItem(LSK + estNo, JSON.stringify(obj)); } catch (e) {}
+  }
+
+  /* --------------------------------------------------------------- modal -- */
+  var M = null;            /* built once */
+  var STATE = { estNo: '', masked: '', lastSent: 0, busy: false };
+
+  function css() {
+    if (document.getElementById('esotp-css')) return;
+    var st = document.createElement('style');
+    st.id = 'esotp-css';
+    st.textContent =
+      '#esotp-modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;' +
+        'background:rgba(0,0,0,.82);z-index:3200}' +
+      '.esotp-box{background:#fff;border-radius:14px;width:92%;max-width:420px;' +
+        'margin:70px auto;padding:22px;font-size:14px}' +
+      '.esotp-box h3{margin-bottom:6px;font-size:16px}' +
+      '.esotp-sub{color:#5b6470;font-size:12px;margin-bottom:14px;line-height:1.45}' +
+      '.esotp-code{width:100%;font-size:26px;letter-spacing:10px;text-align:center;' +
+        'padding:12px 8px;border:1px solid #d9d4c9;border-radius:10px;font-family:monospace}' +
+      '.esotp-row{display:flex;gap:8px;margin-top:12px}' +
+      '.esotp-row .btn{flex:1}' +
+      '.esotp-msg{margin-top:10px;font-size:12px;line-height:1.5;min-height:16px;color:#5b6470}' +
+      '.esotp-badge{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;' +
+        'padding:2px 7px;margin-left:6px;white-space:nowrap}' +
+      '.esotp-badge.prov{background:#fff7ed;color:#b45309;border:1px solid #fdba74}' +
+      '.esotp-badge.final{background:#ecfdf5;color:#1f7a4d;border:1px solid #6ee7b7}';
+    document.head.appendChild(st);
+  }
+
+  function build() {
+    if (M) return M;
+    css();
+    var d = document.createElement('div');
+    d.id = 'esotp-modal';
+    d.innerHTML =
+      '<div class="esotp-box">' +
+        '<h3>Customer confirmation</h3>' +
+        '<div class="esotp-sub" id="esotp-sub">Sending the code&hellip;</div>' +
+        '<input id="esotp-code" class="esotp-code" inputmode="numeric" ' +
+          'autocomplete="one-time-code" maxlength="6" placeholder="------">' +
+        '<div class="esotp-row">' +
+          '<button class="btn sm" id="esotp-ok">Confirm code</button>' +
+          '<button class="btn ghost sm" id="esotp-resend">Resend code</button>' +
+        '</div>' +
+        '<button class="btn ghost sm" id="esotp-later" style="margin-top:8px;width:100%">' +
+          'Later — keep it provisional</button>' +
+        '<div class="esotp-msg" id="esotp-msg"></div>' +
+      '</div>';
+    document.body.appendChild(d);
+    M = {
+      wrap: d,
+      sub: d.querySelector('#esotp-sub'),
+      code: d.querySelector('#esotp-code'),
+      ok: d.querySelector('#esotp-ok'),
+      resend: d.querySelector('#esotp-resend'),
+      later: d.querySelector('#esotp-later'),
+      msg: d.querySelector('#esotp-msg')
+    };
+    M.ok.onclick = function () { doVerify(); };
+    M.resend.onclick = function () { doSend(true); };
+    M.later.onclick = function () { close(); };
+    M.code.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); doVerify(); }
+    });
+    M.code.addEventListener('input', function () {
+      M.code.value = M.code.value.replace(/\D/g, '').slice(0, 6);
+    });
+    /* A click on the dark area is "Later", never a silent dismissal that leaves
+       the advisor unsure whether the estimate is final. */
+    d.addEventListener('click', function (e) { if (e.target === d) close(); });
+    return M;
+  }
+
+  function open(estNo) {
+    build();
+    STATE.estNo = estNo;
+    M.code.value = '';
+    M.wrap.style.display = 'block';
+    setTimeout(function () { try { M.code.focus(); } catch (e) {} }, 60);
+  }
+  function close() { if (M) M.wrap.style.display = 'none'; }
+  function say(text, colour) {
+    build();
+    M.msg.style.color = colour || '#5b6470';
+    M.msg.textContent = text || '';
+  }
+  function sub(html) { build(); M.sub.innerHTML = html; }
+  function busy(on) {
+    build();
+    STATE.busy = !!on;
+    M.ok.disabled = !!on;
+    if (on) M.resend.disabled = true; else armResend();
+  }
+  function armResend() {
+    build();
+    var left = RESEND_LOCK_MS - (Date.now() - STATE.lastSent);
+    if (left <= 0) { M.resend.disabled = false; M.resend.textContent = 'Resend code'; return; }
+    M.resend.disabled = true;
+    M.resend.textContent = 'Resend in ' + Math.ceil(left / 1000) + 's';
+    setTimeout(armResend, 1000);
+  }
+
+  /* ----------------------------------------------------------- the calls -- */
+  function doSend(isResend) {
+    var estNo = STATE.estNo;
+    if (!estNo) { say('No estimate number — generate the estimate first.', '#c0392b'); return; }
+    busy(true);
+    say(isResend ? 'Sending a fresh code…' : 'Sending the code on WhatsApp…');
+    post({ op: 'est_send', est_no: estNo }).then(function (r) {
+      busy(false);
+      if (!r || !r.ok) {
+        var why = (r && (r.detail || r.error)) || 'Could not send the code.';
+        sub('The code did <b>not</b> go out.');
+        say(why, '#c0392b');
+        return;
+      }
+      STATE.masked = r.masked || '';
+      STATE.lastSent = Date.now();
+      armResend();
+      sub('Code sent to WhatsApp <b>' + esc(r.masked || '') + '</b> &middot; expires in ' +
+          (r.expires_minutes || 10) + ' min<br>Ask the customer to read it out, then type it here.');
+      say(r.via ? ('Sent over WhatsApp (' + esc(r.via) + ').') : 'Sent over WhatsApp.', '#1f7a4d');
+    });
+  }
+
+  function doVerify() {
+    if (STATE.busy) return;
+    var estNo = STATE.estNo;
+    var code = String((M && M.code.value) || '').replace(/\D/g, '');
+    if (code.length !== 6) { say('Type the 6 digits the customer received.', '#c0392b'); return; }
+    busy(true);
+    say('Checking the code…');
+    post({ op: 'est_verify', est_no: estNo, code: code }).then(function (r) {
+      busy(false);
+      if (!r || !r.ok) {
+        var why = (r && (r.error || r.detail)) || 'Could not check the code.';
+        if (r && typeof r.tries_left === 'number') why += ' ' + r.tries_left + ' tries left.';
+        say(why, '#c0392b');
+        return;
+      }
+      markFinal(estNo, r);
+      say('Confirmed. This estimate is now FINAL.', '#1f7a4d');
+      setTimeout(close, 900);
+    });
+  }
+
+  /* ------------------------------------------------- what FINAL changes -- */
+  function enableSendButtons(on) {
+    ['es-watxt', 'es-pdfbtn', 'es-wapdf'].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.disabled = !on;
+    });
+  }
+
+  function markFinal(estNo, r) {
+    var when = (r && r.verifiedAt) ? r.verifiedAt : new Date().toISOString();
+    var masked = (r && r.mobile) || STATE.masked || '';
+    lsSet(estNo, { status: 'FINAL', verifiedAt: when, masked: masked });
+
+    if (window.ES && ES.current && estNoOf(ES.current) === estNo) {
+      ES.current.otpVerifiedAt = when;
+      ES.current.otpMobile = masked;
+      ES.current.status = 'FINAL';
+      try { if (typeof window.esRender === 'function') window.esRender(ES.current); } catch (e) {}
+      enableSendButtons(true);
+      var m = document.getElementById('es-msg');
+      if (m) {
+        m.style.color = 'var(--ok)';
+        m.textContent = 'Final estimate · confirmed by customer OTP at ' + hhmm(when);
+      }
+    }
+  }
+
+  /* --------------------------------------------------------- entry points -- */
+
+  /* Called right after an estimate is generated AND saved. */
+  window.esOtpStart = function (est) {
+    var estNo = estNoOf(est) || (window.ES && ES.current ? estNoOf(ES.current) : '');
+    if (!estNo) return;
+    if (window.ES && ES.current && estNoOf(ES.current) === estNo && !ES.current.status) {
+      ES.current.status = 'PROVISIONAL';
+    }
+    enableSendButtons(false);
+    open(estNo);
+    sub('Sending a confirmation code to the customer&rsquo;s WhatsApp&hellip;');
+    say('');
+    STATE.lastSent = 0;
+    doSend(false);
+  };
+
+  /* true  -> the estimate is FINAL, the caller may go ahead.
+     false -> the modal is open and the caller must stop.
+     'preview' is always allowed: a PROVISIONAL estimate may be looked at, never
+     sent. */
+  window.esOtpGate = function (action) {
+    if (action === 'preview') return true;
+    var cur = (window.ES && ES.current) ? ES.current : null;
+    if (!cur) return true;                       /* nothing generated — not our call */
+    var estNo = estNoOf(cur);
+    if (!estNo) return true;
+    var saved = lsGet(estNo);
+    if (cur.status === 'FINAL' || cur.otpVerifiedAt || (saved && saved.status === 'FINAL')) {
+      return true;
+    }
+    open(estNo);
+    sub('This estimate is <b>provisional</b>. The customer has to confirm it with ' +
+        'the code sent to their WhatsApp before it can be sent out.');
+    say('Ask for the code, or press Resend if the customer did not get it.');
+    if (!STATE.lastSent) doSend(false); else armResend();
+    return false;
+  };
+
+  /* A small badge for an estimate-register row. '' when the row says nothing. */
+  window.esOtpBadgeHtml = function (est) {
+    if (!est) return '';
+    var estNo = estNoOf(est);
+    var saved = estNo ? lsGet(estNo) : null;
+    var final_ = est.estimate_status === 'FINAL' || est.status === 'FINAL' ||
+                 est.customer_otp_verified_at || est.otpVerifiedAt ||
+                 (saved && saved.status === 'FINAL');
+    if (final_) {
+      var t = hhmm(est.customer_otp_verified_at || est.otpVerifiedAt ||
+                   (saved && saved.verifiedAt));
+      return '<span class="esotp-badge final">✅ Final · OTP verified' +
+             (t ? ' ' + esc(t) : '') + '</span>';
+    }
+    return '<span class="esotp-badge prov">⏳ Provisional — awaiting customer OTP</span>';
+  };
+
+  /* Ask the server what the truth is (after a reload, or on opening a row). */
+  window.esOtpStatusRefresh = function (estNo) {
+    estNo = String(estNo || (window.ES && ES.current ? estNoOf(ES.current) : '')).trim();
+    if (!estNo) return Promise.resolve({ ok: false, error: 'No estimate number.' });
+    return post({ op: 'est_status', est_no: estNo }).then(function (r) {
+      if (r && r.ok) {
+        if (r.status === 'FINAL') {
+          lsSet(estNo, { status: 'FINAL', verifiedAt: r.verifiedAt, masked: r.masked });
+          if (window.ES && ES.current && estNoOf(ES.current) === estNo) {
+            ES.current.status = 'FINAL';
+            ES.current.otpVerifiedAt = r.verifiedAt;
+            ES.current.otpMobile = r.masked;
+            enableSendButtons(true);
+          }
+        } else if (window.ES && ES.current && estNoOf(ES.current) === estNo) {
+          ES.current.status = 'PROVISIONAL';
+          enableSendButtons(false);
+        }
+      }
+      return r;
+    });
+  };
+
+  /* Exposed for the main session's own wiring / debugging. */
+  window.esOtpOpen = function (estNo) { open(String(estNo || '')); };
+})();
+
+</script>
+<script>
+/* R104-OTP wiring. The estimate is PROVISIONAL from the moment it is saved
+   (hero_estimate_save) until the customer's code is verified (hero-otp
+   est_verify, migration 0082). Sending it out is gated; looking at it is not —
+   a provisional PDF prints its own watermark (see esBuildPDF). */
+(function(){
+  'use strict';
+  if(typeof window.esOtpGate!=='function') return;
+  function isFinal(src){ return !!(src && (src.status==='FINAL' || src.otpVerifiedAt)); }
+  function gate(src, action){
+    if(src && window.ES && src!==ES.current){        /* a register row, not the screen */
+      if(isFinal(src)) return true;
+      try{ if(typeof window.esOtpOpen==='function' && src.id) window.esOtpOpen(String(src.id)); }catch(e){}
+      alert('This estimate is provisional. The customer has to confirm it with the WhatsApp code before it can be sent.');
+      return false;
+    }
+    return window.esOtpGate(action);
+  }
+  var _wa=window.esSendWAtext, _pdf=window.esSharePDF;
+  if(typeof _wa==='function') window.esSendWAtext=function(source){ if(!gate(source||(window.ES&&ES.current),'wa')) return; return _wa.apply(this, arguments); };
+  if(typeof _pdf==='function') window.esSharePDF=function(source){ if(!gate(source||(window.ES&&ES.current),'wapdf')) return; return _pdf.apply(this, arguments); };
+  /* Download/preview stays open: the sheet itself says PROVISIONAL. */
+})();
+</script>
+
+<!-- ============ R105 — WHATSAPP NUMBER CONFIRMED · APP LANGUAGE (22-09-2026) ============ -->
+<script>
+/* Ravi, 22-09-2026 (afternoon):
+   "Mention on the gate Entry to take Whats app mobile no of customer
+    specifically. if a pop up comes showing the original no then also it is ok.
+    He can verify and a button same as above. Same with estimate he has to
+    verify if the no is whatapp no for otp verification. It should be quick and
+    fast - not sluggish since 100s of customers are waiting from 7 am to 10 am."
+   "There should be a App Language Changer also - with 3 added now English
+    default, Marathi and Hindi."
+
+   PART 1 — THE WHATSAPP NUMBER. One tap, never a block. The gate label says
+   WhatsApp; a green ✓ chip beside the number is the guard's word that the
+   customer said "yes, that is my WhatsApp". Editing the number un-ticks it.
+   On the estimate the same chip sits beside the (previously read-only) mobile
+   with a ✎ Change so the advisor can correct the number the OTP will go to.
+   The tick travels with the record (waOk) — into raw_json on the estimate. */
+(function(){
+  'use strict';
+  var S=function(v){ return v==null?'':String(v); };
+  window.HERO_WA={gate:false, est:false};
+  function chip(id, on, onclick){
+    var b=document.getElementById(id); if(!b) return;
+    b.textContent=on?'✓ WhatsApp no. confirmed':'✓ This is the WhatsApp no.';
+    b.style.background=on?'#065f46':'#fff'; b.style.color=on?'#fff':'#065f46';
+    b.onclick=onclick;
+  }
+  function mk(afterEl, id, title){
+    if(!afterEl || document.getElementById(id)) return;
+    var b=document.createElement('button'); b.type='button'; b.id=id; b.className='btn sm';
+    b.style.cssText='margin-top:6px;border:1.5px solid #065f46;border-radius:9px;font-weight:800;min-height:38px;width:100%';
+    b.title=title||'';
+    afterEl.parentNode.insertBefore(b, afterEl.nextSibling);
+  }
+  /* gate entry */
+  try{
+    var gm=document.getElementById('ge-mob');
+    if(gm){
+      var lab=gm.parentNode.querySelector('label'); if(lab) lab.innerHTML='WhatsApp Mobile No * <span style="font-weight:600;color:var(--steel)">— ask: “is this your WhatsApp?”</span>';
+      gm.placeholder='10-digit WhatsApp number';
+      mk(gm,'ge-wa-ok','The customer confirmed this number is on WhatsApp — the estimate code goes there');
+      var geTog=function(){ HERO_WA.gate=!HERO_WA.gate; chip('ge-wa-ok',HERO_WA.gate,geTog); }; chip('ge-wa-ok',false,geTog);
+      gm.addEventListener('input',function(){ if(HERO_WA.gate){ HERO_WA.gate=false; chip('ge-wa-ok',false,document.getElementById('ge-wa-ok').onclick); } });
+    }
+  }catch(e){}
+  /* estimate */
+  try{
+    var em=document.getElementById('es-mob');
+    if(em){
+      var lab2=em.parentNode.querySelector('label'); if(lab2) lab2.innerHTML='WhatsApp mobile <span style="font-weight:600;color:var(--steel)">— the confirmation code goes here</span>';
+      var wrap=document.createElement('div'); wrap.style.cssText='display:flex;gap:6px;margin-top:6px';
+      wrap.innerHTML='<button type="button" id="es-wa-ok" class="btn sm" style="flex:1;border:1.5px solid #065f46;border-radius:9px;font-weight:800;min-height:38px"></button>'
+        +'<button type="button" id="es-wa-edit" class="btn sm ghost" style="border-radius:9px;min-height:38px" title="Type the customer’s WhatsApp number if this one is not it">✎ Change</button>';
+      em.parentNode.appendChild(wrap);
+      var esTog=function(){ HERO_WA.est=!HERO_WA.est; chip('es-wa-ok',HERO_WA.est,esTog); }; chip('es-wa-ok',false,esTog);
+      document.getElementById('es-wa-edit').onclick=function(){
+        em.readOnly=false; em.classList.remove('es-ro'); em.inputMode='numeric'; em.maxLength=10; em.focus(); em.select();
+        HERO_WA.est=false; chip('es-wa-ok',false,document.getElementById('es-wa-ok').onclick);
+      };
+      em.addEventListener('input',function(){ if(HERO_WA.est){ HERO_WA.est=false; chip('es-wa-ok',false,document.getElementById('es-wa-ok').onclick); } });
+      /* a fresh vehicle pick resets the tick and re-locks the box */
+      var _pick=window.esOnGatePick;
+      if(typeof _pick==='function') window.esOnGatePick=function(){ var r=_pick.apply(this,arguments); try{ HERO_WA.est=false; chip('es-wa-ok',false,document.getElementById('es-wa-ok').onclick); em.readOnly=true; em.classList.add('es-ro'); }catch(e){} return r; };
+    }
+  }catch(e){}
+  /* the tick rides on the saved records */
+  try{
+    var _push=window.esPushSheet;
+    if(typeof _push==='function') window.esPushSheet=function(d){ try{ d.waOk=!!HERO_WA.est; d.mob=S(document.getElementById('es-mob').value||d.mob).replace(/\D/g,'').slice(-10)||d.mob; }catch(e){} return _push.apply(this,arguments); };
+  }catch(e){}
+})();
+</script>
+<script>
+/* PART 2 — APP LANGUAGE. English is the app; Hindi and Marathi are painted over
+   it. A dictionary of the words a guard, advisor or parts person reads every
+   day; text nodes, placeholders and titles that match an English entry exactly
+   are swapped, the original kept beside the node so switching back is instant.
+   It runs once per screen change (showView / modal open / DOM additions,
+   debounced), never on every keystroke, so it costs nothing the customer
+   queue can feel. Words the dictionary does not know stay in English. */
+(function(){
+  'use strict';
+  var KEY='hero_lang';
+  var D={
+    'Sign in with your Employee No. and password':['अपना कर्मचारी नंबर और पासवर्ड डालें','तुमचा कर्मचारी क्रमांक आणि पासवर्ड टाका'],
+    'EMPLOYEE NO.':['कर्मचारी नंबर','कर्मचारी क्रमांक'],'Employee No.':['कर्मचारी नंबर','कर्मचारी क्रमांक'],'PASSWORD':['पासवर्ड','पासवर्ड'],'Password':['पासवर्ड','पासवर्ड'],
+    'LOGIN':['लॉगिन','लॉगिन'],'Login':['लॉगिन','लॉगिन'],'Logout':['लॉगआउट','लॉगआउट'],'Home':['होम','होम'],
+    'Forgot password?':['पासवर्ड भूल गए?','पासवर्ड विसरलात?'],'New here? Register':['नए हैं? रजिस्टर करें','नवीन आहात? नोंदणी करा'],
+    'Launch Modules':['मॉड्यूल खोलें','मॉड्यूल उघडा'],"Today's Priorities":['आज की प्राथमिकताएँ','आजच्या प्राधान्य बाबी'],'View all':['सब देखें','सर्व पहा'],
+    'Gate Entry':['गेट एंट्री','गेट एंट्री'],'New vehicle entry, customer & vehicle registration.':['नई गाड़ी की एंट्री, ग्राहक और गाड़ी की जानकारी।','नवीन गाडीची नोंद, ग्राहक व गाडीची माहिती.'],
+    'Estimate Preparation':['एस्टीमेट तैयार करें','एस्टीमेट तयार करा'],'Prepare, review & send estimates quickly.':['एस्टीमेट जल्दी बनाएँ, जाँचें और भेजें।','एस्टीमेट पटकन तयार करा, तपासा व पाठवा.'],
+    'Estimates & Billing':['एस्टीमेट और बिलिंग','एस्टीमेट व बिलिंग'],'Holdup Monitor':['होल्डअप मॉनिटर','होल्डअप मॉनिटर'],'Parts Desk':['पार्ट्स डेस्क','पार्ट्स डेस्क'],
+    'Parts Scanner':['पार्ट्स स्कैनर','पार्ट्स स्कॅनर'],'All-India Part Finder':['ऑल-इंडिया पार्ट फाइंडर','ऑल-इंडिया पार्ट फाइंडर'],'Insurance Renewals':['इंश्योरेंस रिन्यूअल','विमा नूतनीकरण'],
+    'Targets':['टारगेट','लक्ष्य'],'Gate Entries Today':['आज की गेट एंट्री','आजच्या गेट एंट्री'],'Estimates Pending':['बाकी एस्टीमेट','प्रलंबित एस्टीमेट'],'Holdup Cases':['होल्डअप केस','होल्डअप केसेस'],'Pending Approvals':['बाकी मंज़ूरी','प्रलंबित मंजुरी'],
+    'Comfort View':['आरामदायक व्यू','आरामदायी व्ह्यू'],'Compact View':['छोटा व्यू','संक्षिप्त व्ह्यू'],
+    'Customer Name *':['ग्राहक का नाम *','ग्राहकाचे नाव *'],'Customer name':['ग्राहक का नाम','ग्राहकाचे नाव'],'Mobile No *':['मोबाइल नंबर *','मोबाइल क्रमांक *'],
+    'Alt. Contact':['दूसरा नंबर','पर्यायी क्रमांक'],'Model *':['मॉडल *','मॉडेल *'],'Model':['मॉडल','मॉडेल'],'KM Reading (Odometer) *':['किमी रीडिंग (ओडोमीटर) *','किमी रीडिंग (ओडोमीटर) *'],
+    'Visit Purpose *':['आने का कारण *','येण्याचे कारण *'],'Service':['सर्विस','सर्व्हिस'],'Repair':['रिपेयर','दुरुस्ती'],'Accident':['एक्सीडेंट','अपघात'],'Warranty':['वारंटी','वॉरंटी'],'Other':['अन्य','इतर'],
+    'Reg. number':['रजिस्ट्रेशन नंबर','नोंदणी क्रमांक'],'Reg No':['रजि. नंबर','नोंदणी क्र.'],'Registration number':['रजिस्ट्रेशन नंबर','नोंदणी क्रमांक'],
+    'Skip — this is a new vehicle':['छोड़ें — यह नई गाड़ी है','वगळा — ही नवीन गाडी आहे'],'✅ Step 2 — Verify & Complete':['✅ चरण 2 — जाँचें और पूरा करें','✅ पायरी 2 — तपासा व पूर्ण करा'],
+    'Save Gate Entry':['गेट एंट्री सेव करें','गेट एंट्री सेव्ह करा'],'Save':['सेव करें','सेव्ह करा'],'Cancel':['रद्द करें','रद्द करा'],'Close':['बंद करें','बंद करा'],'Back':['पीछे','मागे'],'Refresh':['रीफ्रेश','रिफ्रेश'],'Search':['खोजें','शोधा'],
+    'VEHICLE & CUSTOMER':['गाड़ी और ग्राहक','गाडी व ग्राहक'],'VEHICLE FROM GATE ENTRY *':['गेट एंट्री से गाड़ी *','गेट एंट्रीमधील गाडी *'],'— Select vehicle from Gate Entry —':['— गेट एंट्री से गाड़ी चुनें —','— गेट एंट्रीमधून गाडी निवडा —'],
+    'Configure':['सेटिंग','सेटिंग'],'NO ESTIMATE YET':['अभी कोई एस्टीमेट नहीं','अजून एस्टीमेट नाही'],'Select a model and a service type to see the live price breakup.':['मॉडल और सर्विस टाइप चुनें, दाम तुरंत दिखेगा।','मॉडेल व सर्व्हिस प्रकार निवडा, किंमत लगेच दिसेल.'],
+    'Service Type':['सर्विस टाइप','सर्व्हिस प्रकार'],'Service type':['सर्विस टाइप','सर्व्हिस प्रकार'],'Odometer (km)':['ओडोमीटर (किमी)','ओडोमीटर (किमी)'],'Date of sale':['बिक्री की तारीख','विक्रीची तारीख'],
+    'Generate Estimate':['एस्टीमेट बनाएँ','एस्टीमेट तयार करा'],'New Estimate':['नया एस्टीमेट','नवीन एस्टीमेट'],'Send on WhatsApp':['व्हाट्सऐप पर भेजें','व्हॉट्सॲपवर पाठवा'],
+    'Save / Download PDF':['PDF सेव / डाउनलोड','PDF सेव्ह / डाउनलोड'],'Send PDF on WhatsApp':['PDF व्हाट्सऐप पर भेजें','PDF व्हॉट्सॲपवर पाठवा'],
+    'Sub-total':['उप-योग','उप-एकूण'],'Discount':['छूट','सवलत'],'GST 18%':['GST 18%','GST 18%'],'Total Estimate':['कुल एस्टीमेट','एकूण एस्टीमेट'],'Total':['कुल','एकूण'],
+    'Engine Oil':['इंजन ऑइल','इंजिन ऑइल'],'Parts':['पार्ट्स','पार्ट्स'],'Labour':['लेबर','लेबर'],'Express Delivery':['एक्सप्रेस डिलीवरी','एक्सप्रेस डिलिव्हरी'],
+    'Additional mobile':['अतिरिक्त मोबाइल','अतिरिक्त मोबाइल'],'— optional':['— वैकल्पिक','— ऐच्छिक'],'Customer':['ग्राहक','ग्राहक'],
+    'Holdup Status':['होल्डअप स्थिति','होल्डअप स्थिती'],'Holdup Reason':['होल्डअप कारण','होल्डअप कारण'],'Parts ETA':['पार्ट्स कब तक','पार्ट्स कधीपर्यंत'],'Remarks':['टिप्पणी','शेरा'],'Save Update':['अपडेट सेव करें','अपडेट सेव्ह करा'],
+    'Loading…':['लोड हो रहा है…','लोड होत आहे…'],'Online':['ऑनलाइन','ऑनलाइन'],'Offline':['ऑफलाइन','ऑफलाइन'],'↻ Sync Now':['↻ अभी सिंक करें','↻ आता सिंक करा'],'🔒 Reset Password':['🔒 पासवर्ड बदलें','🔒 पासवर्ड बदला'],
+    'Today':['आज','आज'],'Yesterday':['कल','काल'],'Confirm code':['कोड पक्का करें','कोड निश्चित करा'],'Resend code':['कोड फिर भेजें','कोड पुन्हा पाठवा'],'Later':['बाद में','नंतर'],
+    '✓ This is the WhatsApp no.':['✓ यही व्हाट्सऐप नंबर है','✓ हाच व्हॉट्सॲप नंबर आहे'],'✓ WhatsApp no. confirmed':['✓ व्हाट्सऐप नंबर पक्का','✓ व्हॉट्सॲप नंबर निश्चित'],'✎ Change':['✎ बदलें','✎ बदला'],
+    'Gate Out':['गेट आउट','गेट आउट'],'All Gate Entries':['सभी गेट एंट्री','सर्व गेट एंट्री'],'My Estimates':['मेरे एस्टीमेट','माझे एस्टीमेट'],'All Estimates':['सभी एस्टीमेट','सर्व एस्टीमेट'],
+    'Master Data':['मास्टर डेटा','मास्टर डेटा'],'Control Room':['कंट्रोल रूम','कंट्रोल रूम'],'Vehicles in workshop':['वर्कशॉप में गाड़ियाँ','वर्कशॉपमधील गाड्या'],'Estimates prepared today':['आज बने एस्टीमेट','आज तयार झालेले एस्टीमेट'],
+    'Estimates not yet prepared':['एस्टीमेट अभी नहीं बने','एस्टीमेट अजून तयार नाहीत'],'Holdup cases pending update':['होल्डअप केस अपडेट बाकी','होल्डअप केस अपडेट बाकी'],'Parts requests pending issue':['पार्ट्स रिक्वेस्ट बाकी','पार्ट्स मागणी प्रलंबित']
+  };
+  var IDX={en:null, hi:0, mr:1};
+  var ORIG=new WeakMap(), cur=null, timer=0;
+  function lang(){ try{ return localStorage.getItem(KEY)||'en'; }catch(e){ return 'en'; } }
+  function tr(text, li){
+    var t=String(text); var k=t.trim(); if(!k) return null;
+    var e=D[k]; if(!e) return null;
+    var v=li==null?k:(e[li]||k);
+    return t.replace(k, v);
+  }
+  function paintNode(n, li){
+    if(n.nodeType===3){
+      var o=ORIG.get(n); if(o==null){ o=n.nodeValue; if(!o||!o.trim()) return; ORIG.set(n,o); }
+      var v=(li==null)?o:(tr(o,li)||o); if(n.nodeValue!==v) n.nodeValue=v; return;
+    }
+    if(n.nodeType!==1) return;
+    var tag=n.tagName; if(tag==='SCRIPT'||tag==='STYLE'||tag==='TEXTAREA') return;
+    ['placeholder','title'].forEach(function(a){
+      if(!n.hasAttribute||!n.hasAttribute(a)) return;
+      var key='__hero_'+a; var o=n[key]; if(o==null){ o=n.getAttribute(a); n[key]=o; }
+      var v=(li==null)?o:(tr(o,li)||o); if(n.getAttribute(a)!==v) n.setAttribute(a,v);
+    });
+    if(tag==='INPUT' && (n.type==='button'||n.type==='submit')){ var ov=n.__hero_value; if(ov==null){ ov=n.value; n.__hero_value=ov; } var vv=(li==null)?ov:(tr(ov,li)||ov); if(n.value!==vv) n.value=vv; }
+    for(var c=n.firstChild;c;c=c.nextSibling) paintNode(c, li);
+  }
+  window.heroLangApply=function(root){
+    var li=IDX[lang()]; if(li===undefined) li=null;
+    if(li==null && cur==null) return;            /* English on English: nothing to do */
+    try{ paintNode(root||document.body, li); }catch(e){}
+    cur=li; try{ document.documentElement.lang=lang(); }catch(e){}
+    var c=document.getElementById('hero-lang'); if(c){ Array.prototype.forEach.call(c.querySelectorAll('button'),function(b){ b.style.background=(b.getAttribute('data-l')===lang())?'#0f172a':'#fff'; b.style.color=(b.getAttribute('data-l')===lang())?'#fff':'#0f172a'; }); }
+  };
+  window.heroSetLang=function(l){ try{ localStorage.setItem(KEY, l); }catch(e){} cur=cur==null?0:cur; heroLangApply(); };
+  function schedule(){ if(lang()==='en') return; clearTimeout(timer); timer=setTimeout(function(){ heroLangApply(); }, 120); }
+  /* the switch, in the header */
+  try{
+    var box=document.getElementById('backend-status-box');
+    if(box && !document.getElementById('hero-lang')){
+      var c=document.createElement('span'); c.id='hero-lang'; c.style.cssText='display:inline-flex;gap:4px;margin-left:6px';
+      c.innerHTML=[['en','EN'],['hi','हिं'],['mr','मरा']].map(function(x){ return '<button type="button" data-l="'+x[0]+'" onclick="heroSetLang(\''+x[0]+'\')" style="border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-weight:800;font-size:12px;cursor:pointer;background:#fff">'+x[1]+'</button>'; }).join('');
+      box.appendChild(c);
+    }
+  }catch(e){}
+  /* repaint on screen changes */
+  try{ var _sv=window.showView; if(typeof _sv==='function') window.showView=function(){ var r=_sv.apply(this,arguments); schedule(); return r; }; }catch(e){}
+  try{ if(window.MutationObserver){ new MutationObserver(function(){ schedule(); }).observe(document.body,{childList:true,subtree:true}); } }catch(e){}
+  heroLangApply();
+})();
+</script>
+
+<!-- ============ R104 — APPS SCRIPT EXIT, COMPLETE (22-09-2026) ============ -->
+<script>
+/* ==========================================================================
+   R104 (Ravi, 22-09-2026): "Ensure all of google appscript is gone and the
+   entire script and tasks now run on supabase only and all database is also
+   transferred to supabase only. Nothing should be on the drive for this app
+   now." — and, the same morning: "We dont need 3 months database to be
+   indexeddb ed in the users mobile.. 15 days is more than fine."
+
+   WHAT THIS BLOCK IS. The last intercept of the transport. R84 (masters), R89
+   (the five daily reads), R91 (the repair tree) and R86 (OTP) each moved a
+   family of calls off Apps Script by wrapping jget/jgetRaw/jgetReliable/jpost
+   once. This block wraps them a final time, OUTSIDE the earlier wrappers, and
+   is the only place a call can still go:
+
+     · an action with a Supabase route here      → the RPC (migrations 0080/0081)
+     · an action an earlier wrapper already owns → handed down to that wrapper
+     · anything else                              → answered {ok:false,
+       error:'apps-script-retired'} at once, logged to app_errors, never sent.
+
+   SHEET_URL itself now points at a name that cannot resolve (see the constant),
+   so even a call that slipped every wrapper could not reach Google. The Apps
+   Script deployment is not called by this build anywhere.
+
+   WHY A WRAPPER AND NOT 60 EDITS. Every screen keeps its own callback contract
+   (cb(res) / cb(res,isStale), single-flight, last-good snapshots); rewriting
+   each call site is where the R25/R77 regressions came from. The contract is
+   honoured here once, exactly as R89 did it.
+   ========================================================================== */
+(function(){
+  'use strict';
+  if(typeof window==='undefined' || typeof window.sbRpc!=='function') return;
+
+  var ORG_ID='4a034f16-2386-48f9-ae00-6539546f522c';   /* Sehgal Autoriders — same constant gate-capture uses */
+  var N=function(v){ var n=Number(String(v==null?'':v).replace(/[₹,\s]/g,'')); return isFinite(n)?n:0; };
+  var S=function(v){ return v==null?'':String(v); };
+  var ok=function(res){ return !!(res && res.ok!==false); };
+
+  window.HERO_R104={reads:0, writes:0, retired:[], errors:0};
+
+  function retired(kind, name, params){
+    var key=kind+':'+name;
+    if(window.HERO_R104.retired.indexOf(key)<0){
+      window.HERO_R104.retired.push(key);
+      try{ console.warn('[R104] no Supabase route for '+key+' — answered retired, nothing sent to Google', params||''); }catch(e){}
+      try{ sbRpc('hero_log_error',{p_action:'apps-script-retired', p_message:key,
+             p_payload:{params:params||null, build:String(window.HERO_BUILD||''), user:(window.USER&&USER.empno)||''}}).catch(function(){}); }catch(e){}
+    }
+    return {ok:false, error:'apps-script-retired', detail:'This action ('+name+') has no Supabase route yet. Tell Ravi sir which screen you were on.'};
+  }
+
+  /* ------------------------------------------------------------ READS --
+     action -> function(params) returning a Promise of the reply the screen
+     already understands (the RPCs were written to the Apps Script shapes). */
+  var READ={
+    version:            function(){  return sbRpc('hero_version',{}); },
+    today:              function(){  return sbRpc('hero_today',{}); },
+    estimates_today:    function(){  return sbRpc('hero_estimates_today',{}); },
+    /* Ravi 22-09: nothing older than a month sits on a phone. The register
+       used to pull 370 days; the picker's own window is inside hero_report_today (15 days). */
+    estimates_all:      function(p){ return sbRpc('hero_estimates_all',{p_days:Math.min(N(p&&p.days)||15, 15), p_empno:S(p&&p.empno)||null}); },
+    /* Gate Out is the only caller: vehicles still inside, no photo URLs (0085). */
+    gate_history:       function(p){ return sbRpc('hero_gate_open',{p_days:Math.min(N(p&&p.days)||7, 15)}); },
+    billing_status:     function(){  return sbRpc('hero_billing_status',{}); },
+    leakage_unmatched:  function(p){ return sbRpc('hero_leakage_unmatched',{p_days:N(p&&p.days)||30}); },
+    app_config:         function(p){ return sbRpc('hero_app_config',{p_app:S(p&&p.app)}); },
+    app_settings:       function(){  return sbRpc('hero_app_settings',{}); },
+    labour_for_model:   function(p){ return sbRpc('hero_labour_for_model',{p_model:S(p&&p.model)}); },
+    customer_find:      function(p){ return sbRpc('hero_customer_find',{p_q:S(p&&p.q)}); },
+    customer_stamp:     function(){  return sbRpc('hero_customer_stamp',{}); },
+    customer_chunk:     function(p){ return sbRpc('hero_customer_chunk',{p_offset:N(p&&p.offset), p_limit:N(p&&p.limit)||2000}); },
+    find_part_stock:    function(p){ return sbRpc('hero_find_part_stock',{p_pn:S(p&&p.pn)}); },
+    mp_tree:            function(p){ return sbRpc('hero_mp_tree',{p_fresh:S(p&&p.fresh)||null}); },
+    mp_stock:           function(p){ return sbRpc('hero_mp_stock',{p_pn:S(p&&p.pn)}); },
+    mp_status:          function(){  return sbRpc('hero_mp_status',{}); },
+    part_search:        function(p){ return sbRpc('hero_part_search',{p_q:S(p&&p.q), p_limit:N(p&&p.limit)||20}); },
+    part_lookup:        function(p){ return sbRpc('hero_part_lookup',{p_pn:S(p&&p.pn), p_stock:S(p&&p.stock)}); },
+    part_ocr:           function(p){ return sbRpc('part_ocr_sb',{p_text:S(p&&p.text), p_desc:S(p&&p.desc)}); },
+    ps_recent:          function(p){ return sbRpc('ps_recent_sb',{p_limit:N(p&&p.limit)||20, p_include_removed:false}); },
+    last_upload_error:  function(){  return sbRpc('hero_last_upload_error',{}); },
+    /* Photos are Supabase signed URLs now — the Drive proxy has nothing to fetch.
+       The viewer already falls back to a plain link when this answers not-ok. */
+    photo_b64:          function(){  return Promise.resolve({ok:false, error:'Photo proxy retired — the link opens the photo directly'}); },
+    /* Password login is GoTrue (sbLogin). The sheet login can no longer answer. */
+    login:              function(){  return Promise.resolve({ok:false, error:'Wrong login ID or password. (Logins run on Supabase now.)'}); },
+    login_update:       function(){  return Promise.resolve({ok:false, error:'Logins are managed in Supabase now — Master Data → Registrations.'}); },
+    login_create:       function(){  return Promise.resolve({ok:false, error:'Logins are managed in Supabase now — Master Data → Registrations.'}); },
+    login_delete:       function(){  return Promise.resolve({ok:false, error:'Logins are managed in Supabase now — Master Data → Registrations.'}); },
+    /* Insurance CRM v1/v3 (sheet generation). The Renewal Workbench (INS5) is
+       the CRM and runs on insurance_* RPCs. The old sheet trail written after
+       each outcome is simply no longer written — answered ok so the workbench's
+       outbox drains cleanly. */
+    inscrm2_save:       function(){  return Promise.resolve({ok:true, retired:true}); },
+    inscrm2_lock:       function(){  return Promise.resolve({ok:true, retired:true}); },
+    ins_renew_wa:       function(){  return Promise.resolve({ok:false, error:'The Google WhatsApp gateway is retired — use “Open WhatsApp” to send from this phone.'}); }
+  };
+  /* Owned by an earlier wrapper (R84 / R89 / R91 / R86): hand straight down. */
+  var INNER={master_list:1, master_table:1, master_stamps:1, refresh_masters:1,
+             report_today:1, home_summary:1, holdup_summary:1, ratio_today:1, my_estimates_daywise:1,
+             tree_master:1, tree_parts:1, svc_consequence:1, send_otp:1, reset_password_otp:1};
+
+  var FRESH_MS=4000, INFLIGHT={}, RECENT={};
+  function keyOf(a,p){ try{ return a+':'+JSON.stringify(p||{}); }catch(e){ return a+':?'; } }
+  function saveLastGood(action, params, res){
+    try{ if(typeof window.setLastGood==='function') window.setLastGood(action, params||{}, res); }catch(e){}
+  }
+  function cacheable(action){ return (typeof CACHEABLE_ACTIONS!=='undefined') && CACHEABLE_ACTIONS.indexOf(action)>-1; }
+
+  function wrapRead(fnName){
+    var orig=window[fnName]; if(typeof orig!=='function') return;
+    var reliable=(fnName==='jgetReliable');
+    window[fnName]=function(action, params){
+      var self=this, args=arguments, cb=args[2];
+      if(INNER[action]) return orig.apply(self, args);
+      var route=READ[action];
+      if(!route){ var r=retired('read', action, params); try{ if(cb) cb(r, false); }catch(e){} return; }
+      var key=keyOf(action, params);
+      if(cacheable(action) && typeof getCache==='function'){
+        var hit0=getCache(action, params); if(hit0){ try{ if(cb) cb(hit0,false); }catch(e){} return; }
+      }
+      var hit=RECENT[key];
+      if(hit && (Date.now()-hit.at)<FRESH_MS){ try{ if(cb) cb(hit.res,false); }catch(e){} return; }
+      if(INFLIGHT[key]){ INFLIGHT[key].push(cb); return; }
+      INFLIGHT[key]=[cb];
+      if(reliable){ try{ var stale=window.getLastGood(action, params); if(stale && cb) cb(stale, true); }catch(e){} }
+      window.HERO_R104.reads++;
+      route(params||{}).then(function(res){
+        if(!res) res={ok:false,error:'empty reply'};
+        var waiting=INFLIGHT[key]||[]; INFLIGHT[key]=null;
+        if(ok(res)){ RECENT[key]={at:Date.now(), res:res}; saveLastGood(action, params, res);
+                     if(cacheable(action) && typeof setCache==='function'){ try{ setCache(action, params, res); }catch(e){} } }
+        waiting.forEach(function(f){ try{ if(f) f(res, false); }catch(e){ try{ console.warn('[R104]',e); }catch(_){} } });
+      }).catch(function(err){
+        window.HERO_R104.errors++;
+        var msg=S(err&&err.message||err);
+        var res={ok:false, error:(msg==='not-signed-in')?'Sign in again — your session expired.':msg, detail:'supabase rpc for '+action};
+        var waiting=INFLIGHT[key]||[]; INFLIGHT[key]=null;
+        waiting.forEach(function(f){ try{ if(f) f(res, false); }catch(e){} });
+      });
+    };
+  }
+  ['jget','jgetRaw','jgetReliable'].forEach(wrapRead);
+
+  /* ----------------------------------------------------------- WRITES --
+     jpost(body) resolves to the RPC reply. gate / gate_out / estimate keep
+     the queue-first gate-capture path (Supabase since R78); master_* keep R84. */
+  var PASS={gate:1, gate_out:1, estimate:1, master_addrow:1, master_updaterow:1, master_deleterow:1,
+            master_createtable:1, master_addcolumn:1, master_deletecolumn:1, master_deletetable:1, master_upload_csv:1};
+  var WRITE={
+    set_app_setting:      function(b){ return sbRpc('hero_set_app_setting',{p_key:S(b.key), p_value:S(b.value), p_by:S(b.by)||null}); },
+    learn_vehicle:        function(b){ return sbRpc('hero_learn_vehicle',{p_reg:S(b.reg), p_model:S(b.model), p_stage:S(b.stage)||'GATE', p_by:S(b.by)||null}); },
+    edit_estimate:        function(b){ return sbRpc('hero_estimate_edit',{p:b}); },
+    delete_estimate:      function(b){ return sbRpc('hero_estimate_delete',{p_est_no:S(b.estNo), p_deleted_by:S(b.deletedBy)}); },
+    update_holdup:        function(b){ return sbRpc('hero_holdup_update',{p:b}); },
+    upsert_holdup:        function(b){ return sbRpc('hero_holdup_upsert',{p_records:b.records||[]}); },
+    bulk_update_holdup:   function(b){ return sbRpc('hero_holdup_bulk_update',{p_records:b.records||[], p_by:S(b.updatedBy)}); },
+    upsert_part_stock:    function(b){ return sbRpc('hero_part_stock_load',{p_records:b.records||[], p_wipe:!!b.wipeFirst}); },
+    upsert_jcmaster:      function(b){ return sbRpc('hero_jcmaster_load',{p_records:b.records||[]}); },
+    upsert_billing:       function(b){ return sbRpc('hero_billing_load',{p_records:b.records||[]}); },
+    upload_requisition_photo: function(b){ return reqPhotoUpload(b); },
+    delete_requisition_photo: function(b){ return sbRpc('hero_holdup_set_photo',{p_jc:S(b.jcNo), p_dealer:S(b.dealer), p_reg:S(b.reg), p_url:''}); }
+  };
+  (function(){
+    var orig=window.jpost; if(typeof orig!=='function') return;
+    window.jpost=function(body){
+      var type=S(body&&body.type);
+      if(PASS[type]) return orig.apply(this, arguments);
+      var route=WRITE[type];
+      if(!route){ var r=retired('write', type||'(no type)', body); return Promise.reject(new Error(r.detail)); }
+      if(type.indexOf('master_')===0 && typeof clearMasterCache==='function') clearMasterCache();
+      window.HERO_R104.writes++;
+      return route(body).then(function(res){
+        if(!ok(res)) throw new Error(S(res&&res.error)||'refused');
+        return res;
+      });
+    };
+  })();
+
+  /* Requisition slip: the photo goes to the private hero-uploads bucket as the
+     signed-in user; the row gets a 10-year signed URL. Every reader in the app
+     decides "is there a photo?" with startsWith('http'), so the URL is what is
+     stored — the same rule gate-capture follows. */
+  function dataUrlToBlob(d){
+    var m=String(d||'').match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+    if(!m) return null;
+    var bin=atob(m[2]), bytes=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    return new Blob([bytes],{type:m[1]});
+  }
+  function reqPhotoUpload(b){
+    var blob=dataUrlToBlob(b.photoData);
+    if(!blob) return Promise.reject(new Error('no photo data'));
+    var name=(S(b.jcNo)||S(b.reg)||'slip').replace(/[^A-Za-z0-9_-]/g,'_');
+    var path='requisition/'+ORG_ID+'/'+name+'_'+Date.now()+'.jpg';
+    return sbFetch('/storage/v1/object/hero-uploads/'+path,{method:'POST', headers:{'Content-Type':blob.type||'image/jpeg','x-upsert':'true'}, body:blob})
+      .then(function(r){ if(!r.ok) throw new Error('photo upload HTTP '+r.status); return sbFetch('/storage/v1/object/sign/hero-uploads/'+path,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({expiresIn:315360000})}); })
+      .then(function(r){ if(!r.ok) throw new Error('photo sign HTTP '+r.status); return r.json(); })
+      .then(function(j){
+        var signed=j&&(j.signedURL||j.signedUrl); if(!signed) throw new Error('no signed url');
+        var url=SB_URL+'/storage/v1'+signed;
+        return sbRpc('hero_holdup_set_photo',{p_jc:S(b.jcNo), p_dealer:S(b.dealer), p_reg:S(b.reg), p_url:url}).then(function(res){ if(ok(res)) res.url=url; return res; });
+      });
+  }
+
+  /* ------------------------------------------------ ESTIMATE SAVE --
+     esPushSheet posted the estimate straight at the Apps Script /exec URL
+     (the one raw fetch that R78's queue never covered). It is now an RPC as the
+     signed-in advisor — hero_estimate_save — and, only if that call cannot be
+     made, the queue-first gate-capture path, so an estimate is never lost. */
+  window.esPushSheet=async function(d){
+    var rec={id:d.id,ts:d.ts,name:d.name,mob:d.mob,reg:d.reg,model:d.model,km:d.km,mo:d.mo,service:d.service,
+      parts:Math.round(d.parts),oil:Math.round(d.oil),labour:Math.round(d.labour),discount:Math.round(d.disc),
+      pre:Math.round(d.pre),tax:Math.round(d.tax),total:Math.round(d.total),floor:d.floor,items:d.items,
+      gateId:(window.ES&&ES.gateId)||'', token:(window.ES&&ES.token)||'', location:(window.ES&&ES.location)||USER.ws,
+      empno:USER.empno, empname:USER.personName, ws:USER.ws};
+    var m=document.getElementById('es-msg');
+    try{
+      var res=await sbRpc('hero_estimate_save',{p_rec:rec});
+      if(!ok(res)) throw new Error(S(res&&res.error)||'save refused');
+      d.saved=true; d.status=d.status||'PROVISIONAL';
+      if(m){ m.style.color='var(--ok)'; m.textContent='Estimate '+d.id+(res.dup?' was already saved.':' saved.'); }
+      try{ if(typeof window.esOtpStart==='function') window.esOtpStart(d); }catch(e){ try{ console.warn('[R104] otp start',e); }catch(_){} }
+    }catch(e){
+      /* Not reachable right now: queue it. sbWriteQueued_ delivers it to
+         gate-capture and only deletes it from the queue on a real receipt. */
+      try{ window.jpost(Object.assign({type:'estimate'},rec)); }catch(_){}
+      if(m){ m.style.color='var(--steel)'; m.textContent='Estimate '+d.id+' queued — it will save the moment the connection returns ('+S(e&&e.message||e).slice(0,80)+').'; }
+    }
+  };
+
+  /* ----------------------------------------------- CHANGE PASSWORD --
+     The MD_Login sheet is gone. GoTrue owns the password: the current one is
+     proved by signing in with it, then the new one is set on the session. */
+  window.cpSave=async function(){
+    var msg=document.getElementById('cp-msg');
+    var oldp=val('cp-old'), newp=val('cp-new'), conf=val('cp-conf');
+    if(!oldp||!newp||!conf){ msg.style.color='var(--signal-d)'; msg.textContent='All fields required.'; return; }
+    if(newp!==conf){ msg.style.color='var(--signal-d)'; msg.textContent='New passwords do not match.'; return; }
+    if(newp.length<6){ msg.style.color='var(--signal-d)'; msg.textContent='New password must be at least 6 characters.'; return; }
+    msg.style.color='var(--steel)'; msg.textContent='Checking current password…';
+    try{
+      var me=await sbFetch('/auth/v1/user',{method:'GET'});
+      var mj=me.ok?await me.json():null; var email=S(mj&&mj.email);
+      if(!email) throw new Error('Sign in again first.');
+      var chk=await fetch(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({email:email,password:oldp})});
+      if(chk.status===400){ msg.style.color='var(--signal-d)'; msg.textContent='Current password is incorrect.'; return; }
+      if(!chk.ok) throw new Error('auth HTTP '+chk.status);
+      var s=await chk.json(); if(typeof sbStoreSession==='function') sbStoreSession(s);
+      msg.textContent='Saving…';
+      var up=await sbFetch('/auth/v1/user',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:newp})});
+      if(!up.ok){ var t=''; try{ t=S((await up.json()).msg||''); }catch(e){} throw new Error(t||('HTTP '+up.status)); }
+      msg.style.color='var(--ok)'; msg.textContent='Password changed. Please log in again.';
+      setTimeout(function(){ document.getElementById('chgpass-modal').style.display='none'; logout(); },1800);
+    }catch(e){ msg.style.color='var(--signal-d)'; msg.textContent='Could not change the password: '+S(e&&e.message||e); }
+  };
+
+  /* ------------------------------------- THE INNERMOST TRANSPORT --
+     R104 innermost transport. R84's masters wrapper and the pristine jget still
+     hold references to the ORIGINAL jgetRaw, which builds a URL with jUrl_()
+     and injects a <script>. jUrl_ is looked up at call time, so answering here
+     ends that path without a single network request: the "script" is a data:
+     URL that calls the JSONP callback with a retired reply, and the fetch
+     fallback reads the same reply as JSON. */
+  window.jUrl_=function(action, params, cbName){
+    var r=retired('read', S(action), params);
+    if(cbName) return 'data:text/javascript,'+encodeURIComponent('window["'+cbName+'"]&&window["'+cbName+'"]('+JSON.stringify(r)+');');
+    return 'data:application/json,'+encodeURIComponent(JSON.stringify(r));
+  };
+  /* The offline queue only ever fed Apps Script for the non-critical types.
+     Those now have routes above, so anything still queued under an old type is
+     parked (kept on the phone, listed in HERO_R104.parked, logged) and never
+     replayed at Google. gate / gate_out / estimate keep their gate-capture replay. */
+  (function(){
+    var orig=window.flushQueue; if(typeof orig!=='function') return;
+    window.HERO_R104.parked=[];
+    window.flushQueue=function(){
+      try{
+        var q=getQueue(), keep=[], park=[];
+        q.forEach(function(it){ var t=S(it&&it.body&&it.body.type); if(SB_WRITE_TYPES[t]) keep.push(it); else park.push(it); });
+        if(park.length){
+          setQueue(keep);
+          try{ var old=JSON.parse(localStorage.getItem('hero_r104_parked')||'[]'); localStorage.setItem('hero_r104_parked', JSON.stringify(old.concat(park).slice(-200))); }catch(e){}
+          window.HERO_R104.parked=window.HERO_R104.parked.concat(park.map(function(it){ return S(it.body&&it.body.type); }));
+          park.forEach(function(it){ retired('queued-write', S(it.body&&it.body.type), null); });
+        }
+      }catch(e){}
+      return orig.apply(this, arguments);
+    };
+  })();
+
+  /* ------------------------------------------------- HEARTBEAT --
+     The amber "Google backend slow/offline" strip watched the Apps Script
+     /exec. There is nothing to watch any more: the only backend is the one
+     hbPing_ already pings (gate-capture on Supabase). */
+  window.hbPingGas_=function(){ try{ if(typeof HB!=='undefined'){ HB.gas='ALIVE'; HB.gasStrikes=0; } }catch(e){} };
+  try{ if(typeof HB!=='undefined'){ HB.gas='ALIVE'; HB.gasStrikes=0; if(typeof hbSave_==='function') hbSave_(); if(typeof hbStrip_==='function') hbStrip_(); } }catch(e){}
+  window.checkBackendVersion=function(){
+    var b=document.getElementById('ver-badge');
+    if(b) b.textContent='Backend: Supabase · checking…';
+    sbRpc('hero_version',{}).then(function(r){ if(b) b.textContent='Backend: Supabase · '+S(r&&r.version)+' · '+S(r&&r.todayKey); })
+      .catch(function(e){ if(b) b.textContent='Backend: Supabase · not reachable ('+S(e&&e.message||e).slice(0,40)+')'; });
+  };
+  try{ var vb=document.getElementById('ver-badge'); if(vb) vb.textContent='Backend: Supabase'; }catch(e){}
+
+  /* ------------------------------------------------- INSURANCE --
+     ins3 (the sheet-era classic screen) and the R41 manager board read sheet
+     routes that no longer exist. The Renewal Workbench is the CRM; the board
+     now shows the Supabase team summary. */
+  window.ins3Boot=function(){
+    try{ if(typeof ins4Boot==='function'){ ins4Boot(); return; } }catch(e){}
+    alert('The classic insurance view is retired. The Renewal Workbench is the insurance CRM.');
+  };
+  window.ins4Classic=function(){ alert('The classic view is retired — the Renewal Workbench is the only insurance screen now.'); };
+  window.insbBoot=function(){
+    var v=document.getElementById('view-insboard'); if(!v) return;
+    v.innerHTML='<div style="padding:14px"><h2 style="margin:0 0 6px">Insurance Board</h2><div class="hint">Today’s allocation per SMRE, live from Supabase.</div><div id="insb-sb" class="hint" style="margin-top:10px">Loading…</div></div>';
+    sbRpc('insurance_team_summary',{}).then(function(r){
+      var el=document.getElementById('insb-sb'); if(!el) return;
+      if(!ok(r)){ el.textContent='Not allowed for this login.'; return; }
+      var rows=r.by_smre||[];
+      el.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">'
+        +[['Assigned',r.team_capacity],['Remaining',r.remaining],['Contacted',r.contacted],['Completed',r.completed]].map(function(x){ return '<div style="border:1px solid var(--line);border-radius:10px;padding:8px 12px"><div style="font-size:22px;font-weight:800">'+N(x[1])+'</div><div class="hint">'+x[0]+'</div></div>'; }).join('')
+        +'</div><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;border-bottom:1px solid var(--line)"><th style="padding:4px 6px">SMRE</th><th>Assigned</th><th>Remaining</th><th>Contacted</th><th>Completed</th></tr></thead><tbody>'
+        +rows.map(function(z){ return '<tr style="border-bottom:1px solid #eef2f7"><td style="padding:4px 6px">'+S(z.employee_code)+'</td><td>'+N(z.assigned)+'</td><td>'+N(z.remaining)+'</td><td>'+N(z.contacted)+'</td><td>'+N(z.completed)+'</td></tr>'; }).join('')
+        +'</tbody></table><div class="hint" style="margin-top:8px">Work date '+S(r.work_date)+'</div>';
+    }).catch(function(e){ var el=document.getElementById('insb-sb'); if(el) el.textContent='Could not load: '+S(e&&e.message||e); });
+  };
+
+  /* ------------------------------------------------- ESTIMATE HISTORY --
+     "All gate entries are shown, then why all Estimates are not shown?" (Ravi
+     22-09). The list was filtered to the caller's own employee number even for
+     the CEO. hero_my_estimates_daywise now scopes by role on the server (CEO/GM
+     see everything, a WM his workshop, an SA his own); the window is 3 months,
+     like the gate history, and the title says whose estimates they are. */
+  window.esOpenMyEstHistory=function(){
+    var m=heroModal(); if(!m.modal) return;
+    var mine=!(typeof isTopMgmtUser==='function' && isTopMgmtUser()) && !(window.USER && /^(wm|gm|ceo)$/i.test(S(USER.designation||USER.level)));
+    m.title.textContent=mine?'My Estimates':'All Estimates';
+    heroViewPaint(m.body,'my_estimates','<div class="hint">Loading…</div>');
+    m.modal.style.display='block';
+    /* 0085: an index of days (3 KB), never the rows — a day's estimates load when it is opened. */
+    sbRpc('hero_estimates_index',{p_days:92}).then(function(res){
+      if(!res || res.ok===false){ heroSoftPlaceholder(m.body,'<div class="hint">Could not load: '+S(res&&res.error||'no reply')+'</div>'); return; }
+      window.ES_HIST_DAYS=(res.days||[]);
+      if(!window.ES_HIST_DAYS.length){ m.body.innerHTML='<div class="hint">No estimates in the last 3 months.</div>'; return; }
+      esHistShowMonths();
+      try{ m.title.textContent=(mine?'My Estimates':'All Estimates')+' — Months'; }catch(e){}
+    }).catch(function(e){ heroSoftPlaceholder(m.body,'<div class="hint">Could not load: '+S(e&&e.message||e)+'</div>'); });
+  };
+  /* a day opens with its rows fetched then, and remembered for the session */
+  var _showDay=window.esHistShowDay;
+  window.esHistShowDay=function(mi,di){
+    var mo=(window.ES_HIST_MONTHS||[])[mi]; var d=mo&&mo.days[di]; if(!d) return;
+    if(Array.isArray(d.estimates)) return _showDay.apply(this, arguments);
+    var m=heroModal(); m.body.innerHTML='<div class="hint">Loading '+S(d.dateKey)+'…</div>';
+    sbRpc('hero_estimates_day',{p_date:S(d.dateKey).slice(0,10)}).then(function(r){
+      d.estimates=(r&&r.estimates)||[]; _showDay(mi,di);
+    }).catch(function(e){ m.body.innerHTML='<div class="hint">Could not load that day: '+S(e&&e.message||e)+'</div>'; });
+  };
+
+  /* ------------------------------------------------- HOLDUP CLEAR --
+     Ravi 22-09: "Holdup previous information need to be cleared." CEO/GM only.
+     Rows are archived (hero_holdup_archive), never destroyed. */
+  window.huClearAll=function(){
+    if(!(typeof isTopMgmtUser==='function' && isTopMgmtUser())){ alert('CEO / GM only.'); return; }
+    if(!confirm('Clear ALL holdup rows from the app?\n\nThey are archived on the server, not destroyed. Tomorrow’s DMS holdup upload starts a clean register.')) return;
+    sbRpc('hero_holdup_clear',{p_confirm:'CLEAR'}).then(function(r){
+      if(!ok(r)){ alert('Not cleared: '+S(r&&r.error)); return; }
+      try{ localStorage.removeItem(HU_STORE_KEY); }catch(e){}
+      window.HU_DATA=[]; window.HU_ROWS_CURRENT=[];
+      alert('Cleared. '+N(r.archived)+' rows archived.');
+      try{ huBoot(); }catch(e){}
+    }).catch(function(e){ alert('Not cleared: '+S(e&&e.message||e)); });
+  };
+  (function addClearButton(){
+    function put(){
+      var host=document.querySelector('#view-holdup .hu-actbtn, #view-holdup label.hu-actbtn'); if(!host||document.getElementById('hu-clear-all')) return;
+      if(!(typeof isTopMgmtUser==='function' && isTopMgmtUser())) return;
+      var b=document.createElement('button'); b.id='hu-clear-all'; b.className='hu-actbtn'; b.style.background='#7f1d1d'; b.textContent='🧹 Clear all holdup';
+      b.onclick=window.huClearAll; host.parentNode.insertBefore(b, host);
+    }
+    var _hu=window.huBoot; if(typeof _hu==='function'){ window.huBoot=function(){ var r=_hu.apply(this,arguments); try{ setTimeout(put,300); }catch(e){} return r; }; }
+  })();
+
+  /* ------------------------------------------------- PHONE CLEAN-UP --
+     One-time, per build: the sheet-era caches and the 3-month snapshots go.
+     The cache namespace changed with SHEET_URL, so old hero-cache-* databases
+     are orphans; heroIns3 is the classic insurance mirror; the holdup rows
+     are re-hydrated from the server on the next open. */
+  try{
+    var mark='hero_r104_clean:'+S(window.HERO_BUILD);
+    if(!localStorage.getItem(mark)){
+      var drop=[];
+      for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i)||'';
+        if(k.indexOf('sehgal_cache:')===0 || k.indexOf('sehgal_lastgood:')===0 || k.indexOf('sehgal_photo:')===0 || k===HU_STORE_KEY || k==='hero_hb_v1') drop.push(k); }
+      drop.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+      if(window.indexedDB){
+        try{ indexedDB.deleteDatabase('heroIns3'); }catch(e){}
+        if(typeof indexedDB.databases==='function'){
+          indexedDB.databases().then(function(list){ (list||[]).forEach(function(db){
+            var n=S(db&&db.name); if(!n) return;
+            if(n.indexOf('hero-cache-')===0 && n!=='hero-cache-'+(typeof BACKEND_NS!=='undefined'?BACKEND_NS:'')) { try{ indexedDB.deleteDatabase(n); }catch(e){} }
+          }); }).catch(function(){});
+        }
+      }
+      localStorage.setItem(mark,'1');
+      try{ console.info('[R104] phone caches from the Apps Script era removed: '+drop.length+' keys'); }catch(e){}
+    }
+  }catch(e){}
+})();
+</script>
+
+<!-- ============ R104b — DMS ⇄ ESTIMATE ⇄ BILLING COMPARISON (22-09-2026) ============ -->
+<script>
+/* Ravi 22-09-2026: "taking data from Hero PowerBI and comparison of Jobcards,
+   estimates, billing all to be automated now." The three uploads already land
+   in Supabase (jc_master, sheet_billing, sheet_estimates); hero_billing_compare
+   (migration 0083) joins them in Postgres. This is only the window. */
+(function(){
+  'use strict';
+  if(typeof window.sbRpc!=='function') return;
+  var S=function(v){ return v==null?'':String(v); };
+  var esc=function(s){ return S(s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var money=function(v){ return (v==null||v==='')?'—':('₹'+Math.round(Number(v)||0).toLocaleString('en-IN')); };
+  var COL={'MATCHED':'#065f46','BILLED BELOW ESTIMATE':'#b45309','BILLED ABOVE ESTIMATE':'#1d4ed8','BILLED · NO ESTIMATE':'#b91c1c','ESTIMATED · NOT BILLED':'#7c3aed','NO ESTIMATE · NOT BILLED':'#6b7280'};
+  window.BL_CMP={days:31, bucket:'', data:null};
+  window.blCompareOpen=function(){
+    var m=heroModal(); if(!m.modal) return;
+    m.title.textContent='DMS ⇄ Estimate ⇄ Billing';
+    m.body.innerHTML='<div class="hint">Comparing job cards, estimates and bills for the last '+BL_CMP.days+' days…</div>';
+    m.modal.style.display='block';
+    sbRpc('hero_billing_compare',{p_days:BL_CMP.days, p_ws:null}).then(function(r){
+      if(!r||r.ok===false){ m.body.innerHTML='<div class="hint">Could not compare: '+esc(r&&r.error||'no reply')+'</div>'; return; }
+      BL_CMP.data=r; blCompareDraw();
+    }).catch(function(e){ m.body.innerHTML='<div class="hint">Could not compare: '+esc(e&&e.message||e)+'</div>'; });
+  };
+  window.blCompareDays=function(d){ BL_CMP.days=d; blCompareOpen(); };
+  window.blCompareBucket=function(b){ BL_CMP.bucket=(BL_CMP.bucket===b)?'':b; blCompareDraw(); };
+  window.blCompareDraw=function(){
+    var m=heroModal(); var r=BL_CMP.data; if(!r) return;
+    var s=r.summary||{};
+    var tiles=[['Job cards',s.jobcards,''],['Matched ±'+S(s.bandPct)+'%',s.matched,'MATCHED'],['Billed · no estimate',s.billedNoEstimate,'BILLED · NO ESTIMATE'],
+               ['Estimated · not billed',s.estimatedNotBilled,'ESTIMATED · NOT BILLED'],['Billed below',s.below,'BILLED BELOW ESTIMATE'],['Billed above',s.above,'BILLED ABOVE ESTIMATE']];
+    var head='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+      +[15,31,92].map(function(d){ return '<button class="btn ghost sm" style="'+(d===BL_CMP.days?'font-weight:800;border-color:#1d4ed8':'')+'" onclick="blCompareDays('+d+')">'+d+' days</button>'; }).join('')
+      +'<span class="hint" style="align-self:center">Estimated '+money(s.estimatedValue)+' · Billed '+money(s.billedValue)+' · Deviation '+money(s.deviationValue)+'</span></div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+tiles.map(function(t){
+          var on=t[2]&&BL_CMP.bucket===t[2];
+          return '<div onclick="blCompareBucket(\''+t[2]+'\')" style="cursor:pointer;border:1.5px solid '+(on?'#0f172a':'var(--line)')+';border-radius:10px;padding:6px 10px;min-width:96px;background:#fff"><div style="font-size:20px;font-weight:800;color:'+(COL[t[2]]||'#0f172a')+'">'+(t[1]==null?'—':t[1])+'</div><div class="hint" style="font-size:11px">'+esc(t[0])+'</div></div>'; }).join('')+'</div>';
+    var rows=(r.rows||[]).filter(function(x){ return !BL_CMP.bucket || x.bucket===BL_CMP.bucket; });
+    var tbl='<div style="overflow:auto;max-height:60vh"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff">'
+      +'<th style="padding:4px 6px">JC</th><th>Reg</th><th>Model</th><th>Opened</th><th>Estimate</th><th>Advisor</th><th style="text-align:right">Estimated</th><th style="text-align:right">Billed</th><th style="text-align:right">Deviation</th><th>Status</th></tr></thead><tbody>'
+      +rows.slice(0,400).map(function(x){ return '<tr style="border-bottom:1px solid #eef2f7"><td style="padding:4px 6px;white-space:nowrap">'+esc(x.jcNo)+'</td><td>'+esc(x.reg)+'</td><td>'+esc(x.model)+'</td><td style="white-space:nowrap">'+esc(S(x.jcOpen).slice(0,10))+'</td><td>'+esc(x.estNo||'—')+'</td><td>'+esc(x.advisor||'')+'</td>'
+          +'<td style="text-align:right;font-family:Roboto Mono,monospace">'+money(x.estimated)+'</td><td style="text-align:right;font-family:Roboto Mono,monospace">'+money(x.billed)+'</td><td style="text-align:right;font-family:Roboto Mono,monospace">'+(x.deviation==null?'—':(money(x.deviation)+(x.deviationPct!=null?' ('+x.deviationPct+'%)':'')))+'</td>'
+          +'<td style="white-space:nowrap;color:'+(COL[x.bucket]||'#0f172a')+';font-weight:700">'+esc(x.bucket)+'</td></tr>'; }).join('')
+      +'</tbody></table></div>'
+      +(rows.length>400?'<div class="hint">Showing 400 of '+rows.length+' rows.</div>':'')
+      +((r.estimatesWithoutJc||[]).length?('<div style="margin-top:10px;font-weight:800">Estimates with no job card in DMS ('+r.estimatesWithoutJc.length+')</div><div class="hint">Prepared in the app, but the Daily JC Summary has no job card for that vehicle around that date.</div>'
+        +'<div style="overflow:auto;max-height:30vh"><table style="width:100%;border-collapse:collapse;font-size:12px">'+r.estimatesWithoutJc.slice(0,200).map(function(e){ return '<tr style="border-bottom:1px solid #eef2f7"><td style="padding:3px 6px">'+esc(e.estNo)+'</td><td>'+esc(e.reg)+'</td><td>'+esc(e.model)+'</td><td>'+esc(S(e.time).slice(0,10))+'</td><td>'+esc(e.advisor)+'</td><td style="text-align:right">'+money(e.total)+'</td></tr>'; }).join('')+'</table></div>'):'');
+    m.body.innerHTML=head+tbl;
+  };
+  /* the button, next to the Leakage Report */
+  try{
+    var leak=document.getElementById('bl-leak-btn');
+    if(leak && !document.getElementById('bl-cmp-btn')){
+      var b=document.createElement('button'); b.id='bl-cmp-btn'; b.className='hu-actbtn'; b.style.background='#0e7490';
+      b.textContent='⇄ DMS Comparison'; b.title='Job cards vs estimates vs bills, from the three DMS uploads'; b.onclick=window.blCompareOpen;
+      leak.parentNode.insertBefore(b, leak.nextSibling);
+    }
+  }catch(e){}
 })();
 </script>
 
