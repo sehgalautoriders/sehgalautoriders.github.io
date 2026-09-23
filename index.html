@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R109-2026.09.23.1';
+window.HERO_BUILD = 'R110-2026.09.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -27578,6 +27578,138 @@ window.heroDiagUpload=heroDiagUpload;
   try{ localStorage.removeItem('app_vision_key'); localStorage.removeItem('app_gemini_key'); }catch(e){}
   try{ if(window.APP_SETTINGS){ APP_SETTINGS.VISION_API_KEY=''; APP_SETTINGS.GEMINI_API_KEY=''; } }catch(e){}
   window.geVisionKey=function(){ return ''; };
+})();
+</script>
+<script>
+/* R110 (Ravi, 23-09-2026): "start Android and then Windows" — the Sehgal Hero
+   app as a real installed app, not a Chrome tab.
+
+   The Android app (io.github.sehgalautoriders.hero, a Capacitor shell) opens
+   THIS page from sehgalautoriders.github.io, so every push still reaches every
+   phone at once. A bare Android WebView lacks four things Chrome gives for free,
+   and this block supplies them — only inside the app; in Chrome and on iPhone
+   none of it runs and nothing changes:
+     1. navigator.share with files (estimate PDF -> WhatsApp)  -> Android share sheet
+     2. <a download> of a blob (CSV / XLSX / PDF saves)         -> saved to
+        Documents/SehgalHero and offered in the share sheet
+     3. window.open(outside link) (wa.me, insurer portals)      -> the phone opens
+        the right app (WhatsApp, browser) instead of replacing the Hero screen
+     4. "Yes, Exit"                                             -> closes the app
+   Everything is try/catch: if a native piece is missing the old web behaviour
+   stays, it never blocks a screen. */
+(function(){
+  'use strict';
+  var C=window.Capacitor;
+  var native=!!(C && typeof C.isNativePlatform==='function' && C.isNativePlatform());
+  if(!native) return;
+  window.HERO_SHELL='android';
+  try{ document.documentElement.classList.add('hero-native'); }catch(e){}
+
+  function plugin(name){
+    try{ return (C.Plugins && C.Plugins[name]) || (C.registerPlugin && C.registerPlugin(name)) || null; }catch(e){ return null; }
+  }
+  var Share=plugin('Share'), FS=plugin('Filesystem'), Launch=plugin('AppLauncher'), App=plugin('App');
+
+  function toast(msg){
+    try{
+      var t=document.createElement('div');
+      t.textContent=msg;
+      t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px system-ui,sans-serif;max-width:88vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.3)';
+      document.body.appendChild(t); setTimeout(function(){ try{ t.remove(); }catch(e){} }, 3200);
+    }catch(e){}
+  }
+  function b64(blob){
+    return new Promise(function(ok,bad){
+      var r=new FileReader();
+      r.onload=function(){ var s=String(r.result||''); ok(s.slice(s.indexOf(',')+1)); };
+      r.onerror=function(){ bad(r.error); };
+      r.readAsDataURL(blob);
+    });
+  }
+  function safeName(n){ return String(n||'file').replace(/[\\/:*?"<>|]+/g,'_').slice(0,120)||'file'; }
+  /* one file into the app cache; returns a content:// / file:// uri the share sheet can read */
+  function toCache(blob,name){
+    return b64(blob).then(function(data){
+      return FS.writeFile({path:'share/'+Date.now()+'-'+safeName(name), data:data, directory:'CACHE', recursive:true});
+    }).then(function(r){ return r.uri; });
+  }
+
+  /* 1. navigator.share / canShare */
+  if(Share && FS){
+    var nativeShare=function(d){
+      d=d||{};
+      var files=Array.prototype.slice.call(d.files||[]);
+      var text=[d.text,d.url].filter(Boolean).join('\n');
+      return Promise.all(files.map(function(f){ return toCache(f,f.name); })).then(function(uris){
+        var o={title:d.title||'Sehgal Hero', dialogTitle:d.title||'Share'};
+        if(text) o.text=text;
+        if(uris.length) o.files=uris;
+        return Share.share(o);
+      }).then(function(){ return undefined; });
+    };
+    try{ Object.defineProperty(navigator,'share',{value:nativeShare,configurable:true,writable:true}); }catch(e){ try{ navigator.share=nativeShare; }catch(e2){} }
+    try{ Object.defineProperty(navigator,'canShare',{value:function(){ return true; },configurable:true,writable:true}); }catch(e){}
+  }
+
+  /* 2. blob / data downloads */
+  function saveDownload(href,name){
+    if(!FS) return false;
+    fetch(href).then(function(r){ return r.blob(); }).then(function(blob){
+      name=safeName(name);
+      var kept=b64(blob).then(function(data){
+        return FS.writeFile({path:'SehgalHero/'+name, data:data, directory:'DOCUMENTS', recursive:true})
+          .then(function(){ return true; },function(){ return false; });
+      });
+      return kept.then(function(ok){
+        toast(ok?('Saved: Documents/SehgalHero/'+name):('Ready to share: '+name));
+        if(!Share) return;
+        return toCache(blob,name).then(function(uri){ return Share.share({title:name, files:[uri], dialogTitle:name}); });
+      });
+    }).catch(function(e){ toast('Could not save '+name); try{ console.warn('hero download',e); }catch(x){} });
+    return true;
+  }
+  function isFileLink(a){
+    var h=a && a.getAttribute && a.getAttribute('href');
+    return !!(a && a.hasAttribute && a.hasAttribute('download') && h && /^(blob:|data:)/i.test(h));
+  }
+  try{
+    var _click=HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click=function(){
+      if(isFileLink(this) && saveDownload(this.href, this.getAttribute('download')||'file')) return;
+      return _click.apply(this,arguments);
+    };
+    var _dispatch=HTMLAnchorElement.prototype.dispatchEvent||EventTarget.prototype.dispatchEvent;
+    HTMLAnchorElement.prototype.dispatchEvent=function(ev){
+      if(ev && ev.type==='click' && isFileLink(this) && saveDownload(this.href, this.getAttribute('download')||'file')) return false;
+      return _dispatch.apply(this,arguments);
+    };
+    document.addEventListener('click',function(ev){
+      var a=ev.target && ev.target.closest && ev.target.closest('a[download]');
+      if(a && isFileLink(a)){ ev.preventDefault(); saveDownload(a.href, a.getAttribute('download')||'file'); }
+    },true);
+  }catch(e){}
+
+  /* 3. window.open */
+  var HOME=location.origin;
+  var _open=window.open;
+  function dummyWin(){ return {closed:false, close:function(){}, focus:function(){}, blur:function(){}, document:{write:function(){}, close:function(){}, open:function(){}}}; }
+  window.open=function(url){
+    var u=String(url==null?'':url).trim();
+    if(!u) return null;
+    var abs; try{ abs=new URL(u, location.href); }catch(e){ return _open.apply(window,arguments); }
+    if(abs.origin===HOME){ location.href=abs.href; return window; }
+    if(Launch){ Launch.openUrl({url:abs.href}).catch(function(){ toast('No app on this phone can open that link'); }); return dummyWin(); }
+    return _open.apply(window,arguments);
+  };
+
+  /* 4. exit */
+  function wrapExit(){
+    var _exit=window.heroExitApp;
+    if(typeof _exit!=='function' || _exit.__native) return;
+    var w=function(){ try{ _exit.apply(this,arguments); }catch(e){} try{ App && App.exitApp(); }catch(e){} };
+    w.__native=true; window.heroExitApp=w;
+  }
+  wrapExit(); document.addEventListener('DOMContentLoaded',wrapExit); window.addEventListener('load',wrapExit);
 })();
 </script>
 </body></html>
