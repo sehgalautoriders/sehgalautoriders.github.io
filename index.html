@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R108-2026.09.23.1';
+window.HERO_BUILD = 'R109-2026.09.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1777,6 +1777,7 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
               <button class="btn ghost sm" id="es-pdfbtn" onclick="esDownloadPDF()" disabled>Save / Download PDF</button>
             </div>
             <button class="btn wa sm" id="es-wapdf" onclick="esSharePDF()" disabled style="margin-top:10px">Send PDF on WhatsApp</button>
+            <button class="btn ghost sm" id="es-otpask" onclick="if(window.esOtpAsk) esOtpAsk()" style="margin-top:8px">Customer code on WhatsApp (optional)</button>
             <button class="btn dark sm" id="es-newbtn" onclick="esNewEstimate()" disabled style="margin-top:10px">New estimate</button>
             <div id="es-msg" class="hint" style="margin-top:10px"></div>
           </div>
@@ -5326,10 +5327,11 @@ function heroMobileShow_(go){
   m.innerHTML=
     '<div class="chgpass-box" style="max-width:380px;width:100%">'+
       '<h3>📱 Your mobile number</h3>'+
-      '<div class="hint" style="margin-bottom:12px">Compulsory once for every login. Enter your own mobile number.</div>'+
+      '<div class="hint" style="margin-bottom:12px">Enter your own mobile number (asked once per login).</div>'+
       '<div class="fld"><label>Mobile number</label><input id="hm-mob" type="tel" inputmode="numeric" maxlength="14" placeholder="10-digit mobile" autocomplete="tel"></div>'+
       '<button class="btn" id="hm-save">Save and continue</button>'+
       '<div id="hm-msg" class="hint" style="margin-top:10px;text-align:center"></div>'+
+      '<button class="btn ghost" id="hm-skip" style="margin-top:8px">Skip for now</button>'+
       '<div style="text-align:center;margin-top:14px"><span id="hm-out" style="cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline">Log out</span></div>'+
     '</div>';
   document.body.appendChild(m);
@@ -5352,6 +5354,8 @@ function heroMobileShow_(go){
     });
   };
   $('hm-out').onclick=function(){ m.remove(); logout(); };
+  /* R109: nothing is locked — skipping opens the app; the question comes back on the next open. */
+  $('hm-skip').onclick=function(){ try{ m.remove(); }catch(e){} go(); };
   try{ $('hm-mob').focus(); }catch(e){}
 }
 async function sbToken(){
@@ -9949,14 +9953,7 @@ function esBuildPDF(source){
       doc.text('FINAL ESTIMATE - confirmed by the customer via WhatsApp OTP on '+_vs+(d.otpMobile?' - ******'+String(d.otpMobile).slice(-4):''),40,yy+12);
     } else {
       doc.setTextColor(180,83,9); doc.setFont('helvetica','bold'); doc.setFontSize(9);
-      doc.text('PROVISIONAL - awaiting customer confirmation by WhatsApp OTP. Not a final estimate.',40,yy+12);
-      try{
-        if(doc.saveGraphicsState) doc.saveGraphicsState();
-        if(doc.setGState && doc.GState) doc.setGState(new doc.GState({opacity:0.12}));
-        doc.setFontSize(48); doc.setTextColor(120,120,120);
-        doc.text('PROVISIONAL',W/2,doc.internal.pageSize.getHeight()/2,{align:'center',angle:30});
-        if(doc.restoreGraphicsState) doc.restoreGraphicsState();
-      }catch(e){}
+      /* R109: no PROVISIONAL stamp while the WhatsApp code is optional. */
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
   }catch(e){}
@@ -26097,7 +26094,7 @@ window.heroDiagUpload=heroDiagUpload;
   function enableSendButtons(on) {
     ['es-watxt', 'es-pdfbtn', 'es-wapdf'].forEach(function (id) {
       var b = document.getElementById(id);
-      if (b) b.disabled = !on;
+      if (b) b.disabled = false;   /* R109 (Ravi, 23-09-2026): "Do not lock anything till the process is finalised and working continuously.. whatsapp should be optional for now" */
     });
   }
 
@@ -26122,8 +26119,12 @@ window.heroDiagUpload=heroDiagUpload;
 
   /* --------------------------------------------------------- entry points -- */
 
-  /* Called right after an estimate is generated AND saved. */
-  window.esOtpStart = function (est) {
+  /* R109 (Ravi, 23-09-2026): "Do not lock anything till the process is finalised and working continuously.. whatsapp should be optional for now".
+     Saving no longer pops the code up; the SA may ask for it with the
+     optional "Customer code" button (esOtpAsk). */
+  window.esOtpStart = function () { enableSendButtons(true); };
+  window.esOtpAsk = function (est) {
+    est = est || (window.ES && ES.current);
     var estNo = estNoOf(est) || (window.ES && ES.current ? estNoOf(ES.current) : '');
     if (!estNo) return;
     if (window.ES && ES.current && estNoOf(ES.current) === estNo && !ES.current.status) {
@@ -26142,6 +26143,7 @@ window.heroDiagUpload=heroDiagUpload;
      'preview' is always allowed: a PROVISIONAL estimate may be looked at, never
      sent. */
   window.esOtpGate = function (action) {
+    return true;   /* R109 (Ravi, 23-09-2026): "Do not lock anything till the process is finalised and working continuously.. whatsapp should be optional for now" */
     if (action === 'preview') return true;
     var cur = (window.ES && ES.current) ? ES.current : null;
     if (!cur) return true;                       /* nothing generated — not our call */
@@ -26173,7 +26175,7 @@ window.heroDiagUpload=heroDiagUpload;
       return '<span class="esotp-badge final">✅ Final · OTP verified' +
              (t ? ' ' + esc(t) : '') + '</span>';
     }
-    return '<span class="esotp-badge prov">⏳ Provisional — awaiting customer OTP</span>';
+    return '';   /* R109: an unconfirmed estimate carries no badge while WhatsApp is optional */
   };
 
   /* Ask the server what the truth is (after a reload, or on opening a row). */
@@ -26214,6 +26216,7 @@ window.heroDiagUpload=heroDiagUpload;
   if(typeof window.esOtpGate!=='function') return;
   function isFinal(src){ return !!(src && (src.status==='FINAL' || src.otpVerifiedAt)); }
   function gate(src, action){
+    return true;   /* R109: WhatsApp optional — nothing is locked */
     if(src && window.ES && src!==ES.current){        /* a register row, not the screen */
       if(isFinal(src)) return true;
       try{ if(typeof window.esOtpOpen==='function' && src.id) window.esOtpOpen(String(src.id)); }catch(e){}
