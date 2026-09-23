@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R107-2026.09.23.1';
+window.HERO_BUILD = 'R107-2026.09.23.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5289,7 +5289,90 @@ function heroRelogin_(){
   logout();
   try{ const m=document.getElementById('li-msg'); if(m){ m.style.color='var(--signal-d)'; m.textContent='Log in again once — the app now runs on the new server.'; } }catch(e){}
 }
-setTimeout(function(){ try{ if(typeof USER!=='undefined' && USER && !sbTokens().rt) heroSessionDead_('no-token at start'); }catch(e){} }, 1500);
+setTimeout(function(){ try{
+  if(typeof USER==='undefined' || !USER) return;
+  if(!sbTokens().rt){ heroSessionDead_('no-token at start'); return; }
+  heroMobileGate_(function(){});
+}catch(e){} }, 1500);
+
+/* R107 (Ravi, 23-09-2026): "While login compulsary ask them to enter their
+   mobile nos and verify through OTP." After the password — and on the next
+   open for a phone that is already signed in — a login with no verified
+   mobile is held on this screen until the WhatsApp code comes back right.
+   Server: migration 0089 + hero-otp ops bind_send / bind_verify (the code
+   never reaches this browser). A network failure while ASKING the status does
+   not lock anyone out; the question comes back on the next open. */
+function heroMobOkKey_(){ try{ return 'hero_mob_ok:'+String((USER&&USER.empno)||''); }catch(e){ return 'hero_mob_ok:'; } }
+function heroMobileGate_(next){
+  let done=false; const go=function(){ if(done) return; done=true; try{ next(); }catch(e){} };
+  try{ if(USER && localStorage.getItem(heroMobOkKey_())==='1'){ go(); return; } }catch(e){}
+  sbRpc('hero_my_mobile_status',{}).then(function(st){
+    if(!st || st.ok===false || !st.required || st.verified){
+      if(st && st.verified){ try{ if(USER) localStorage.setItem(heroMobOkKey_(),'1'); }catch(e){} }
+      go(); return;
+    }
+    heroMobileShow_(go);
+  }).catch(function(){ go(); });
+}
+function heroMobFn_(body){
+  return sbFetch('/functions/v1/hero-otp',{method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body), timeoutMs:30000}).then(function(r){ return r.json(); });
+}
+function heroMobileShow_(go){
+  let m=document.getElementById('hero-mob-modal');
+  if(m) m.remove();
+  m=document.createElement('div'); m.id='hero-mob-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=
+    '<div class="chgpass-box" style="max-width:380px;width:100%">'+
+      '<h3>📱 Your mobile number</h3>'+
+      '<div class="hint" style="margin-bottom:12px">Compulsory once for every login. Enter your own WhatsApp number — a 6-digit code will come on WhatsApp.</div>'+
+      '<div id="hm-s1">'+
+        '<div class="fld"><label>Mobile number</label><input id="hm-mob" type="tel" inputmode="numeric" maxlength="14" placeholder="10-digit mobile" autocomplete="tel"></div>'+
+        '<button class="btn" id="hm-send">Send code on WhatsApp</button>'+
+      '</div>'+
+      '<div id="hm-s2" style="display:none">'+
+        '<div class="hint" id="hm-sent" style="margin-bottom:10px"></div>'+
+        '<div class="fld"><label>Code from WhatsApp</label><input id="hm-code" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code"></div>'+
+        '<button class="btn" id="hm-verify">Verify</button>'+
+        '<div style="text-align:center;margin-top:10px"><span id="hm-back" style="cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline">Change number / send again</span></div>'+
+      '</div>'+
+      '<div id="hm-msg" class="hint" style="margin-top:10px;text-align:center"></div>'+
+      '<div style="text-align:center;margin-top:14px"><span id="hm-out" style="cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline">Log out</span></div>'+
+    '</div>';
+  document.body.appendChild(m);
+  const $=function(id){ return document.getElementById(id); };
+  const say=function(t,bad){ const e=$('hm-msg'); e.style.color=bad?'var(--signal-d)':'var(--steel)'; e.textContent=t||''; };
+  let mob='';
+  $('hm-send').onclick=function(){
+    mob=String($('hm-mob').value||'').replace(/\D/g,'').slice(-10);
+    if(!/^[6-9]\d{9}$/.test(mob)){ say('Enter a correct 10-digit mobile number.', true); return; }
+    const b=$('hm-send'); b.disabled=true; say('Sending the code on WhatsApp…');
+    heroMobFn_({op:'bind_send', mobile:mob}).then(function(r){
+      b.disabled=false;
+      if(!r || !r.ok){ say((r&&r.error)||'Could not send the code.', true); return; }
+      $('hm-s1').style.display='none'; $('hm-s2').style.display='block';
+      $('hm-sent').textContent='Code sent on WhatsApp to '+(r.masked||mob)+'. It works for 10 minutes.';
+      say(''); try{ $('hm-code').focus(); }catch(e){}
+    }).catch(function(e){ b.disabled=false; say(String(e&&e.message)==='not-signed-in'?'Your login has expired — log out and log in again.':'No internet reply. Try again.', true); });
+  };
+  $('hm-verify').onclick=function(){
+    const code=String($('hm-code').value||'').replace(/\D/g,'');
+    if(code.length!==6){ say('Enter the 6-digit code.', true); return; }
+    const b=$('hm-verify'); b.disabled=true; say('Checking…');
+    heroMobFn_({op:'bind_verify', mobile:mob, code:code}).then(function(r){
+      b.disabled=false;
+      if(!r || !r.ok){ say(((r&&r.error)||'Wrong code.')+(r&&r.tries_left!=null?' ('+r.tries_left+' tries left)':''), true); return; }
+      try{ if(USER) localStorage.setItem(heroMobOkKey_(),'1'); }catch(e){}
+      m.remove(); go();
+      /* A fresh login has no USER until go() saves it — remember it now. */
+      try{ if(USER) localStorage.setItem(heroMobOkKey_(),'1'); }catch(e){}
+    }).catch(function(){ b.disabled=false; say('No internet reply. Try again.', true); });
+  };
+  $('hm-back').onclick=function(){ $('hm-s2').style.display='none'; $('hm-s1').style.display='block'; $('hm-code').value=''; say(''); };
+  $('hm-out').onclick=function(){ m.remove(); logout(); };
+  try{ $('hm-mob').focus(); }catch(e){}
+}
 async function sbToken(){
   const t=sbTokens();
   if(t.at && Date.now()<t.exp) return t.at;
@@ -5516,7 +5599,8 @@ function doLogin(){
      through to the old path, so rollback behaviour is preserved. */
   if(SB_ON){
     sbLogin(emp, pass).then(function(u){
-      finishLogin_(u, emp); msg.textContent='';
+      msg.textContent='';
+      heroMobileGate_(function(){ finishLogin_(u, emp); });
     }).catch(function(err){
       if(err && err.code==='bad-creds'){
         msg.style.color='var(--signal-d)';
