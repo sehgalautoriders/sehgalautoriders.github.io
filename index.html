@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R111-2026.09.23.2';
+window.HERO_BUILD = 'R111-2026.09.23.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -27676,7 +27676,7 @@ window.HERO_LANG_EXTRA={"(SA can change later)":["(SA बाद में बद
   /* one file into the app cache; returns a content:// / file:// uri the share sheet can read */
   function toCache(blob,name){
     return b64(blob).then(function(data){
-      return FS.writeFile({path:'share/'+Date.now()+'-'+safeName(name), data:data, directory:'CACHE', recursive:true});
+      return FS.writeFile({path:'share/'+Date.now()+'/'+safeName(name), data:data, directory:'CACHE', recursive:true});   /* own folder: the customer sees the real file name */
     }).then(function(r){ return r.uri; });
   }
 
