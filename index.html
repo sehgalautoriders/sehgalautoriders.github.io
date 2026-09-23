@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R107-2026.09.23.2';
+window.HERO_BUILD = 'R108-2026.09.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5314,10 +5314,10 @@ function heroMobileGate_(next){
     heroMobileShow_(go);
   }).catch(function(){ go(); });
 }
-function heroMobFn_(body){
-  return sbFetch('/functions/v1/hero-otp',{method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body), timeoutMs:30000}).then(function(r){ return r.json(); });
-}
+/* R108 (Ravi, 23-09-2026, 09:55): "Still not operating. Otp issues are
+   creating issues." No advisor got past the WhatsApp code, so the code is
+   gone: the number is typed on the person's own phone after their own
+   password, and is saved as given (hero_set_my_mobile, migration 0090). */
 function heroMobileShow_(go){
   let m=document.getElementById('hero-mob-modal');
   if(m) m.remove();
@@ -5326,50 +5326,31 @@ function heroMobileShow_(go){
   m.innerHTML=
     '<div class="chgpass-box" style="max-width:380px;width:100%">'+
       '<h3>📱 Your mobile number</h3>'+
-      '<div class="hint" style="margin-bottom:12px">Compulsory once for every login. Enter your own WhatsApp number — a 6-digit code will come on WhatsApp.</div>'+
-      '<div id="hm-s1">'+
-        '<div class="fld"><label>Mobile number</label><input id="hm-mob" type="tel" inputmode="numeric" maxlength="14" placeholder="10-digit mobile" autocomplete="tel"></div>'+
-        '<button class="btn" id="hm-send">Send code on WhatsApp</button>'+
-      '</div>'+
-      '<div id="hm-s2" style="display:none">'+
-        '<div class="hint" id="hm-sent" style="margin-bottom:10px"></div>'+
-        '<div class="fld"><label>Code from WhatsApp</label><input id="hm-code" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code"></div>'+
-        '<button class="btn" id="hm-verify">Verify</button>'+
-        '<div style="text-align:center;margin-top:10px"><span id="hm-back" style="cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline">Change number / send again</span></div>'+
-      '</div>'+
+      '<div class="hint" style="margin-bottom:12px">Compulsory once for every login. Enter your own mobile number.</div>'+
+      '<div class="fld"><label>Mobile number</label><input id="hm-mob" type="tel" inputmode="numeric" maxlength="14" placeholder="10-digit mobile" autocomplete="tel"></div>'+
+      '<button class="btn" id="hm-save">Save and continue</button>'+
       '<div id="hm-msg" class="hint" style="margin-top:10px;text-align:center"></div>'+
       '<div style="text-align:center;margin-top:14px"><span id="hm-out" style="cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline">Log out</span></div>'+
     '</div>';
   document.body.appendChild(m);
   const $=function(id){ return document.getElementById(id); };
   const say=function(t,bad){ const e=$('hm-msg'); e.style.color=bad?'var(--signal-d)':'var(--steel)'; e.textContent=t||''; };
-  let mob='';
-  $('hm-send').onclick=function(){
-    mob=String($('hm-mob').value||'').replace(/\D/g,'').slice(-10);
+  const done=function(){ try{ m.remove(); }catch(e){} go(); try{ if(USER) localStorage.setItem(heroMobOkKey_(),'1'); }catch(e){} };
+  $('hm-save').onclick=function(){
+    const mob=String($('hm-mob').value||'').replace(/\D/g,'').slice(-10);
     if(!/^[6-9]\d{9}$/.test(mob)){ say('Enter a correct 10-digit mobile number.', true); return; }
-    const b=$('hm-send'); b.disabled=true; say('Sending the code on WhatsApp…');
-    heroMobFn_({op:'bind_send', mobile:mob}).then(function(r){
+    const b=$('hm-save'); b.disabled=true; say('Saving…');
+    sbRpc('hero_set_my_mobile',{p_mobile:mob}).then(function(r){
       b.disabled=false;
-      if(!r || !r.ok){ say((r&&r.error)||'Could not send the code.', true); return; }
-      $('hm-s1').style.display='none'; $('hm-s2').style.display='block';
-      $('hm-sent').textContent='Code sent on WhatsApp to '+(r.masked||mob)+'. It works for 10 minutes.';
-      say(''); try{ $('hm-code').focus(); }catch(e){}
-    }).catch(function(e){ b.disabled=false; say(String(e&&e.message)==='not-signed-in'?'Your login has expired — log out and log in again.':'No internet reply. Try again.', true); });
-  };
-  $('hm-verify').onclick=function(){
-    const code=String($('hm-code').value||'').replace(/\D/g,'');
-    if(code.length!==6){ say('Enter the 6-digit code.', true); return; }
-    const b=$('hm-verify'); b.disabled=true; say('Checking…');
-    heroMobFn_({op:'bind_verify', mobile:mob, code:code}).then(function(r){
+      if(!r || r.ok===false){ say((r&&r.error)||'Could not save. Try again.', true); return; }
+      done();
+    }).catch(function(e){
       b.disabled=false;
-      if(!r || !r.ok){ say(((r&&r.error)||'Wrong code.')+(r&&r.tries_left!=null?' ('+r.tries_left+' tries left)':''), true); return; }
-      try{ if(USER) localStorage.setItem(heroMobOkKey_(),'1'); }catch(e){}
-      m.remove(); go();
-      /* A fresh login has no USER until go() saves it — remember it now. */
-      try{ if(USER) localStorage.setItem(heroMobOkKey_(),'1'); }catch(e){}
-    }).catch(function(){ b.disabled=false; say('No internet reply. Try again.', true); });
+      /* A save that cannot reach the server never keeps anyone out of work. */
+      if(String(e&&e.message)==='not-signed-in'){ say('Your login has expired — log out and log in again.', true); return; }
+      done();
+    });
   };
-  $('hm-back').onclick=function(){ $('hm-s2').style.display='none'; $('hm-s1').style.display='block'; $('hm-code').value=''; say(''); };
   $('hm-out').onclick=function(){ m.remove(); logout(); };
   try{ $('hm-mob').focus(); }catch(e){}
 }
@@ -26288,9 +26269,7 @@ window.heroDiagUpload=heroDiagUpload;
     if(gm){
       var lab=gm.parentNode.querySelector('label'); if(lab) lab.innerHTML='WhatsApp Mobile No * <span style="font-weight:600;color:var(--steel)">— ask: “is this your WhatsApp?”</span>';
       gm.placeholder='10-digit WhatsApp number';
-      mk(gm,'ge-wa-ok','The customer confirmed this number is on WhatsApp — the estimate code goes there');
-      var geTog=function(){ HERO_WA.gate=!HERO_WA.gate; chip('ge-wa-ok',HERO_WA.gate,geTog); }; chip('ge-wa-ok',false,geTog);
-      gm.addEventListener('input',function(){ if(HERO_WA.gate){ HERO_WA.gate=false; chip('ge-wa-ok',false,document.getElementById('ge-wa-ok').onclick); } });
+      /* R108 (Ravi 23-09): the "This is the WhatsApp no." button is gone — opening the number in WhatsApp on this same phone already shows whether it is on WhatsApp. */
     }
   }catch(e){}
   /* estimate */
@@ -26299,18 +26278,15 @@ window.heroDiagUpload=heroDiagUpload;
     if(em){
       var lab2=em.parentNode.querySelector('label'); if(lab2) lab2.innerHTML='WhatsApp mobile <span style="font-weight:600;color:var(--steel)">— the confirmation code goes here</span>';
       var wrap=document.createElement('div'); wrap.style.cssText='display:flex;gap:6px;margin-top:6px';
-      wrap.innerHTML='<button type="button" id="es-wa-ok" class="btn sm" style="flex:1;border:1.5px solid #065f46;border-radius:9px;font-weight:800;min-height:38px"></button>'
-        +'<button type="button" id="es-wa-edit" class="btn sm ghost" style="border-radius:9px;min-height:38px" title="Type the customer’s WhatsApp number if this one is not it">✎ Change</button>';
+      /* R108: no "This is the WhatsApp no." button — only ✎ Change. */
+      wrap.innerHTML='<button type="button" id="es-wa-edit" class="btn sm ghost" style="border-radius:9px;min-height:38px" title="Type the customer’s WhatsApp number if this one is not it">✎ Change</button>';
       em.parentNode.appendChild(wrap);
-      var esTog=function(){ HERO_WA.est=!HERO_WA.est; chip('es-wa-ok',HERO_WA.est,esTog); }; chip('es-wa-ok',false,esTog);
       document.getElementById('es-wa-edit').onclick=function(){
         em.readOnly=false; em.classList.remove('es-ro'); em.inputMode='numeric'; em.maxLength=10; em.focus(); em.select();
-        HERO_WA.est=false; chip('es-wa-ok',false,document.getElementById('es-wa-ok').onclick);
       };
-      em.addEventListener('input',function(){ if(HERO_WA.est){ HERO_WA.est=false; chip('es-wa-ok',false,document.getElementById('es-wa-ok').onclick); } });
       /* a fresh vehicle pick resets the tick and re-locks the box */
       var _pick=window.esOnGatePick;
-      if(typeof _pick==='function') window.esOnGatePick=function(){ var r=_pick.apply(this,arguments); try{ HERO_WA.est=false; chip('es-wa-ok',false,document.getElementById('es-wa-ok').onclick); em.readOnly=true; em.classList.add('es-ro'); }catch(e){} return r; };
+      if(typeof _pick==='function') window.esOnGatePick=function(){ var r=_pick.apply(this,arguments); try{ em.readOnly=true; em.classList.add('es-ro'); }catch(e){} return r; };
     }
   }catch(e){}
   /* the tick rides on the saved records */
