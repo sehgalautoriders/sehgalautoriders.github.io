@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 85;
-window.HERO_BUILD = 'R104-2026.09.22.1';
+window.HERO_RELEASE = 86;
+window.HERO_BUILD = 'R106-2026.09.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -26770,4 +26770,718 @@ window.heroDiagUpload=heroDiagUpload;
 })();
 </script>
 
+<!-- ============ R106 — REQUISITION SLIP READING (23-09-2026) ============ -->
+<script>
+/* Ravi, 23-09-2026: "Build the requisition slip reading."
+
+   Until today "📷 Req punching" only STORED the slip photo. Now:
+     photo saved (unchanged path: jpost upload_requisition_photo → hero-uploads
+       bucket + hero_holdup_set_photo) — the parts person never waits on the rest
+     → "Reading the slip…" in a small bar at the bottom
+     → read-text edge function, task=requisition (the SAME image, ≤1600 px JPEG)
+     → hero_requisition_parse (migration 0086): part numbers matched to
+       parts_all_india / part_stock / model_part_tree, qty, stock at our outlets
+     → a small table: Part no · Description · Qty · Stock · ✓ / ⚠
+       (part no and qty editable, rows removable, "+ Add a part")
+     → "Save parts list" = hero_requisition_save   ·   "Skip" = nothing saved
+     → the row shows "📋 3 parts" (hero_requisition_index); tapping it opens the
+       saved list (hero_requisition_for). A row whose photo was taken before this
+       build shows "📋 Parts on slip", which offers to read the stored photo.
+   Every failure says what failed, in words; the photo is never lost because of it. */
+(function(){
+  'use strict';
+  if(typeof window==='undefined' || typeof window.sbRpc!=='function' || typeof window.sbFetch!=='function') return;
+
+  var S=function(v){ return v==null?'':String(v); };
+  var esc=function(s){ return S(s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var errMsg=function(e){
+    var m=S(e&&(e.message||e.error)||e);
+    if(m==='not-signed-in') return 'your session expired — sign in again';
+    if(/abort|timed? ?out/i.test(m)) return 'the reading service did not answer in time';
+    if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'no internet connection';
+    return m||'unknown error';
+  };
+
+  var R=window.HERO_R106={index:{}, loadedAt:0, loading:false, busy:{}, st:null};
+
+  /* ------------------------------------------------------------ row helpers */
+  function cols(){
+    return (typeof HU_COLS!=='undefined' && HU_COLS) ? HU_COLS
+      : {jcNo:'Job Card Number', code:'Code', reg:'Vehicle Registration Number', model:'Model'};
+  }
+  function rows(){ return (typeof HU_ROWS_CURRENT!=='undefined' && HU_ROWS_CURRENT) ? HU_ROWS_CURRENT : (window.HU_ROWS_CURRENT||[]); }
+  function rowKey(r){
+    var c=cols();
+    return {jc:S(r[c.jcNo]).trim(), dealer:S(r[c.code]).trim(),
+            reg:S(r[c.reg]).trim().toUpperCase(), model:S(r[c.model]).trim()};
+  }
+  function keyOf(jc, dealer, reg){
+    jc=S(jc).trim().toUpperCase();
+    return jc ? ('JC|'+jc+'|'+S(dealer).trim().toUpperCase())
+              : ('REG|'+S(reg).replace(/[^A-Za-z0-9]/g,'').toUpperCase());
+  }
+  function kKey(k){ return keyOf(k.jc, k.dealer, k.reg); }
+  function lookupIdx(k){
+    var e=R.index[kKey(k)];
+    if(!e && k.reg) e=R.index['REG|'+k.reg.replace(/[^A-Za-z0-9]/g,'')];
+    return e||null;
+  }
+  function photoOf(r){
+    try{ if(typeof huGetPhoto==='function') return S(huGetPhoto(r)); }catch(e){}
+    return S(r['Requisition Photo URL']);
+  }
+
+  /* ------------------------------------------------------ the bottom bar */
+  function note(msg, kind, onTap){
+    var el=document.getElementById('r106-note');
+    if(!el){
+      el=document.createElement('div'); el.id='r106-note';
+      el.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:3200;max-width:92vw;'
+        +'display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:11px;font:700 13px Inter,system-ui,sans-serif;'
+        +'box-shadow:0 8px 24px rgba(0,0,0,.28);cursor:default';
+      document.body.appendChild(el);
+    }
+    var col={busy:['#0f172a','#fff'], ok:['#065f46','#fff'], err:['#991b1b','#fff'], info:['#1e293b','#e2e8f0']}[kind||'info'];
+    el.style.background=col[0]; el.style.color=col[1];
+    el.innerHTML='<span style="flex:1">'+esc(msg)+'</span>'
+      +(onTap?'<span style="text-decoration:underline;white-space:nowrap">Open</span>':'')
+      +'<span data-x="1" style="padding:0 2px 0 6px;opacity:.8;cursor:pointer" title="Close">✕</span>';
+    el.style.cursor=onTap?'pointer':'default';
+    el.onclick=function(ev){
+      var x=ev&&ev.target&&ev.target.getAttribute&&ev.target.getAttribute('data-x');
+      el.style.display='none';
+      if(!x && onTap){ try{ onTap(); }catch(e){} }
+    };
+    el.style.display='flex';
+    clearTimeout(R._noteT);
+    if(kind==='ok' || (kind==='info' && !onTap)) R._noteT=setTimeout(function(){ el.style.display='none'; }, 7000);
+  }
+
+  /* ------------------------------------------- photo → ≤1600 px JPEG blob */
+  function toJpeg(src, maxW){
+    maxW=maxW||1600;
+    var blobP=(src instanceof Blob) ? Promise.resolve(src)
+      : fetch(src).then(function(r){ if(!r.ok) throw new Error('could not load the photo (HTTP '+r.status+')'); return r.blob(); },
+                        function(){ throw new Error('could not download the stored photo — check the connection, or retake it with 📷 Change'); });
+    return blobP.then(function(b){
+      return new Promise(function(resolve, reject){
+        function draw(img, w, h){
+          var k=Math.min(1, maxW/Math.max(w,1), 2400/Math.max(h,1));
+          var c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w*k)); c.height=Math.max(1,Math.round(h*k));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          c.toBlob(function(out){ out ? resolve(out) : reject(new Error('could not prepare the photo')); }, 'image/jpeg', 0.88);
+        }
+        function viaImg(){
+          var u=URL.createObjectURL(b), i=new Image();
+          i.onload=function(){ draw(i, i.naturalWidth, i.naturalHeight); setTimeout(function(){ URL.revokeObjectURL(u); }, 1000); };
+          i.onerror=function(){ reject(new Error('the photo could not be opened')); };
+          i.src=u;
+        }
+        if(typeof createImageBitmap==='function'){
+          createImageBitmap(b, {imageOrientation:'from-image'}).then(function(bmp){ draw(bmp, bmp.width, bmp.height); }, viaImg);
+        } else viaImg();
+      });
+    });
+  }
+
+  /* ------------------------------------------- read-text, task=requisition */
+  function readText(blob){
+    var form=new FormData();
+    form.append('task','requisition');
+    form.append('image', blob, 'slip.jpg');
+    return window.sbFetch('/functions/v1/read-text',{method:'POST', body:form, timeoutMs:60000}).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        if(!r.ok) throw new Error('reading service answered '+r.status+(j&&j.error?(' — '+j.error):''));
+        var t=S(j&&(j.text||j.raw)).trim();
+        if(!t || t.toUpperCase()==='UNREADABLE')
+          throw new Error(S(j&&(j.detail||j.error)) || 'no text could be read from this photo — retake it flat, in good light');
+        return {text:t, provider:S(j.provider), validated:!!j.validated, tried:j.tried||[]};
+      });
+    });
+  }
+
+  function parseText(t){
+    return window.sbRpc('hero_requisition_parse',{p_text:t}).then(function(res){
+      if(!res || res.ok===false) throw new Error(S(res&&res.error)||'the parts matcher refused the text');
+      return res;
+    });
+  }
+
+  /* photo (data URL, blob or stored URL) → text → lines → the review table */
+  function startReading(k, src, photoUrl){
+    var key=kKey(k), label=k.reg||k.jc||'this vehicle';
+    if(R.busy[key]) return;
+    R.busy[key]=1; fillSlots();
+    note('📋 Reading the slip for '+label+'…','busy');
+    var ocr=null;
+    toJpeg(src,1600).then(readText).then(function(o){ ocr=o; return parseText(o.text); }).then(function(res){
+      delete R.busy[key]; fillSlots();
+      var n=(res.lines||[]).length;
+      var st={k:k, photoUrl:S(photoUrl), ocrText:ocr.text, provider:ocr.provider,
+              stockAsOf:S(res.stockAsOf), unmatched:res.unmatched||[], lines:(res.lines||[]).map(normLine)};
+      var m=heroModal();
+      var busyElsewhere=m.modal && m.modal.style.display==='block' && !(m.body && m.body.querySelector('[data-r106]'));
+      if(busyElsewhere){
+        note('📋 '+n+' part line'+(n===1?'':'s')+' read for '+label+' — tap to check and save','ok', function(){ openReview(st); });
+      } else {
+        note('📋 '+n+' part line'+(n===1?'':'s')+' read for '+label,'ok');
+        openReview(st);
+      }
+    }).catch(function(e){
+      delete R.busy[key]; fillSlots();
+      note('⚠ Could not read the slip for '+label+': '+errMsg(e)+'. The photo IS saved. Tap to type the parts instead.','err', function(){
+        openReview({k:k, photoUrl:S(photoUrl), ocrText:ocr?ocr.text:'', provider:ocr?ocr.provider:'', stockAsOf:'', unmatched:[], lines:[], failed:errMsg(e)});
+      });
+    });
+  }
+
+  function normLine(l){
+    return {partNo:S(l.partNo), desc:S(l.desc), qty:Math.max(1, parseInt(l.qty,10)||1), raw:S(l.raw),
+            matched:!!l.matched, method:S(l.method), confidence:Number(l.confidence)||0,
+            match:l.match||null, suggest:l.suggest||[], note:S(l.note), qtyFound:!!l.qtyFound};
+  }
+
+  /* --------------------------------------------------------- review table */
+  function stockCell(m){
+    if(!m) return '<span style="color:#94a3b8">—</span>';
+    var q=Number(m.stock_qty_our_outlets)||0, by=m.stock_by_outlet||{}, t=[];
+    for(var d in by){ if(Object.prototype.hasOwnProperty.call(by,d)) t.push(d+': '+by[d]); }
+    var h='<span title="'+esc(t.join(' · ')||'no stock at our outlets')+'" style="font-weight:800;color:'+(q>0?'#065f46':'#b91c1c')+'">'+q+'</span>';
+    if(m.superseded_by) h+='<div style="font-size:10.5px;color:#b45309">new no. '+esc(m.superseded_by)+(m.superseded_stock!=null?(' · '+esc(m.superseded_stock)):'')+'</div>';
+    return h;
+  }
+  function stateCell(l, i){
+    if(l.checking) return '<span style="color:#64748b">checking…</span>';
+    if(l.matched && l.confidence>=0.85) return '<span style="color:#065f46;font-weight:800" title="'+esc(l.method)+'">✓</span>';
+    if(l.matched) return '<span style="color:#b45309;font-weight:800" title="read with OCR corrections ('+esc(l.method)+') — check the number">✓?</span>';
+    var h='<span style="color:#b91c1c;font-weight:800">⚠ not found</span>';
+    (l.suggest||[]).slice(0,2).forEach(function(s){
+      h+='<div><button type="button" class="btn ghost sm" style="font-size:10.5px;padding:1px 5px;margin-top:2px" onclick="r106Use('+i+',\''+esc(S(s.part_no)).replace(/'/g,'')+'\')" title="'+esc(s.description)+'">use '+esc(s.part_no)+'</button></div>';
+    });
+    return h;
+  }
+  function draw(){
+    var st=R.st, m=heroModal(); if(!st || !m.modal) return;
+    var k=st.k, n=st.lines.length;
+    var ok=st.lines.filter(function(l){ return l.matched; }).length;
+    m.title.textContent='Parts on slip — '+(k.reg||k.jc||'');
+    var head='<div data-r106="1" class="hint" style="margin-bottom:6px">'
+      +(st.failed?('<b style="color:#b91c1c">The slip could not be read ('+esc(st.failed)+').</b> Type the parts below, or Skip.')
+        :(n?(ok+' of '+n+' line'+(n===1?'':'s')+' matched to our parts list'+(st.provider?(' · read by '+esc(st.provider)):'')+'. Check each number and quantity, then save.')
+           :'No part numbers were found on the slip. Add them below, or Skip.'))
+      +(st.stockAsOf?('<br><span style="font-size:11px">Stock at our outlets as of '+esc(st.stockAsOf)+'</span>'):'')
+      +(st.lines.some(function(l){ return l.matched && l.confidence<0.85; })?'<br><span style="font-size:11px;color:#b45309">✓? = number corrected from a blurred photo — please check it</span>':'')
+      +'</div>';
+    /* Four narrow columns so the whole row fits a 360 px phone without sideways
+       scrolling: the description sits under the part number it belongs to. */
+    var tbl='<div style="overflow:auto;max-height:52vh"><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto">'
+      +'<thead><tr style="text-align:left;border-bottom:1px solid var(--line,#e2e8f0);font-size:11.5px"><th style="padding:4px">Part no · Description</th><th style="padding:4px">Qty</th><th style="padding:4px;text-align:center" title="Stock at our outlets">Stock</th><th style="padding:4px"></th></tr></thead><tbody>'
+      +st.lines.map(function(l,i){
+        var md=l.match&&l.match.description?S(l.match.description):'';
+        return '<tr style="border-bottom:1px solid #eef2f7;vertical-align:top">'
+          +'<td style="padding:4px 4px 6px"><input value="'+esc(l.partNo)+'" onchange="r106Pn('+i+',this.value)" autocapitalize="characters" spellcheck="false" placeholder="Part number" style="box-sizing:border-box;width:100%;min-width:96px;max-width:170px;font-family:Roboto Mono,monospace;font-size:12.5px;padding:4px;border:1px solid #cbd5e1;border-radius:6px">'
+            +'<div style="font-size:11.5px;margin-top:2px">'+esc(l.desc||md)+'</div>'
+            +(md&&l.desc&&md.toUpperCase()!==l.desc.toUpperCase()?('<div style="font-size:10.5px;color:#64748b">'+esc(md)+'</div>'):'')
+            +(l.note?('<div style="font-size:10.5px;color:#b45309">'+esc(l.note)+'</div>'):'')+'</td>'
+          +'<td style="padding:4px"><input type="number" min="1" max="999" inputmode="numeric" value="'+esc(l.qty)+'" onchange="r106Qty('+i+',this.value)" style="box-sizing:border-box;width:46px;padding:4px;border:1px solid #cbd5e1;border-radius:6px"></td>'
+          +'<td style="padding:4px 2px;text-align:center;max-width:64px;word-break:break-all">'+stockCell(l.match)+'</td>'
+          +'<td style="padding:4px 2px;white-space:nowrap">'+stateCell(l,i)
+            +'<button type="button" onclick="r106Del('+i+')" title="Remove this line" style="border:none;background:none;color:#b91c1c;font-size:15px;cursor:pointer;padding:0 0 0 6px">✕</button></td>'
+          +'</tr>';
+      }).join('')
+      +'</tbody></table></div>'
+      +'<button type="button" class="btn ghost sm" style="margin-top:6px" onclick="r106Add()">+ Add a part</button>';
+    var other=(st.unmatched&&st.unmatched.length)
+      ?('<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Other text on the slip ('+st.unmatched.length+' line'+(st.unmatched.length===1?'':'s')+')</summary>'
+        +'<div style="font-family:Roboto Mono,monospace;font-size:11px;white-space:pre-wrap;color:#475569;max-height:20vh;overflow:auto">'+st.unmatched.map(esc).join('\n')+'</div></details>'):'';
+    var foot='<div id="r106-msg" class="hint" style="min-height:16px;margin-top:8px"></div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">'
+      +(st.photoUrl&&/^https?:/.test(st.photoUrl)?'<a class="btn ghost sm" href="'+esc(st.photoUrl)+'" target="_blank" rel="noopener" style="margin-right:auto">📷 Photo</a>':'')
+      +'<button type="button" class="btn ghost" onclick="r106Skip()">Skip</button>'
+      +'<button type="button" class="btn" id="r106-save" onclick="r106Save()" style="background:#065f46">Save parts list</button></div>';
+    m.body.innerHTML=head+tbl+other+foot;
+    m.modal.style.display='block';
+  }
+  function openReview(st){ R.st=st; draw(); }
+
+  window.r106Qty=function(i,v){ var l=R.st&&R.st.lines[i]; if(!l) return; var n=parseInt(v,10); l.qty=(n>0&&n<1000)?n:1; };
+  window.r106Del=function(i){ if(!R.st) return; R.st.lines.splice(i,1); draw(); };
+  window.r106Add=function(){ if(!R.st) return; R.st.lines.push(normLine({partNo:'',desc:'',qty:1,matched:false,method:'manual'})); draw();
+    try{ var ins=heroModal().body.querySelectorAll('input[autocapitalize]'); ins[ins.length-1].focus(); }catch(e){} };
+  window.r106Use=function(i,pn){ window.r106Pn(i,pn); };
+  /* A typed or corrected number is checked against the masters at once, with the
+     same parser — so ✓ / ⚠ and the stock are the server's answer, not the phone's. */
+  window.r106Pn=function(i,v){
+    var st=R.st, l=st&&st.lines[i]; if(!l) return;
+    v=S(v).toUpperCase().replace(/\s+/g,'').trim();
+    l.partNo=v; l.matched=false; l.match=null; l.suggest=[]; l.method='manual'; l.confidence=0;
+    if(!v){ draw(); return; }
+    l.checking=true; l.seq=(l.seq||0)+1; var seq=l.seq; draw();
+    parseText(v).then(function(res){
+      if(l.seq!==seq) return;               /* a newer edit of this line is being checked */
+      var x=(res.lines||[])[0];
+      l.checking=false;
+      if(x){ var n=normLine(x); l.partNo=n.partNo||v; l.matched=n.matched; l.match=n.match; l.method=n.method;
+             l.confidence=n.confidence; l.suggest=n.suggest; if(!l.desc && n.match) l.desc=S(n.match.description); }
+      if(R.st===st) draw();
+    }).catch(function(e){ if(l.seq!==seq) return; l.checking=false; if(R.st===st){ draw(); var m=document.getElementById('r106-msg'); if(m){ m.style.color='#b91c1c'; m.textContent='Could not check '+v+': '+errMsg(e); } } });
+  };
+  window.r106Skip=function(){
+    var m=heroModal(); if(m.modal) m.modal.style.display='none';
+    R.st=null;
+    note('Parts list skipped — the photo is saved. Tap 📋 on the row to read it later.','info');
+  };
+  window.r106Save=function(){
+    var st=R.st; if(!st) return;
+    var msg=document.getElementById('r106-msg'), btn=document.getElementById('r106-save');
+    var lines=st.lines.filter(function(l){ return S(l.partNo).trim() || S(l.desc).trim(); })
+      .map(function(l){ return {partNo:S(l.partNo).trim(), desc:S(l.desc).trim(), qty:l.qty, raw:l.raw}; });
+    if(!lines.length){ if(msg){ msg.style.color='#b91c1c'; msg.textContent='The list is empty — add a part, or press Skip.'; } return; }
+    if(st.lines.some(function(l){ return l.checking; })){ if(msg){ msg.style.color='#b45309'; msg.textContent='Still checking a part number — one moment.'; } return; }
+    if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+    if(msg){ msg.style.color='#64748b'; msg.textContent=''; }
+    window.sbRpc('hero_requisition_save',{p_jc:st.k.jc, p_dealer:st.k.dealer, p_reg:st.k.reg,
+        p_photo_url:st.photoUrl, p_ocr_text:st.ocrText, p_provider:st.provider, p_lines:lines}).then(function(res){
+      if(!res || res.ok===false) throw new Error(S(res&&res.error)||'save refused');
+      R.index[kKey(st.k)]={jcNo:st.k.jc, dealer:st.k.dealer, reg:st.k.reg, count:res.count, summary:res.summary,
+                           confirmedAt:res.confirmedAt, confirmedBy:res.confirmedBy};
+      rows().forEach(function(r){ var k=rowKey(r); if(kKey(k)===kKey(st.k)) r['Requisition Parts']=res.summary; });
+      var m=heroModal(); if(m.modal && R.st===st) m.modal.style.display='none';
+      R.st=null; fillSlots();
+      note('✓ Parts list saved — '+S(res.summary),'ok');
+    }).catch(function(e){
+      if(btn){ btn.disabled=false; btn.textContent='Save parts list'; }
+      if(msg){ msg.style.color='#b91c1c'; msg.textContent='Not saved: '+errMsg(e)+'. Your list is still here — try Save again.'; }
+    });
+  };
+
+  /* ------------------------------------------- the saved list (📋 on a row) */
+  window.r106Open=function(i){
+    var r=rows()[i]; if(!r) return;
+    var k=rowKey(r), m=heroModal(); if(!m.modal) return;
+    m.title.textContent='Parts on slip — '+(k.reg||k.jc);
+    m.body.innerHTML='<div data-r106="1" class="hint">Loading the saved parts list…</div>';
+    m.modal.style.display='block';
+    window.sbRpc('hero_requisition_for',{p_jc:k.jc, p_dealer:k.dealer, p_reg:k.reg}).then(function(res){
+      if(!res || res.ok===false) throw new Error(S(res&&res.error)||'refused');
+      var photo=photoOf(r), hasPhoto=/^(https?:|data:image)/.test(photo);
+      if(!res.found){
+        m.body.innerHTML='<div data-r106="1" class="hint">No parts list has been saved for this vehicle yet.</div>'
+          +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+          +(hasPhoto?'<button type="button" class="btn" onclick="r106ReadExisting('+i+')">📋 Read the slip photo</button>':'<span class="hint">No slip photo yet — use 📷 Req punching.</span>')
+          +'<button type="button" class="btn ghost" onclick="r106Type('+i+')">✎ Type the parts</button></div>';
+        return;
+      }
+      var q=res.requisition||{};
+      R.index[kKey(k)]={jcNo:q.jcNo, dealer:q.dealer, reg:q.reg, count:q.count, summary:q.summary, confirmedAt:q.confirmedAt, confirmedBy:q.confirmedBy};
+      fillSlots();
+      R._saved={i:i, q:q};
+      m.body.innerHTML='<div data-r106="1" class="hint" style="margin-bottom:6px">Saved by '+esc(q.confirmedBy||'—')+' · '+esc(q.confirmedAt)
+          +(q.versions>1?(' · version '+esc(q.versions)):'')+'</div>'
+        +'<div style="overflow:auto;max-height:55vh"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+        +'<thead><tr style="text-align:left;border-bottom:1px solid var(--line,#e2e8f0)"><th style="padding:4px">Part no</th><th>Description</th><th>Qty</th><th>Stock*</th><th></th></tr></thead><tbody>'
+        +(q.lines||[]).map(function(l){
+          return '<tr style="border-bottom:1px solid #eef2f7"><td style="padding:4px;font-family:Roboto Mono,monospace">'+esc(l.partNo)+'</td>'
+            +'<td style="padding:4px">'+esc(l.desc||(l.match&&l.match.description)||'')+'</td>'
+            +'<td style="padding:4px;font-weight:800">'+esc(l.qty)+'</td>'
+            +'<td style="padding:4px;text-align:center">'+stockCell(l.match)+'</td>'
+            +'<td style="padding:4px">'+(l.matched?'<span style="color:#065f46;font-weight:800">✓</span>':'<span style="color:#b91c1c;font-weight:800" title="not in our parts list">⚠</span>')+'</td></tr>';
+        }).join('')+'</tbody></table></div>'
+        +'<div class="hint" style="font-size:11px;margin-top:4px">*stock when the list was saved</div>'
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">'
+        +(/^https?:/.test(S(q.photoUrl))?'<a class="btn ghost sm" href="'+esc(q.photoUrl)+'" target="_blank" rel="noopener" style="margin-right:auto">📷 Photo</a>':'')
+        +'<button type="button" class="btn ghost" onclick="r106EditSaved()">✎ Edit</button></div>';
+    }).catch(function(e){
+      m.body.innerHTML='<div data-r106="1" class="hint" style="color:#b91c1c">Could not load the parts list: '+esc(errMsg(e))+'</div>';
+    });
+  };
+  window.r106EditSaved=function(){
+    var sv=R._saved; if(!sv) return; var r=rows()[sv.i]; if(!r) return;
+    openReview({k:rowKey(r), photoUrl:S(sv.q.photoUrl), ocrText:S(sv.q.ocrText), provider:S(sv.q.provider), stockAsOf:'',
+                unmatched:[], lines:(sv.q.lines||[]).map(normLine)});
+  };
+  window.r106Type=function(i){
+    var r=rows()[i]; if(!r) return;
+    var ph=photoOf(r);
+    openReview({k:rowKey(r), photoUrl:/^https?:/.test(ph)?ph:'', ocrText:'', provider:'manual', stockAsOf:'', unmatched:[],
+                lines:[normLine({partNo:'',desc:'',qty:1,matched:false,method:'manual'})]});
+  };
+  /* A photo taken before this build (or a read that failed): read the stored one. */
+  window.r106ReadExisting=function(i){
+    var r=rows()[i]; if(!r) return;
+    var ph=photoOf(r), k=rowKey(r);
+    if(!/^(https?:|data:image)/.test(ph)){ note('No slip photo on this vehicle yet — use 📷 Req punching first.','info'); return; }
+    if(/drive\.google\.com/.test(ph)){ note('This slip photo is on the old Google Drive and cannot be read — take it again with 📷 Change.','err'); return; }
+    var m=heroModal(); if(m.modal && m.body && m.body.querySelector('[data-r106]')) m.modal.style.display='none';
+    startReading(k, ph, /^https?:/.test(ph)?ph:'');
+  };
+
+  /* ------------------------------------- the 📋 line under the photo cell */
+  function loadIndex(force){
+    if(R.loading) return;
+    if(!force && R.loadedAt && (Date.now()-R.loadedAt)<5*60*1000) return;
+    R.loading=true;
+    window.sbRpc('hero_requisition_index',{p_days:60}).then(function(res){
+      R.loading=false; R.loadedAt=Date.now();
+      if(!res || res.ok===false) return;
+      var idx={};
+      (res.rows||[]).forEach(function(x){
+        idx[keyOf(x.jcNo, x.dealer, x.reg)]=x;
+        if(x.reg){ var rk='REG|'+S(x.reg).replace(/[^A-Za-z0-9]/g,'').toUpperCase(); if(!idx[rk]) idx[rk]=x; }
+      });
+      R.index=idx; fillSlots();
+    }).catch(function(e){
+      /* Background prefetch only: the row keeps its "📋" button, which fetches on tap
+         and reports any failure then. Logged, and retried on the next render. */
+      R.loading=false; R.loadedAt=Date.now()-4*60*1000;   /* retry in about a minute, not on every render */
+      try{ console.warn('[R106] requisition index', e); }catch(_){}
+    });
+  }
+  function slotHtml(r, i){
+    var k=rowKey(r), key=kKey(k), e=lookupIdx(k);
+    if(R.busy[key]) return '<span style="font-size:10px;color:#64748b">📋 reading…</span>';
+    if(e) return '<button type="button" class="hu-req-photo-btn has-photo" onclick="event.stopPropagation();r106Open('+i+')" title="'+esc(e.summary)+'" style="font-size:10px;padding:2px 6px;margin-top:2px">📋 '+esc(e.count)+' part'+(Number(e.count)===1?'':'s')+'</button>';
+    if(/^(https?:|data:image)/.test(photoOf(r)))
+      return '<button type="button" class="hu-req-photo-btn" onclick="event.stopPropagation();r106Open('+i+')" title="Parts on slip — read the photo or type the parts" style="font-size:10px;padding:2px 6px;margin-top:2px">📋 Parts on slip</button>';
+    return '';
+  }
+  function fillSlots(){
+    try{
+      var list=document.querySelectorAll('[data-r106i]'), rs=rows();
+      for(var n=0;n<list.length;n++){
+        var i=parseInt(list[n].getAttribute('data-r106i'),10), r=rs[i];
+        if(r) list[n].innerHTML=slotHtml(r,i);
+      }
+    }catch(e){}
+  }
+  R.fill=fillSlots; R.load=loadIndex;
+
+  var origCell=window.huReqPhotoCell;
+  if(typeof origCell==='function'){
+    window.huReqPhotoCell=function(r, i){
+      var h=origCell.apply(this, arguments);
+      try{
+        loadIndex(false);
+        h+='<div data-r106i="'+i+'">'+slotHtml(r,i)+'</div>';
+      }catch(e){}
+      return h;
+    };
+  }
+
+  /* The photo viewer gets the same button, under the picture. */
+  var origView=window.huViewPhoto;
+  if(typeof origView==='function'){
+    window.huViewPhoto=function(i){
+      var out=origView.apply(this, arguments);
+      try{
+        var b=document.getElementById('preview-body');
+        if(b && rows()[i]) b.insertAdjacentHTML('beforeend','<div style="text-align:center;margin-top:10px"><button class="btn sm" style="background:#065f46" onclick="r106Open('+i+')">📋 Parts on slip</button></div>');
+      }catch(e){}
+      return out;
+    };
+  }
+
+  /* --------------------------------------------------- the photo save hook
+     Same two steps huSetPhoto always did (this phone's copy, then the upload),
+     but the upload's answer is now listened to: the reading starts only AFTER
+     the photo is safely saved, and a failed upload is said out loud instead of
+     being swallowed by .catch(()=>{}). */
+  var origSet=window.huSetPhoto;
+  if(typeof origSet==='function'){
+    window.huSetPhoto=function(r, dataUrl){
+      try{ if(typeof huPhotoKey==='function') localStorage.setItem(huPhotoKey(r), dataUrl); }catch(e){}
+      var k=rowKey(r), p;
+      try{
+        p=window.jpost({type:'upload_requisition_photo', jcNo:k.jc, dealer:k.dealer, reg:k.reg, photoData:dataUrl});
+      }catch(e){ p=Promise.reject(e); }
+      note('📷 Saving the slip photo…','busy');
+      Promise.resolve(p).then(function(res){
+        var url=S(res&&(res.url||res.photoUrl));
+        if(/^https?:/.test(url)) r['Requisition Photo URL']=url;
+        startReading(k, dataUrl, url);
+      }, function(e){
+        note('⚠ The slip photo was NOT saved to the server ('+errMsg(e)+'). It is only on this phone — try 📷 Change again when the connection is back.','err');
+      });
+    };
+  }
+})();
+</script>
+
+<!-- ============ R107 — GOOGLE ENGINES: MONEY LEFT, USD 10 STOP, MORE ACCOUNTS (23-09-2026) ============ -->
+<script>
+/* ==========================================================================
+   R107 (Ravi, 23-09-2026): "Can you get the money left. When it comes down to
+   10 dollars stop using it ... otherwise it will burn my money like anything.
+   + give options to update more accounts and use those instead, we have been
+   doing that in manuals scanning already."
+
+   WHAT THIS BLOCK ADDS to the existing Google Engines card (CEO only — the
+   card's own gate in engBoot is unchanged):
+     · "Money left" table from hero_engine_balance() (migration 0087): per
+       account the estimated credit left in ₹ and $, the stop line (USD 10 by
+       default), expiry, state, and Use / Pause / Resume / Update credit.
+     · The old "Credit left" column is fed the same estimate, so the screen
+       never shows two different numbers for one account.
+     · "Add a Google account" — NON-SECRET fields only (hero_engine_upsert).
+
+   HOW THE MONEY LEFT IS KNOWN. Google has no API for remaining promotional
+   credit. The figure is Ravi's last console reading, minus every paid call this
+   app has metered since (x1.15 safety factor), minus a daily allowance for
+   spend on a shared account that the app cannot see. "Update credit" is where
+   a fresh console figure is typed; it resets the estimate.
+
+   THE STOP. Done on the server, not here: when an account's estimate falls
+   under its stop line the database pauses it and moves reading to the next
+   ready account by order; if none is ready, OCR returns no text and the person
+   types the value. Nothing on this screen can make a phone spend money.
+
+   NO KEY IS EVER TYPED HERE. A new account's credential goes into Supabase
+   secrets (pasted by Ravi, or set by Claude from gcloud) under its own suffix.
+   ES5 only; self-contained; safe to splice after the engBoot definition.
+   ========================================================================== */
+(function(){
+  'use strict';
+  if(typeof window==='undefined' || typeof window.engBoot!=='function' || typeof window.sbRpc!=='function') return;
+
+  var ESC=function(v){ return (typeof raviEsc==='function') ? raviEsc(String(v==null?'':v))
+    : String(v==null?'':v).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var BY=function(){ try{ return (window.USER && (USER.personName||USER.empno)) || ''; }catch(e){ return ''; } };
+  var BAL=null;
+
+  function inr(n){
+    if(n===null || n===undefined || n==='') return '<span style="color:#9ca3af">not known</span>';
+    return '₹'+Math.round(Number(n)).toLocaleString('en-IN');
+  }
+  function usd(n){
+    if(n===null || n===undefined || n==='') return '';
+    return '$'+Number(n).toFixed(2);
+  }
+  function stateColour(s){
+    s=String(s||'');
+    if(s.indexOf('in use')===0) return '#065f46';
+    if(s.indexOf('ready')===0) return '#1d4ed8';
+    if(s.indexOf('auto-paused')===0 || s==='low' || s==='expired' || s==='stopped') return '#991b1b';
+    return '#92400e';
+  }
+
+  function host(){
+    var el=document.getElementById('eng-r107');
+    if(el) return el;
+    var card=document.getElementById('ge-engines-card'); if(!card) return null;
+    var body=card.querySelector('.card-b') || card;
+    el=document.createElement('div');
+    el.id='eng-r107';
+    el.style.marginTop='14px';
+    body.appendChild(el);
+    return el;
+  }
+
+  function say(html){ var m=document.getElementById('eng-r107-msg'); if(m) m.innerHTML=html; }
+
+  function render(){
+    var el=host(); if(!el || !BAL) return;
+    var rows=BAL.accounts||[];
+    var banner = BAL.held
+      ? '<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:8px 10px;border-radius:8px;font-weight:700">'
+        +'Paid OCR is HELD — no Google account can spend. '+ESC(BAL.held_note||'')+'</div>'
+      : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#065f46;padding:8px 10px;border-radius:8px">'
+        +'Reading now with <b>'+ESC(BAL.reading_now||'')+'</b>. An account stops by itself when its estimate falls under its stop line, and the next ready account takes over.</div>';
+    var h=''
+      +'<div style="font-weight:800;font-size:14px;margin-bottom:6px">Money left on each Google account</div>'
+      +banner
+      +'<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr style="text-align:left;border-bottom:2px solid var(--line,#ddd)">'
+      +'<th style="padding:6px 8px">#</th><th style="padding:6px 8px">Account</th>'
+      +'<th style="padding:6px 8px;text-align:right">Est. left</th>'
+      +'<th style="padding:6px 8px;text-align:right">Stops at</th>'
+      +'<th style="padding:6px 8px">Expires</th><th style="padding:6px 8px">State</th><th style="padding:6px 8px"></th>'
+      +'</tr></thead><tbody>';
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i];
+      var paused=(r.control_state==='paused' || r.control_state==='stopped');
+      var exp = r.expires
+        ? ESC(r.expires)+'<div style="font-size:10.5px;color:'+((r.days_to_expiry!=null && r.days_to_expiry<=7)?'#991b1b':'#6b7280')+'">'
+          +(r.days_to_expiry!=null ? (r.days_to_expiry<0?'expired':('in '+r.days_to_expiry+'d')) : '')+'</div>'
+        : '<span style="color:#9ca3af">—</span>';
+      var seen = r.observed_at
+        ? '<div style="font-size:10.5px;color:#6b7280">console read '+ESC(String(r.observed_at).slice(0,10))
+          +' · metered since '+inr(r.metered_since)
+          +(Number(r.external_burn_since)>0 ? ' · other use '+inr(r.external_burn_since) : '')+'</div>'
+        : '<div style="font-size:10.5px;color:#92400e">no console reading yet — press Update credit</div>';
+      h+='<tr style="border-bottom:1px solid #eee;'+(r.is_active?'background:#f0fdf4':'')+'">'
+        +'<td style="padding:6px 8px;color:#6b7280">'+ESC(r.sort_order)+'</td>'
+        +'<td style="padding:6px 8px"><b>'+ESC(r.email||r.id)+'</b>'
+          +'<div style="font-size:10.5px;color:#6b7280">'+ESC(r.id)+' · '+ESC(r.project||'')+'</div>'+seen+'</td>'
+        +'<td style="padding:6px 8px;text-align:right;white-space:nowrap"><b>'+inr(r.estimated_left)+'</b>'
+          +'<div style="font-size:10.5px;color:#6b7280">'+usd(r.estimated_left_usd)+'</div></td>'
+        +'<td style="padding:6px 8px;text-align:right;white-space:nowrap">'+inr(r.stop_below)
+          +'<div style="font-size:10.5px;color:#6b7280">'+usd(r.stop_below_usd)+'</div></td>'
+        +'<td style="padding:6px 8px;white-space:nowrap">'+exp+'</td>'
+        +'<td style="padding:6px 8px"><span style="font-weight:700;color:'+stateColour(r.state)+'" title="'+ESC(r.control_note||'')+'">'+ESC(r.state)+'</span>'
+          +(r.control_note?'<div style="font-size:10.5px;color:#6b7280;max-width:260px">'+ESC(r.control_note)+'</div>':'')+'</td>'
+        +'<td style="padding:6px 8px;white-space:nowrap">'
+          +(r.is_active?'':'<button class="btn sm" onclick="engR107Use(\''+ESC(r.id)+'\')">Use</button> ')
+          +(paused
+            ? '<button class="btn ghost sm" onclick="engR107Ctl(\''+ESC(r.id)+'\',\'resume\')">Resume</button> '
+            : '<button class="btn ghost sm" onclick="engR107Ctl(\''+ESC(r.id)+'\',\'pause\')">Pause</button> ')
+          +'<button class="btn ghost sm" onclick="engR107Credit(\''+ESC(r.id)+'\')">Update credit</button>'
+        +'</td></tr>'
+        +'<tr id="eng-r107-cr-'+ESC(r.id)+'" style="display:none"><td></td><td colspan="6" style="padding:6px 8px;background:#f9fafb">'
+          +'From the Google console (Billing → Credits) for <b>'+ESC(r.email||r.id)+'</b>: '
+          +'total granted ₹ <input id="eng-r107-g-'+ESC(r.id)+'" type="number" step="0.01" style="width:110px" value="'+ESC(r.granted==null?'':r.granted)+'"> '
+          +'used ₹ <input id="eng-r107-u-'+ESC(r.id)+'" type="number" step="0.01" style="width:110px" placeholder="used so far"> '
+          +'expires <input id="eng-r107-x-'+ESC(r.id)+'" type="date" value="'+ESC(r.expires||'')+'"> '
+          +'<button class="btn sm" onclick="engR107SaveCredit(\''+ESC(r.id)+'\')">Save</button>'
+          +'<div style="font-size:10.5px;color:#6b7280;margin-top:3px">If the console shows only "remaining", type granted and used = granted − remaining. The estimate restarts from this reading.</div>'
+        +'</td></tr>';
+    }
+    h+='</tbody></table></div>'
+      +'<div style="font-size:10.5px;color:#6b7280;margin-top:4px">Rate ₹'+ESC(BAL.usd_inr)+' per $ · metered spend ×'+ESC(BAL.meter_factor)
+      +' · <a href="javascript:void(0)" onclick="engR107Rate()">change rate</a> · '+ESC(BAL.how||'')+'</div>'
+      +'<div id="eng-r107-msg" class="hint" style="margin-top:6px"></div>'
+      +addForm();
+    el.innerHTML=h;
+  }
+
+  function addForm(){
+    var f=function(id,label,ph,w){ return '<label style="display:inline-block;margin:3px 10px 3px 0;font-size:12px">'+label
+      +'<br><input id="eng-r107-a-'+id+'" placeholder="'+ESC(ph||'')+'" style="width:'+(w||180)+'px"></label>'; };
+    return '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">+ Add a Google account</summary>'
+      +'<div style="padding:8px 0">'
+      +'<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 10px;border-radius:8px;font-size:12px;margin-bottom:8px">'
+      +'<b>No password, key or credential is typed here — ever.</b> This form saves only names and ids. '
+      +'The account\'s credential is put into <b>Supabase → Edge Functions → Secrets</b> by Ravi sir (paste), '
+      +'or set by Claude from gcloud, under the account\'s own name — for account-3: '
+      +'<code>DOCAI_OAUTH__account_3</code> or <code>DOCAI_SA_JSON__account_3</code> (and optionally '
+      +'<code>GEMINI_API_KEY__account_3</code>, <code>GOOGLE_VISION_API_KEY__account_3</code>). '
+      +'A new account starts <b>paused</b>: add its secret, press Test, type its credit, then Resume. '
+      +'Accounts are used in order (#); the next one takes over automatically when the one in use runs low.</div>'
+      +f('id','Id','account-3',110)+f('email','Google email','name@gmail.com',200)+f('label','Label','e.g. Sehgal 3',160)
+      +f('project','Project id','my-project-123',180)+f('pnum','Project number','123456789012',130)
+      +f('proc','Document AI processor','projects/…/locations/us/processors/…',300)
+      +f('order','Order (#)','30',60)+f('stop','Stop at $','10',60)
+      +'<label style="display:inline-block;margin:3px 10px 3px 0;font-size:12px">Gemini route<br>'
+      +'<select id="eng-r107-a-route"><option value="vertex">Vertex (bills the project credit)</option><option value="aistudio">AI Studio key</option></select></label>'
+      +'<div><button class="btn sm" onclick="engR107Add()">Save account (paused)</button></div>'
+      +'</div></details>';
+  }
+
+  function refresh(){
+    return sbRpc('hero_engine_balance',{}).then(function(res){
+      BAL=res||null;
+      /* One number per account on the whole card: feed the old column too. */
+      try{
+        if(BAL && typeof ENG_ROWS!=='undefined' && ENG_ROWS && ENG_ROWS.length){
+          var by={}; (BAL.accounts||[]).forEach(function(a){ by[a.id]=a; });
+          ENG_ROWS.forEach(function(r){ if(by[r.id]){ r.estimated_remaining=by[r.id].estimated_left; r.days_to_expiry=by[r.id].days_to_expiry; } });
+          if(typeof engRender==='function') engRender();
+        }
+      }catch(e){}
+      render();
+    }).catch(function(e){
+      var el=host(); if(el) el.innerHTML='<div class="hint" style="color:#991b1b">Could not read the money left: '+ESC(e&&e.message||e)+'</div>';
+    });
+  }
+
+  var baseBoot=window.engBoot;
+  window.engBoot=function(runTests){
+    var p=baseBoot.apply(this, arguments);
+    var card=document.getElementById('ge-engines-card');
+    var after=function(){ if(card && card.style.display!=='none' && window.SB_ON!==false) return refresh(); };
+    return (p && typeof p.then==='function') ? p.then(after, after) : after();
+  };
+
+  window.engR107Use=function(id){
+    if(typeof engUse==='function') return engUse(id);
+    return sbRpc('engine_use',{p_id:id, p_by:BY()}).then(function(){ return window.engBoot(false); });
+  };
+
+  window.engR107Ctl=function(id, action){
+    var msg = action==='pause'
+      ? 'Pause '+id+'?\n\nNo new paid reads on it. If it is the account in use, the next READY account (by #) takes over at once. Pause every account to stop all paid OCR.'
+      : 'Resume '+id+'?\n\nIf its estimated credit is still under its stop line it will be paused again at the next paid read — update its credit first.';
+    if(!confirm(msg)) return;
+    say('Working…');
+    sbRpc('engine_control',{p_id:id, p_action:action, p_by:BY()}).then(function(){
+      return window.engBoot(false);
+    }).then(function(){ say('✅ '+ESC(id)+' '+(action==='pause'?'paused':'resumed')+'.'); })
+      .catch(function(e){ say('<span style="color:#991b1b">Refused: '+ESC(e&&e.message||e)+'</span>'); });
+  };
+
+  window.engR107Credit=function(id){
+    var tr=document.getElementById('eng-r107-cr-'+id);
+    if(tr) tr.style.display = (tr.style.display==='none' ? '' : 'none');
+  };
+
+  window.engR107SaveCredit=function(id){
+    var g=Number((document.getElementById('eng-r107-g-'+id)||{}).value);
+    var u=Number((document.getElementById('eng-r107-u-'+id)||{}).value);
+    var x=String((document.getElementById('eng-r107-x-'+id)||{}).value||'');
+    if(!(g>0) || !(u>=0) || u>g){ say('<span style="color:#991b1b">Type granted and used in rupees (used not more than granted).</span>'); return; }
+    say('Saving the console reading…');
+    sbRpc('hero_engine_set_credit',{p_id:id, p_granted:g, p_used:u, p_expires:(x||null), p_observed_at:null, p_by:BY()})
+      .then(function(res){
+        if(res && res.ok===false) throw new Error(res.error||'not saved');
+        return window.engBoot(false).then(function(){
+          say('✅ '+ESC(id)+': about '+inr(res&&res.estimated_left)+' ('+usd(res&&res.estimated_left_usd)+') left — '+ESC(res&&res.balance_state)+', '+ESC(res&&res.control_state)+'.');
+        });
+      })
+      .catch(function(e){ say('<span style="color:#991b1b">Not saved: '+ESC(e&&e.message||e)+'</span>'); });
+  };
+
+  window.engR107Rate=function(){
+    var cur=BAL?BAL.usd_inr:84;
+    var v=prompt('Rupees per US dollar used for the $10 stop line:', String(cur));
+    if(v===null) return;
+    v=String(v).trim();
+    if(!/^[0-9]+(\.[0-9]+)?$/.test(v) || Number(v)<50 || Number(v)>200){ say('<span style="color:#991b1b">Type a rate like 84.</span>'); return; }
+    sbRpc('hero_set_app_setting',{p_key:'ENGINE_USD_INR', p_value:v, p_by:BY()})
+      .then(function(){ return window.engBoot(false); })
+      .then(function(){ say('✅ Rate set to ₹'+ESC(v)+' per $.'); })
+      .catch(function(e){ say('<span style="color:#991b1b">Refused: '+ESC(e&&e.message||e)+'</span>'); });
+  };
+
+  window.engR107Add=function(){
+    var val=function(k){ var el=document.getElementById('eng-r107-a-'+k); return el ? String(el.value||'').trim() : ''; };
+    var args={
+      p_id: val('id').toLowerCase(), p_label: val('label')||null, p_email: val('email')||null,
+      p_project_id: val('project')||null, p_project_number: val('pnum')||null,
+      p_docai_processor: val('proc')||null,
+      p_sort_order: val('order') ? Number(val('order')) : null,
+      p_stop_below_usd: val('stop') ? Number(val('stop')) : null,
+      p_gemini_transport: val('route')||null,
+      p_vertex_model:null, p_billing_account:null, p_currency:null, p_external_burn_per_day:null, p_note:null,
+      p_by: BY()
+    };
+    /* A key pasted into any box by mistake is refused here too — it must never reach the database. */
+    var all=[args.p_id,args.p_label,args.p_email,args.p_project_id,args.p_project_number,args.p_docai_processor].join(' ');
+    if(/AIza[0-9A-Za-z_\-]{20,}|"private_key"|refresh_token|BEGIN PRIVATE KEY/.test(all)){
+      say('<span style="color:#991b1b">That looks like a key or credential. Do not type it here — it goes into Supabase secrets only.</span>');
+      return;
+    }
+    if(!args.p_id){ say('<span style="color:#991b1b">Give the account an id, e.g. account-3.</span>'); return; }
+    say('Saving…');
+    sbRpc('hero_engine_upsert', args).then(function(res){
+      if(res && res.ok===false) throw new Error(res.error||'not saved');
+      return window.engBoot(false).then(function(){
+        say('✅ '+ESC(res.id)+(res.created?' added (paused)':' updated')+'. Its secrets go in Supabase as <code>DOCAI_OAUTH'+ESC(res.secret_suffix)
+          +'</code> / <code>DOCAI_SA_JSON'+ESC(res.secret_suffix)+'</code> — then Test, Update credit, Resume.');
+      });
+    }).catch(function(e){ say('<span style="color:#991b1b">Not saved: '+ESC(e&&e.message||e)+'</span>'); });
+  };
+})();
+</script>
+
+<script>
+/* R106 (23-09-2026): no Google key lives on a phone any more. Every read goes
+   through the server, where the money guard (migration 0087) can pause an
+   account below $10. A key left in this phone's storage from the Apps Script
+   days would let it spend directly, around the guard, so it is removed here
+   and the direct-to-Google fallbacks find no key. */
+(function(){
+  try{ localStorage.removeItem('app_vision_key'); localStorage.removeItem('app_gemini_key'); }catch(e){}
+  try{ if(window.APP_SETTINGS){ APP_SETTINGS.VISION_API_KEY=''; APP_SETTINGS.GEMINI_API_KEY=''; } }catch(e){}
+  window.geVisionKey=function(){ return ''; };
+})();
+</script>
 </body></html>
