@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R106-2026.09.23.1';
+window.HERO_BUILD = 'R107-2026.09.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5250,7 +5250,7 @@ function sbStoreSession(s){
   }catch(e){}
 }
 async function sbRefresh(){
-  const t=sbTokens(); if(!t.rt) return '';
+  const t=sbTokens(); if(!t.rt){ heroSessionDead_('no-token'); return ''; }
   /* R92 (Ravi 09-09-2026: "Reading owners manual is taking a lot of time"): the hourly
      token refresh ran with NO timeout, and every Supabase read waits behind it. Bounded
      to 9 s like the login calls (R90); a slow refresh now fails fast and the read
@@ -5260,9 +5260,36 @@ async function sbRefresh(){
     headers:{apikey:SB_ANON,'Content-Type':'application/json'},
     body:JSON.stringify({refresh_token:t.rt})}, 9000); }
   catch(e){ return ''; }
-  if(!r.ok) return '';
-  const s=await r.json(); sbStoreSession(s); return s.access_token||'';
+  if(!r.ok){ if(r.status>=400 && r.status<500) heroSessionDead_('refresh '+r.status); return ''; }
+  const s=await r.json(); sbStoreSession(s); window.HERO_SB_DEAD=false; return s.access_token||'';
 }
+/* R107 (Ravi, 23-09-2026, 09:14 — SA phone: "This module is not fully set up
+   yet" on the estimate screen). Phones that logged in through the old Apps
+   Script login hold NO Supabase session. Until R104 every read quietly fell
+   back to Apps Script; with Apps Script retired those reads come back empty
+   and each screen blamed its own setup. A session that is missing or refused
+   by GoTrue now says so once, in red, with one tap to log in again. A slow
+   network is not a dead session and does not raise this. */
+window.HERO_SB_DEAD=false;
+function heroSessionDead_(why){
+  window.HERO_SB_DEAD=true;
+  try{ console.warn('[R107] Supabase session missing on this phone:', why); }catch(e){}
+  try{
+    if(typeof USER==='undefined' || !USER) return;
+    if(document.getElementById('hero-relogin')) return;
+    const b=document.createElement('div'); b.id='hero-relogin';
+    b.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#c62828;color:#fff;padding:14px 16px;font:600 15px/1.35 system-ui,sans-serif;text-align:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)';
+    b.textContent='Your login has expired on this phone. Tap here and log in again with your ID and password.';
+    b.onclick=function(){ heroRelogin_(); };
+    document.body.appendChild(b);
+  }catch(e){}
+}
+function heroRelogin_(){
+  try{ const b=document.getElementById('hero-relogin'); if(b) b.remove(); }catch(e){}
+  logout();
+  try{ const m=document.getElementById('li-msg'); if(m){ m.style.color='var(--signal-d)'; m.textContent='Log in again once — the app now runs on the new server.'; } }catch(e){}
+}
+setTimeout(function(){ try{ if(typeof USER!=='undefined' && USER && !sbTokens().rt) heroSessionDead_('no-token at start'); }catch(e){} }, 1500);
 async function sbToken(){
   const t=sbTokens();
   if(t.at && Date.now()<t.exp) return t.at;
@@ -7560,7 +7587,13 @@ function esAfterCheck(){
       let ban=document.getElementById('es-noaccess');
       if(!ban){ ban=document.createElement('div'); ban.id='es-noaccess'; ban.className='missing'; wrap.appendChild(ban); }
       ban.style.display='block';
-      ban.textContent='This module is not fully set up yet. Ask your administrator to configure it.';
+      if(window.HERO_SB_DEAD){
+        ban.textContent='Your login has expired on this phone — tap here and log in again.';
+        ban.style.cursor='pointer'; ban.onclick=function(){ heroRelogin_(); };
+      } else {
+        ban.onclick=null; ban.style.cursor='';
+        ban.textContent='Could not load the model list. Check the internet and open Estimate again. (If it keeps happening: this module is not fully set up — ask your administrator.)';
+      }
     }
   } else esShowForm();
 }
