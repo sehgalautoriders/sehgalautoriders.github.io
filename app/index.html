@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Get the Sehgal Hero App</title>
+<meta name="theme-color" content="#15181c">
+<link rel="icon" href="../icon-192.png">
+<style>
+  :root{--bg:#f6f5f2;--card:#fff;--ink:#171717;--mute:#6b6b6b;--line:#e5e5e5;--red:#d71920}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{background:#15181c;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px}
+  header img{width:44px;height:44px;border-radius:10px;background:#fff}
+  header h1{font-size:18px;margin:0;flex:1}
+  .lang{display:flex;gap:4px}
+  .lang button{border:1px solid #475569;background:transparent;color:#fff;border-radius:8px;padding:3px 9px;font-weight:800;font-size:13px}
+  .lang button.on{background:#fff;color:#15181c}
+  nav{display:flex;border-bottom:1px solid var(--line);background:var(--card)}
+  nav button{flex:1;border:0;background:none;padding:12px 4px;font:700 15px system-ui,sans-serif;color:var(--mute);border-bottom:3px solid transparent}
+  nav button.on{color:var(--ink);border-bottom-color:var(--red)}
+  main{max-width:560px;margin:0 auto;padding:16px}
+  .tab{display:none}.tab.on{display:block}
+  .get{display:block;text-align:center;background:var(--red);color:#fff;text-decoration:none;font-weight:800;font-size:18px;padding:14px;border-radius:12px;margin:4px 0 14px}
+  .meta{color:var(--mute);font-size:13px;text-align:center;margin:-8px 0 14px}
+  ol{margin:0;padding-left:22px}
+  li{margin:6px 0}
+  .note{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;font-size:14px;margin-top:14px}
+  b.k{background:#f1f5f9;border:1px solid var(--line);border-radius:6px;padding:0 5px;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <img src="../icon-192.png" alt="">
+  <h1 data-t="title">Sehgal Hero App</h1>
+  <div class="lang"><button data-l="en">EN</button><button data-l="hi">हिं</button><button data-l="mr">मरा</button></div>
+</header>
+<nav>
+  <button data-tab="android">Android</button>
+  <button data-tab="windows">Windows</button>
+  <button data-tab="iphone">iPhone</button>
+</nav>
+<main>
+  <section class="tab" id="android">
+    <a class="get" id="apk" href="https://github.com/sehgalautoriders/sehgalautoriders.github.io/releases/latest/download/SehgalHero.apk" data-t="getApk">Download the Android app</a>
+    <p class="meta" id="apkmeta"></p>
+    <ol>
+      <li data-t="a1">Tap the red button. The file SehgalHero.apk downloads.</li>
+      <li data-t="a2">Open it from the notification (or Files → Downloads).</li>
+      <li data-t="a3">If the phone says "not allowed", tap Settings → turn on "Allow from this source" → go back.</li>
+      <li data-t="a4">Tap Install, then Open. Log in once with your Employee No. and password.</li>
+      <li data-t="a5">If "Play Protect" warns about an unknown app: tap More details → Install anyway. The app is from Sehgal Autoriders, not the Play Store, so Google shows this once.</li>
+    </ol>
+    <p class="note" data-t="aNote">Updates to the screens come by themselves — you do not reinstall for every change. Remove the old Chrome shortcut from the home screen after the app works.</p>
+  </section>
+
+  <section class="tab" id="windows">
+    <a class="get" id="msi" href="https://github.com/sehgalautoriders/sehgalautoriders.github.io/releases/latest/download/SehgalHero-Setup.msi" data-t="getWin">Download for Windows</a>
+    <p class="meta" id="msimeta"></p>
+    <ol>
+      <li data-t="w1">Click the red button. SehgalHero-Setup.msi downloads.</li>
+      <li data-t="w2">Open it. If Windows shows "Windows protected your PC", click More info → Run anyway. No administrator password is needed.</li>
+      <li data-t="w3">Start "Sehgal Hero" from the desktop icon or the Start menu.</li>
+    </ol>
+  </section>
+
+  <section class="tab" id="iphone">
+    <ol>
+      <li data-t="i1">Open this link in Safari or Chrome on the iPhone: sehgalautoriders.github.io</li>
+      <li data-t="i2">Tap the Share button (square with an arrow; in Chrome it is at the top right).</li>
+      <li data-t="i3">Tap "Add to Home Screen", then Add.</li>
+      <li data-t="i4">Always open Sehgal Hero from that home-screen icon — not from the browser.</li>
+    </ol>
+    <p class="note" data-t="iNote">Opening from the icon keeps you logged in and keeps your saved vehicles on the phone. An iPhone clears a website's saved data if it is only opened in the browser and not used for 7 days.</p>
+  </section>
+</main>
+<script>
+(function(){
+  var T={
+    title:['Sehgal Hero App','सहगल हीरो ऐप','सहगल हीरो ॲप'],
+    getApk:['Download the Android app','Android ऐप डाउनलोड करें','Android ॲप डाउनलोड करा'],
+    a1:['Tap the red button. The file SehgalHero.apk downloads.','लाल बटन दबाएँ। SehgalHero.apk फ़ाइल डाउनलोड होगी।','लाल बटण दाबा. SehgalHero.apk फाइल डाउनलोड होईल.'],
+    a2:['Open it from the notification (or Files → Downloads).','नोटिफ़िकेशन से खोलें (या Files → Downloads में)।','नोटिफिकेशनमधून उघडा (किंवा Files → Downloads मध्ये).'],
+    a3:['If the phone says "not allowed", tap Settings → turn on "Allow from this source" → go back.','अगर फ़ोन "अनुमति नहीं" बोले तो Settings → "Allow from this source" चालू करें → वापस जाएँ।','फोन "परवानगी नाही" म्हणाला तर Settings → "Allow from this source" चालू करा → मागे जा.'],
+    a4:['Tap Install, then Open. Log in once with your Employee No. and password.','Install दबाएँ, फिर Open। एक बार कर्मचारी नंबर और पासवर्ड से लॉगिन करें।','Install दाबा, मग Open. एकदा कर्मचारी क्रमांक आणि पासवर्डने लॉगिन करा.'],
+    aNote:['Updates to the screens come by themselves — you do not reinstall for every change. Remove the old Chrome shortcut from the home screen after the app works.','स्क्रीन के अपडेट अपने-आप आते हैं — हर बदलाव पर दोबारा इंस्टॉल नहीं करना है। ऐप चलने के बाद होम स्क्रीन से पुराना Chrome शॉर्टकट हटा दें।','स्क्रीनचे अपडेट आपोआप येतात — प्रत्येक बदलासाठी पुन्हा इंस्टॉल करायची गरज नाही. ॲप चालू झाल्यावर होम स्क्रीनवरचा जुना Chrome शॉर्टकट काढा.'],
+    a5:['If "Play Protect" warns about an unknown app: tap More details → Install anyway. The app is from Sehgal Autoriders, not the Play Store, so Google shows this once.','अगर "Play Protect" अनजान ऐप की चेतावनी दे: More details → Install anyway दबाएँ। ऐप सहगल ऑटोराइडर्स का है, Play Store का नहीं, इसलिए Google एक बार यह दिखाता है।','"Play Protect" अनोळखी ॲपची सूचना दाखवेल तर: More details → Install anyway दाबा. ॲप सहगल ऑटोरायडर्सचे आहे, Play Store चे नाही, म्हणून Google एकदा हे दाखवते.'],
+    getWin:['Download for Windows','Windows के लिए डाउनलोड करें','Windows साठी डाउनलोड करा'],
+    w1:['Click the red button. SehgalHero-Setup.msi downloads.','लाल बटन दबाएँ। SehgalHero-Setup.msi डाउनलोड होगी।','लाल बटण दाबा. SehgalHero-Setup.msi डाउनलोड होईल.'],
+    w2:['Open it. If Windows shows "Windows protected your PC", click More info → Run anyway. No administrator password is needed.','इसे खोलें। अगर "Windows protected your PC" दिखे तो More info → Run anyway दबाएँ। एडमिन पासवर्ड की ज़रूरत नहीं।','ती उघडा. "Windows protected your PC" दिसले तर More info → Run anyway दाबा. ॲडमिन पासवर्ड लागत नाही.'],
+    w3:['Start "Sehgal Hero" from the desktop icon or the Start menu.','डेस्कटॉप आइकन या Start मेनू से "Sehgal Hero" खोलें।','डेस्कटॉप आयकॉन किंवा Start मेनूमधून "Sehgal Hero" उघडा.'],
+    i1:['Open this link in Safari or Chrome on the iPhone: sehgalautoriders.github.io','iPhone पर Safari या Chrome में यह लिंक खोलें: sehgalautoriders.github.io','iPhone वर Safari किंवा Chrome मध्ये ही लिंक उघडा: sehgalautoriders.github.io'],
+    i2:['Tap the Share button (square with an arrow; in Chrome it is at the top right).','Share बटन दबाएँ (तीर वाला चौकोर; Chrome में ऊपर दाईं ओर)।','Share बटण दाबा (बाण असलेला चौकोन; Chrome मध्ये वर उजवीकडे).'],
+    i3:['Tap "Add to Home Screen", then Add.','"Add to Home Screen" दबाएँ, फिर Add।','"Add to Home Screen" दाबा, मग Add.'],
+    i4:['Always open Sehgal Hero from that home-screen icon — not from the browser.','सहगल हीरो हमेशा होम स्क्रीन के आइकन से खोलें — ब्राउज़र से नहीं।','सहगल हीरो नेहमी होम स्क्रीनवरच्या आयकॉनमधून उघडा — ब्राउझरमधून नाही.'],
+    iNote:['Opening from the icon keeps you logged in and keeps your saved vehicles on the phone. An iPhone clears a website\'s saved data if it is only opened in the browser and not used for 7 days.','आइकन से खोलने पर लॉगिन और सेव की हुई गाड़ियाँ फ़ोन पर बनी रहती हैं। सिर्फ़ ब्राउज़र में खोलकर 7 दिन इस्तेमाल न करें तो iPhone सेव डेटा मिटा देता है।','आयकॉनमधून उघडल्यास लॉगिन आणि सेव्ह केलेली वाहने फोनवर राहतात. फक्त ब्राउझरमध्ये उघडून 7 दिवस वापरले नाही तर iPhone सेव्ह डेटा पुसून टाकतो.']
+  };
+  var IDX={en:0,hi:1,mr:2};
+  function get(k,d){ try{ return localStorage.getItem(k)||d; }catch(e){ return d; } }
+  function put(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  function lang(l){
+    put('hero_lang',l); var i=IDX[l]||0; document.documentElement.lang=l;
+    document.querySelectorAll('[data-t]').forEach(function(n){ var e=T[n.getAttribute('data-t')]; if(e) n.textContent=e[i]; });
+    document.querySelectorAll('.lang button').forEach(function(b){ b.classList.toggle('on',b.getAttribute('data-l')===l); });
+  }
+  function tab(t){
+    document.querySelectorAll('.tab').forEach(function(s){ s.classList.toggle('on',s.id===t); });
+    document.querySelectorAll('nav button').forEach(function(b){ b.classList.toggle('on',b.getAttribute('data-tab')===t); });
+  }
+  document.querySelectorAll('.lang button').forEach(function(b){ b.onclick=function(){ lang(b.getAttribute('data-l')); }; });
+  document.querySelectorAll('nav button').forEach(function(b){ b.onclick=function(){ tab(b.getAttribute('data-tab')); }; });
+  var ua=navigator.userAgent;
+  tab(/iPhone|iPad|iPod/.test(ua)?'iphone':(/Android/.test(ua)?'android':(/Windows/.test(ua)?'windows':'android')));
+  lang(get('hero_lang','en'));
+  /* version + size from the latest release, when GitHub answers */
+  fetch('https://api.github.com/repos/sehgalautoriders/sehgalautoriders.github.io/releases/latest').then(function(r){ return r.ok?r.json():null; }).then(function(j){
+    if(!j) return;
+    (j.assets||[]).forEach(function(a){
+      var m=a.name==='SehgalHero.apk'?'apkmeta':(a.name==='SehgalHero-Setup.msi'?'msimeta':null);
+      if(m) document.getElementById(m).textContent=j.tag_name+' · '+(a.size/1048576).toFixed(1)+' MB';
+    });
+  }).catch(function(){});
+})();
+</script>
+</body>
+</html>

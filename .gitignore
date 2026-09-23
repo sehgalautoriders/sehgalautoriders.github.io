@@ -48,3 +48,8 @@
 # self-contained — Supabase + CDN references only, no customer data, no keys
 # beyond the publishable one that already ships in index.html. By NAME, as above.
 !parts-scanner.html
+# R110 (23-09-2026): app/index.html is the "Get the app" page - Android APK and
+# Windows installer download buttons (files live on GitHub Releases, not here) and
+# the iPhone "Add to Home Screen" steps. No customer data. By NAME, as above.
+!app/
+!app/index.html
