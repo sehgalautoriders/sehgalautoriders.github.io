@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 86;
-window.HERO_BUILD = 'R115-2026.09.23.1';
+window.HERO_BUILD = 'R116-2026.09.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -27834,6 +27834,229 @@ window.heroChangeMobile=function(){
     if(p && window.MutationObserver) new MutationObserver(sync).observe(p,{attributes:true,attributeFilter:['style']});
   }catch(e){}
   sync(); setTimeout(sync,1500);
+})();
+</script>
+<script>
+/* R116 (Ravi, 23-09-2026 15:55): registration without the CEO, and the location lock.
+   "CEO approval is not required to register in the app now. Just the phone whatsapp otp.
+    Give options of which designation, location the employee is. What is his emp no.
+    Nothing should be typing. Everything should be selection, buttons or drop downs. Take a
+    selfie inside the workshop premises ... allow estimate, gate entry and any operation from
+    the location only except for CEO, GM and the WM."
+   Decisions: pick your own name from the employee list (CEO/GM/WM add new joiners first);
+   300 m around Hero Sehgal Chinchwad; Chakan free for now; Windows PCs = office internet.
+   Server: migration 0091 + hero-otp reg_send / reg_verify. The location verdict is made on
+   the server (hero_site_check / hero_reg_site_verdict), never trusted from this page. */
+(function(){
+  'use strict';
+  var FN='/functions/v1/hero-otp';
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function isDesktop(){ var ua=navigator.userAgent||''; return /Windows|Macintosh|X11|CrOS/.test(ua) && !/Android|iPhone|iPad|Mobile/.test(ua); }
+  function platform(){ return isDesktop()?'windows':'phone'; }
+  function anonFn(body){
+    return fetch(SB_URL+FN,{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){ return r.json().catch(function(){ return {ok:false,error:'The server did not answer properly.'}; }); });
+  }
+  function anonRpc(name,args){
+    return fetch(SB_URL+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify(args||{})})
+      .then(function(r){ return r.json(); });
+  }
+  /* one GPS fix; resolves {lat,lng,acc} or {err} — never rejects */
+  function getFix(){
+    return new Promise(function(res){
+      if(!navigator.geolocation){ res({err:'This device has no location.'}); return; }
+      navigator.geolocation.getCurrentPosition(function(p){
+        res({lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy});
+      },function(e){
+        res({err: e && e.code===1 ? 'Location permission is off. Allow Location for the app, then try again.' : 'Could not find your location. Step near a window or outside and try again.'});
+      },{enableHighAccuracy:true, timeout:20000, maximumAge:60000});
+    });
+  }
+  /* front-camera selfie, shrunk to 720 px JPEG */
+  function shrink(file){
+    return new Promise(function(res,rej){
+      var u=URL.createObjectURL(file), img=new Image();
+      img.onload=function(){ var k=Math.min(1,720/Math.max(img.width,img.height)); var c=document.createElement('canvas');
+        c.width=Math.round(img.width*k); c.height=Math.round(img.height*k); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg',0.8)); };
+      img.onerror=function(){ URL.revokeObjectURL(u); rej(new Error('photo')); };
+      img.src=u;
+    });
+  }
+  function modal(id, inner){
+    var m=$(id); if(m) m.remove();
+    m=document.createElement('div'); m.id=id;
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto';
+    m.innerHTML='<div class="chgpass-box" style="max-width:420px;width:100%;margin-top:4vh">'+inner+'</div>';
+    document.body.appendChild(m); return m;
+  }
+  function chips(list, cls){
+    return list.map(function(x){ return '<button type="button" class="btn ghost '+cls+'" data-v="'+esc(x.v)+'" style="margin:0 6px 6px 0;width:auto;padding:8px 12px">'+esc(x.t)+'</button>'; }).join('');
+  }
+  function pick(root, cls, v){
+    Array.prototype.forEach.call(root.querySelectorAll('.'+cls),function(b){ var on=b.getAttribute('data-v')===v; b.style.background=on?'#0f172a':''; b.style.color=on?'#fff':''; });
+  }
+
+  /* ------------------------------------------------------------ registration */
+  window.regOpen=function(){
+    var st={list:[], ws:'', emp:null, mobile:'', fix:null, selfie:''};
+    var m=modal('reg2-modal',
+      '<h3>📝 Register for the Hero App</h3>'+
+      '<div class="hint" style="margin-bottom:10px">Only inside the workshop. You need your phone\'s WhatsApp and a selfie.</div>'+
+      '<div id="r2-body"><div class="hint">Loading the employee list…</div></div>'+
+      '<div id="r2-msg" class="hint" style="margin-top:10px;text-align:center"></div>'+
+      '<button class="btn ghost block" style="margin-top:8px" id="r2-close">Close</button>');
+    $('r2-close').onclick=function(){ m.remove(); };
+    var say=function(t,bad){ var e=$('r2-msg'); e.style.color=bad?'var(--signal-d)':'var(--steel)'; e.textContent=t||''; };
+    var body=$('r2-body');
+
+    function stepWorkshop(){
+      var ws={}; st.list.forEach(function(e){ ws[e.workshop_code]=e.workshop; });
+      var keys=Object.keys(ws);
+      if(!keys.length){ body.innerHTML='<div class="hint">Nobody is waiting to register. Ask your WM to add your name to the employee list first.</div>'; return; }
+      body.innerHTML='<div class="fld"><label>1. Your workshop</label><div id="r2-ws">'+chips(keys.map(function(k){ return {v:k,t:ws[k]}; }),'r2w')+'</div></div><div id="r2-rest"></div>';
+      Array.prototype.forEach.call(body.querySelectorAll('.r2w'),function(b){ b.onclick=function(){ st.ws=b.getAttribute('data-v'); pick(body,'r2w',st.ws); stepName(); }; });
+      if(keys.length===1){ st.ws=keys[0]; pick(body,'r2w',st.ws); stepName(); }
+    }
+    function stepName(){
+      var people=st.list.filter(function(e){ return e.workshop_code===st.ws; });
+      $('r2-rest').innerHTML='<div class="fld"><label>2. Your name</label><select id="r2-name" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line)"><option value="">— tap to choose —</option>'+
+        people.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' · '+esc(e.emp_no)+' · '+esc(e.designation||'')+'</option>'; }).join('')+'</select></div><div id="r2-who"></div>';
+      $('r2-name').onchange=function(){ st.emp=people.filter(function(e){ return e.id===$('r2-name').value; })[0]||null; stepWho(); };
+    }
+    function stepWho(){
+      var w=$('r2-who'); if(!st.emp){ w.innerHTML=''; return; }
+      w.innerHTML='<div class="hint" style="margin:4px 0 10px">Employee No. <b>'+esc(st.emp.emp_no)+'</b> · '+esc(st.emp.designation||'')+' · '+esc(st.emp.workshop)+'</div>'+
+        '<div class="fld"><label>3. Your WhatsApp number</label><input id="r2-mob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile" autocomplete="tel"></div>'+
+        '<button class="btn" id="r2-send">📍 Check location &amp; send code</button><div id="r2-step2"></div>';
+      $('r2-send').onclick=function(){
+        var mob=String($('r2-mob').value||'').replace(/\D/g,'').slice(-10);
+        if(!/^[6-9]\d{9}$/.test(mob)){ say('Enter a correct 10-digit mobile number.',true); return; }
+        st.mobile=mob; var b=$('r2-send'); b.disabled=true; say('Finding your location…');
+        getFix().then(function(f){
+          if(f.err){ b.disabled=false; say(f.err,true); return; }
+          st.fix=f; say('Sending the code on WhatsApp…');
+          return anonFn({op:'reg_send', employee_id:st.emp.id, mobile:mob, lat:f.lat, lng:f.lng, acc:f.acc}).then(function(r){
+            b.disabled=false;
+            if(!r||!r.ok){ say((r&&r.error)||'Could not send the code.',true); return; }
+            say('Code sent on WhatsApp to '+(r.masked||'')+'.'); stepCode();
+          });
+        }).catch(function(){ b.disabled=false; say('No connection. Try again.',true); });
+      };
+    }
+    function stepCode(){
+      $('r2-step2').innerHTML=
+        '<div class="fld" style="margin-top:12px"><label>4. Code from WhatsApp</label><input id="r2-code" type="tel" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code"></div>'+
+        '<div class="fld"><label>5. Selfie inside the workshop</label>'+
+          '<label class="btn ghost" style="display:block;text-align:center;cursor:pointer">📷 Take selfie<input id="r2-selfie" type="file" accept="image/*" capture="user" style="display:none"></label>'+
+          '<img id="r2-prev" style="display:none;max-width:120px;border-radius:10px;margin-top:8px"></div>'+
+        '<div class="fld"><label>6. Choose a password (min 6)</label><input id="r2-pw" type="password" autocomplete="new-password" placeholder="New password"></div>'+
+        '<button class="btn" id="r2-done">✅ Register</button>';
+      $('r2-selfie').onchange=function(){ var f=this.files&&this.files[0]; if(!f) return; shrink(f).then(function(d){ st.selfie=d; var p=$('r2-prev'); p.src=d; p.style.display='block'; say(''); }).catch(function(){ say('That photo could not be used. Take it again.',true); }); };
+      $('r2-done').onclick=function(){
+        var code=String($('r2-code').value||'').replace(/\D/g,''), pw=String($('r2-pw').value||'');
+        if(code.length!==6){ say('Enter the 6-digit code from WhatsApp.',true); return; }
+        if(!st.selfie){ say('Take the selfie first.',true); return; }
+        if(pw.length<6){ say('Password must be at least 6 characters.',true); return; }
+        var b=$('r2-done'); b.disabled=true; say('Checking location again…');
+        getFix().then(function(f){
+          if(f.err){ b.disabled=false; say(f.err,true); return; }
+          say('Creating your login…');
+          return anonFn({op:'reg_verify', employee_id:st.emp.id, mobile:st.mobile, code:code, password:pw, selfie:st.selfie, lat:f.lat, lng:f.lng, acc:f.acc}).then(function(r){
+            b.disabled=false;
+            if(!r||!r.ok){ say((r&&r.error)||'Registration failed.',true); return; }
+            body.innerHTML='<div style="text-align:center;padding:10px 0"><div style="font-size:40px">✅</div><b>You are registered.</b><div class="hint" style="margin-top:6px">Log in with Employee No. <b>'+esc(r.emp_no)+'</b> and the password you chose.</div></div>';
+            say('');
+            try{ var le=$('li-emp')||document.querySelector('#view-login input'); if(le) le.value=r.emp_no; }catch(e){}
+          });
+        }).catch(function(){ b.disabled=false; say('No connection. Try again.',true); });
+      };
+    }
+    anonRpc('hero_reg_candidates',{}).then(function(list){ st.list=Array.isArray(list)?list:[]; stepWorkshop(); })
+      .catch(function(){ body.innerHTML='<div class="hint">Could not load the list. Check the internet and open Register again.</div>'; });
+  };
+
+  /* ------------------------------------------------ CEO / GM / WM: add employee */
+  window.heroAddEmployee=function(){
+    var st={ws:'',des:''};
+    var m=modal('addemp-modal',
+      '<h3>👤 Add new employee</h3>'+
+      '<div class="hint" style="margin-bottom:10px">After this they can register themselves on their phone inside the workshop.</div>'+
+      '<div class="fld"><label>Workshop</label><div id="ae-ws">'+chips([{v:'chinchwad',t:'Chinchwad'},{v:'chakan',t:'Chakan'}],'aew')+'</div></div>'+
+      '<div class="fld"><label>Designation</label><div id="ae-des">Loading…</div></div>'+
+      '<div class="fld"><label>Full name</label><input id="ae-name" placeholder="Full name"></div>'+
+      '<div class="fld"><label>Employee No.</label><input id="ae-no" inputmode="numeric" placeholder="Employee number"></div>'+
+      '<button class="btn" id="ae-save">Add to the list</button>'+
+      '<div id="ae-msg" class="hint" style="margin-top:10px;text-align:center"></div>'+
+      '<hr style="margin:14px 0;border:0;border-top:1px solid var(--line)">'+
+      '<div class="hint" style="margin-bottom:6px">Windows PCs work only on the workshop internet. Press this once on a PC inside the Chinchwad workshop:</div>'+
+      '<button class="btn ghost block" id="ae-ip">🌐 Record this internet as Chinchwad workshop</button>'+
+      '<button class="btn ghost block" style="margin-top:8px" id="ae-close">Close</button>');
+    var say=function(t,bad){ var e=$('ae-msg'); e.style.color=bad?'var(--signal-d)':'var(--steel)'; e.textContent=t||''; };
+    $('ae-close').onclick=function(){ m.remove(); };
+    Array.prototype.forEach.call(m.querySelectorAll('.aew'),function(b){ b.onclick=function(){ st.ws=b.getAttribute('data-v'); pick(m,'aew',st.ws); }; });
+    sbFetch('/rest/v1/hero_designations?self_register=eq.true&select=designation&order=sort_order',{}).then(function(r){ return r.json(); }).then(function(rows){
+      $('ae-des').innerHTML=chips((rows||[]).map(function(x){ return {v:x.designation,t:x.designation}; }),'aed');
+      Array.prototype.forEach.call(m.querySelectorAll('.aed'),function(b){ b.onclick=function(){ st.des=b.getAttribute('data-v'); pick(m,'aed',st.des); }; });
+    }).catch(function(){ $('ae-des').textContent='Could not load designations.'; });
+    $('ae-save').onclick=function(){
+      var name=String($('ae-name').value||'').trim(), no=String($('ae-no').value||'').trim();
+      if(!st.ws||!st.des||!name||!no){ say('Pick workshop and designation, and fill name and number.',true); return; }
+      sbRpc('hero_add_employee',{p_name:name,p_emp_no:no,p_workshop_code:st.ws,p_designation:st.des}).then(function(r){
+        if(!r||r.ok===false){ say((r&&r.error)||'Could not add.',true); return; }
+        say('✅ '+name+' added. They can now register on their phone.'); $('ae-name').value=''; $('ae-no').value='';
+      }).catch(function(){ say('No connection.',true); });
+    };
+    $('ae-ip').onclick=function(){
+      sbRpc('hero_site_add_office_ip',{p_workshop_code:'chinchwad'}).then(function(r){
+        say(r&&r.ok?('✅ Recorded. Windows PCs on this internet can now work.'):((r&&r.error)||'Could not record.'), !(r&&r.ok));
+      }).catch(function(){ say('No connection.',true); });
+    };
+  };
+  (function mountAddEmp(){
+    var box=$('top-actions'); if(!box || $('topright-addemp-btn')) return;
+    var b=document.createElement('button'); b.className='navbtn'; b.id='topright-addemp-btn'; b.style.display='none';
+    b.textContent='👤 Add Employee'; b.title='Add a new joiner so they can register'; b.onclick=function(){ heroAddEmployee(); };
+    box.appendChild(b);
+    function sync(){ var p=$('topright-pwd-btn'); var mg=false; try{ mg=typeof isTopMgmtUser==='function' && isTopMgmtUser(); }catch(e){}
+      b.style.display=(p && p.style.display!=='none' && mg)?'inline-block':'none'; }
+    try{ var p=$('topright-pwd-btn'); if(p && window.MutationObserver) new MutationObserver(sync).observe(p,{attributes:true,attributeFilter:['style']}); }catch(e){}
+    sync(); setTimeout(sync,1500);
+  })();
+
+  /* --------------------------------------------------------- the location lock */
+  var lastOk=0, busy=false;
+  function lockScreen(msg){
+    var m=modal('geo-lock',
+      '<h3>📍 Only inside the workshop</h3>'+
+      '<div class="hint" style="margin:8px 0 14px" id="gl-msg">'+esc(msg)+'</div>'+
+      '<button class="btn" id="gl-retry">Try again</button>'+
+      '<button class="btn ghost block" style="margin-top:8px" id="gl-out">Log out</button>');
+    $('gl-retry').onclick=function(){ $('gl-msg').textContent='Checking…'; heroGeoCheck(true); };
+    $('gl-out').onclick=function(){ m.remove(); try{ logout(); }catch(e){} };
+  }
+  window.heroGeoCheck=function(force){
+    try{ if(typeof USER==='undefined' || !USER) return; }catch(e){ return; }
+    try{ if(typeof isTopMgmtUser==='function' && isTopMgmtUser()){ var g=$('geo-lock'); if(g) g.remove(); return; } }catch(e){}
+    if(busy) return; if(!force && Date.now()-lastOk < 5*60*1000) return;
+    busy=true;
+    var plat=platform();
+    var fixP = plat==='windows' ? Promise.resolve({}) : getFix();
+    fixP.then(function(f){
+      return sbRpc('hero_site_check',{p_lat:f.lat==null?null:f.lat, p_lng:f.lng==null?null:f.lng, p_acc:f.acc==null?null:f.acc, p_platform:plat}).then(function(v){
+        busy=false;
+        if(v && v.ok){ lastOk=Date.now(); var g=$('geo-lock'); if(g) g.remove(); return; }
+        if(!v || v.ok!==false) return;          /* server unreachable: never lock on our own failure */
+        lockScreen((f && f.err && v.why==='no-location') ? f.err : (v.message||'The app works only inside the workshop.'));
+      });
+    }).catch(function(){ busy=false; });
+  };
+  setTimeout(function(){ heroGeoCheck(true); }, 2500);
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') heroGeoCheck(false); });
+  setInterval(function(){ heroGeoCheck(false); }, 10*60*1000);
+  /* re-check straight after a login */
+  try{ var _sv=window.showView; if(typeof _sv==='function') window.showView=function(){ var r=_sv.apply(this,arguments); setTimeout(function(){ heroGeoCheck(false); },800); return r; }; }catch(e){}
 })();
 </script>
 </body></html>
