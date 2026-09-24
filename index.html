@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 90;
-window.HERO_BUILD = 'R120-2026.09.24.1';
+window.HERO_RELEASE = 91;
+window.HERO_BUILD = 'R121-2026.09.24.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28107,16 +28107,32 @@ window.heroChangeMobile=function(){
                  build:String(window.HERO_BUILD||''), user:(window.USER&&USER.empno)||''}}).catch(function(){}); }catch(e){}
   }
   function goOn(m){ skipUntil=Date.now()+30*60*1000; try{ m.remove(); }catch(e){} }
+  /* R121 (Ravi 24-09-2026 18:15): "Show in Marathi and ask them to start location
+     without which the app wont work. But do not make it compulsary. So it should work
+     both ways." The screen now speaks Marathi and asks firmly; switching Location on
+     is the big green button. The way past stays, as a small grey "नंतर (Later)" line
+     under it — nothing is locked (rule of 23-09: no lock until proven on real phones). */
+  var HOWTO_MR='<div style="margin:0 0 14px;text-align:left;line-height:1.6;font-size:13.5px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px">'+
+    '<div style="font-weight:800;margin-bottom:4px">लोकेशन कसे चालू करायचे:</div>'+
+    '1️⃣ वरून खाली ओढा आणि फोनचे <b>Location</b> चालू करा.<br>'+
+    '2️⃣ <b>Sehgal Hero ॲप:</b> Settings → Apps → Sehgal Hero → Permissions → Location → <b>Allow</b><br>'+
+    '3️⃣ <b>Chrome मध्ये:</b> वरच्या पत्त्याच्या डावीकडील 🔒 चिन्हावर टॅप करा → Permissions → Location → <b>Allow</b>'+
+    '</div>';
   function permLock(fix){
     geoLog('permission', {code:fix&&fix.code, err:fix&&fix.err});
+    var c=fix&&fix.code;
+    var why = c===1 ? 'या फोनवर ॲपला लोकेशनची परवानगी बंद आहे.'
+            : c===2 ? 'या फोनचे Location बंद आहे.'
+            : 'तुमचे लोकेशन सापडले नाही.';
     var m=modal('geo-lock',
-      '<h3>📍 Please allow Location</h3>'+
-      '<div class="hint" style="margin:8px 0 10px" id="gl-msg">'+esc(fix.err)+'</div>'+
-      HOWTO+
-      '<button class="btn" id="gl-retry">I have allowed it — Try again</button>'+
-      '<button class="btn ghost block" style="margin-top:8px" id="gl-skip">Continue without location</button>');
+      '<h3 style="font-size:20px;line-height:1.35">📍 लोकेशन चालू करा</h3>'+
+      '<div style="margin:8px 0 6px;font-size:16px;font-weight:800;color:var(--signal-d);line-height:1.45">लोकेशनशिवाय Sehgal Hero ॲप चालणार नाही.</div>'+
+      '<div style="margin:0 0 10px;font-size:14px;line-height:1.5" id="gl-msg">'+esc(why)+' गेट एन्ट्री आणि एस्टिमेट वर्कशॉपमधूनच झाले, हे लोकेशनवरून नोंदवले जाते.</div>'+
+      HOWTO_MR+
+      '<button class="btn" id="gl-retry" style="background:#15803d;border-color:#15803d;font-size:16px">✅ लोकेशन चालू केले — पुन्हा तपासा</button>'+
+      '<div style="text-align:center;margin-top:12px"><span id="gl-skip" style="cursor:pointer;color:#94a3b8;font-size:12px;text-decoration:underline">नंतर (Later)</span></div>');
     m.setAttribute('data-kind','perm');
-    $('gl-retry').onclick=function(){ $('gl-msg').textContent='Checking…'; heroGeoCheck(true); };
+    $('gl-retry').onclick=function(){ $('gl-msg').textContent='तपासत आहे…'; heroGeoCheck(true); };
     $('gl-skip').onclick=function(){ goOn(m); };
   }
   function lockScreen(msg, v){
