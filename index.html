@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 88;
-window.HERO_BUILD = 'R118-2026.09.24.1';
+window.HERO_RELEASE = 89;
+window.HERO_BUILD = 'R119-2026.09.24.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10105,7 +10105,16 @@ function esLoadGateEntries(){
       }
       return;
     }
-    let entries=(res&&(res.pendingAll||res.pending))||[];
+    /* R119 (Ravi 24-09-2026: "From Gate entry vehicles not coming to estimate tab").
+       pendingAll (15 days) hid any vehicle whose reg had an OLDER estimate, so a
+       returning customer's gate entry never reached the SA — fixed on the server in
+       migration 0092. Belt and braces here: `pending` (today, exact) is merged in,
+       so a vehicle the server lists for today can never be missing from this box. */
+    let entries=((res&&(res.pendingAll||res.pending))||[]).slice();
+    try{
+      const seen={}; entries.forEach(function(g){ if(g&&g.entryId) seen[g.entryId]=1; });
+      ((res&&res.pending)||[]).forEach(function(g){ if(g && !(g.entryId && seen[g.entryId])){ entries.push(g); if(g.entryId) seen[g.entryId]=1; } });
+    }catch(e){}
     entries = entries.filter(e => wsAllowed(e.location));
     /* R85 (Ravi 03-09-2026): TODAY ONLY. "Always show only today's. Yesterday's
        not-done is not-done — the SA gets no incentive for a job card that was not
@@ -10177,6 +10186,18 @@ function esLoadGateEntries(){
       setTimeout(function(){ if(document.getElementById('es-gate-hint')===hint){ hint.style.color=''; hint.textContent=normalHint; } }, 1400); }
   });
 }
+/* R119: "Instant visibility should be there". While the Estimate screen is open
+   and no vehicle is picked, re-ask the server every 20 s, so a vehicle entered at
+   the gate appears on its own without tapping Refresh. Never touches a picked one. */
+setInterval(function(){
+  try{
+    if(document.visibilityState!=='visible') return;
+    var v=document.getElementById('view-estimate'); if(!v || !v.offsetParent) return;
+    if(typeof ES!=='undefined' && ES && (ES.gateId||ES.token)) return;
+    if(document.activeElement && document.activeElement.id==='es-gate-pick') return;  /* list open in the SA's hand */
+    esLoadGateEntries();
+  }catch(e){}
+}, 20000);
 document.getElementById('es-gate-pick').addEventListener('click', function(){
   if(this.options.length<=1 || (this.options[0] && this.options[0].textContent.indexOf('retry')>-1)) esLoadGateEntries();
 });
@@ -16407,17 +16428,46 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
   };
 
   /* ------------------------------------------------- odometer, on its own call */
+  /* R119 (Ravi 24-09-2026: "Kms reading not capturing from Odometer directly after
+     the photograph"). This read went browser -> Gemini with the app's own key; with no
+     key askGemini returns '' at once, so the km box stayed empty and nothing was ever
+     sent (14:41 test entry: two server reads, both 'plate', none 'odometer'). It now
+     uses the same server reader as the plate and the Estimate km scan (task
+     'odometer': Gemini -> Vision -> Rekognition, validated digits), the browser
+     Gemini only as a last resort, and tells the guard what happened. */
   window.geReadOdo = async function(){
     if(!GE_PHOTOS.odo) return;
     if(GE_ID.tried.odo) return;              // read once per gate entry, never again
     const kmEl=el('ge-km'); if(kmEl && String(kmEl.value||'').trim()) return;   // guard already typed it
     GE_ID.tried.odo=true;
-    const raw=await askGemini(GE_PHOTOS.odo,
-      'Read the TOTAL odometer reading from this two-wheeler instrument cluster. '+
-      'Take the main large number only. Ignore the trip meter, clock, speed, fuel bars and gear. '+
-      'If it cannot be read, return 0. Return ONLY JSON: {"odometer_km":0}', 'odometer_km');
-    const km=Math.round(Number(String(raw).replace(/[^0-9]/g,''))||0);
-    if(km>0 && km<400000 && kmEl && !String(kmEl.value||'').trim()) kmEl.value=km;
+    const ph0=kmEl?kmEl.placeholder:'';
+    if(kmEl) kmEl.placeholder='⏳ Reading km from the photo…';
+    const okKm=function(n){ return n>0 && n<400000; };
+    let km=0;
+    try{
+      if(typeof window.geOcrRead==='function'){
+        const r=await window.geOcrRead(GE_PHOTOS.odo, function(t){ return /^\d{1,6}$/.test(String(t).trim()) && okKm(+t); }, 'odometer');
+        const t=String((r&&r.text)||'').trim();
+        if(r && r.validated && /^\d{1,6}$/.test(t)) km=+t;
+        if(!okKm(km) && typeof esKmCandidates==='function'){ const c=esKmCandidates(t); if(c.length) km=Math.max.apply(null,c); }
+      }
+    }catch(e){}
+    if(!okKm(km)){
+      try{
+        const raw=await askGemini(GE_PHOTOS.odo,
+          'Read the TOTAL odometer reading from this two-wheeler instrument cluster. '+
+          'Take the main large number only. Ignore the trip meter, clock, speed, fuel bars and gear. '+
+          'If it cannot be read, return 0. Return ONLY JSON: {"odometer_km":0}', 'odometer_km');
+        km=Math.round(Number(String(raw).replace(/[^0-9]/g,''))||0);
+      }catch(e){}
+    }
+    if(!kmEl) return;
+    if(okKm(km) && !String(kmEl.value||'').trim()){
+      kmEl.value=km; kmEl.placeholder=ph0;
+      try{ kmEl.style.background='#ecfdf5'; setTimeout(function(){ kmEl.style.background=''; },2500); }catch(e){}
+    } else if(!String(kmEl.value||'').trim()){
+      kmEl.placeholder='Could not read the meter — type the km';
+    } else kmEl.placeholder=ph0;
   };
 
   /* ------------------------------------------------------------------ WIRING
