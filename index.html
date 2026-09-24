@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 87;
-window.HERO_BUILD = 'R117-2026.09.24.1';
+window.HERO_RELEASE = 88;
+window.HERO_BUILD = 'R118-2026.09.24.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5325,7 +5325,10 @@ function heroMobileShow_(go, opts){
      Codes were proven delivered at 15:30 the same day.
      R117 (Ravi, 24-09-2026): "On first login, let every one now update their mobile
      nos ... Only mobile no verification is to be made mandatory." Skip is gone;
-     the only ways out are the verified code or Log out. Change-number keeps Cancel. */
+     the only ways out are the verified code or Log out. Change-number keeps Cancel.
+     R118 (24-09-2026 14:30): with no Skip, staff without a verified number could not
+     open the app at all — 0 gate entries and 0 estimates by 14:00. Skip for now is
+     back; the screen still comes up on every open until the number is confirmed. */
   let m=document.getElementById('hero-mob-modal');
   if(m) m.remove();
   m=document.createElement('div'); m.id='hero-mob-modal';
@@ -5334,7 +5337,7 @@ function heroMobileShow_(go, opts){
     '<div class="chgpass-box" style="max-width:380px;width:100%">'+
       (CHANGE?'<h3>📱 Change mobile number</h3>':'<h3>📱 Your mobile number</h3>')+
       (CHANGE?'<div class="hint" id="hm-current" style="margin-bottom:6px"></div>':'')+
-      '<div class="hint" style="margin-bottom:12px">'+(CHANGE?'Enter the NEW WhatsApp number. We send a 6-digit code to it.':'Enter your own WhatsApp number. We send a 6-digit code to it once. This is needed before you can use the app.')+'</div>'+
+      '<div class="hint" style="margin-bottom:12px">'+(CHANGE?'Enter the NEW WhatsApp number. We send a 6-digit code to it.':'Enter your own WhatsApp number. We send a 6-digit code to it once.')+'</div>'+
       '<div id="hm-step1">'+
         '<div class="fld"><label>Mobile number</label><input id="hm-mob" type="tel" inputmode="numeric" maxlength="14" placeholder="10-digit mobile" autocomplete="tel"></div>'+
         '<button class="btn" id="hm-send">Send code on WhatsApp</button>'+
@@ -5349,7 +5352,7 @@ function heroMobileShow_(go, opts){
         '</div>'+
       '</div>'+
       '<div id="hm-msg" class="hint" style="margin-top:10px;text-align:center"></div>'+
-      (CHANGE?'<button class="btn ghost" id="hm-skip" style="margin-top:8px">Cancel</button>':'')+
+      '<button class="btn ghost" id="hm-skip" style="margin-top:8px">'+(CHANGE?'Cancel':'Skip for now')+'</button>'+
       (CHANGE?'':'<div style="text-align:center;margin-top:14px"><span id="hm-out" style="cursor:pointer;color:var(--steel);font-size:12px;text-decoration:underline">Log out</span></div>')+
     '</div>';
   document.body.appendChild(m);
@@ -5400,7 +5403,7 @@ function heroMobileShow_(go, opts){
   };
   if($('hm-out')) $('hm-out').onclick=function(){ m.remove(); logout(); };
   if(CHANGE){ sbRpc('hero_my_mobile_status',{}).then(function(st){ var c=$('hm-current'); if(c && st && st.masked) c.textContent='Current number: '+st.masked; }).catch(function(){}); }
-  /* R117: Cancel exists only on "Change mobile"; first-time verification cannot be skipped. */
+  /* R118: Skip for now opens the app; the question comes back on the next open. */
   if($('hm-skip')) $('hm-skip').onclick=function(){ try{ m.remove(); }catch(e){} go(); };
   try{ $('hm-mob').focus(); }catch(e){}
 }
@@ -28041,29 +28044,45 @@ window.heroChangeMobile=function(){
     '<b>Sehgal Hero app:</b> phone Settings → Apps → Sehgal Hero → Permissions → Location → <b>Allow</b>.<br>'+
     '<b>Chrome:</b> tap the icon left of the address → Permissions → Location → <b>Allow</b>.<br>'+
     'Also keep the phone\'s Location switched on (pull down the top bar).</div>';
+  /* R118 (24-09-2026 14:30): the lock stopped the workshop — the guard's phone logged in
+     and was thrown back 10 times before 11:10, 0 gate entries and 0 estimates by 14:00,
+     iPhones on Chrome could not get past it at all. Rule (Ravi 23-09): nothing is locked
+     until it has been seen working on real phones. The screens stay as a request with
+     "Continue without location"; every outcome is written to app_errors (action
+     'geo-check') so the real phones' answers can be read before any lock returns. */
+  var skipUntil=0;
+  function geoLog(kind, info){
+    try{ sbRpc('hero_log_error',{p_action:'geo-check', p_message:kind,
+      p_payload:{info:info||null, platform:platform(), ua:String(navigator.userAgent||'').slice(0,160),
+                 build:String(window.HERO_BUILD||''), user:(window.USER&&USER.empno)||''}}).catch(function(){}); }catch(e){}
+  }
+  function goOn(m){ skipUntil=Date.now()+30*60*1000; try{ m.remove(); }catch(e){} }
   function permLock(fix){
+    geoLog('permission', {code:fix&&fix.code, err:fix&&fix.err});
     var m=modal('geo-lock',
-      '<h3>📍 Location is compulsory</h3>'+
-      '<div class="hint" style="margin:8px 0 10px" id="gl-msg">'+esc(fix.err)+' The app cannot be used without it.</div>'+
+      '<h3>📍 Please allow Location</h3>'+
+      '<div class="hint" style="margin:8px 0 10px" id="gl-msg">'+esc(fix.err)+'</div>'+
       HOWTO+
       '<button class="btn" id="gl-retry">I have allowed it — Try again</button>'+
-      '<button class="btn ghost block" style="margin-top:8px" id="gl-out">Log out</button>');
+      '<button class="btn ghost block" style="margin-top:8px" id="gl-skip">Continue without location</button>');
     m.setAttribute('data-kind','perm');
     $('gl-retry').onclick=function(){ $('gl-msg').textContent='Checking…'; heroGeoCheck(true); };
-    $('gl-out').onclick=function(){ m.remove(); try{ logout(); }catch(e){} };
+    $('gl-skip').onclick=function(){ goOn(m); };
   }
-  function lockScreen(msg){
+  function lockScreen(msg, v){
+    geoLog('premises', v||{message:msg});
     var m=modal('geo-lock',
       '<h3>📍 Only inside the workshop</h3>'+
       '<div class="hint" style="margin:8px 0 14px" id="gl-msg">'+esc(msg)+'</div>'+
       '<button class="btn" id="gl-retry">Try again</button>'+
-      '<button class="btn ghost block" style="margin-top:8px" id="gl-out">Log out</button>');
+      '<button class="btn ghost block" style="margin-top:8px" id="gl-skip">Continue</button>');
     $('gl-retry').onclick=function(){ $('gl-msg').textContent='Checking…'; heroGeoCheck(true); };
-    $('gl-out').onclick=function(){ m.remove(); try{ logout(); }catch(e){} };
+    $('gl-skip').onclick=function(){ goOn(m); };
   }
   window.heroGeoCheck=function(force){
     try{ if(typeof USER==='undefined' || !USER) return; }catch(e){ return; }
     if(busy) return;
+    if(!force && Date.now()<skipUntil) return;  /* R118: "Continue" holds for 30 minutes */
     if($('geo-lock')) force=true;               /* a locked phone re-checks every time it wakes */
     if(!force && Date.now()-lastOk < 5*60*1000) return;
     busy=true;
@@ -28079,7 +28098,7 @@ window.heroChangeMobile=function(){
         busy=false;
         if(v && v.ok){ lastOk=Date.now(); var g=$('geo-lock'); if(g) g.remove(); return; }
         if(!v || v.ok!==false) return;          /* server unreachable: never lock on our own failure */
-        lockScreen((f && f.err && v.why==='no-location') ? f.err : (v.message||'The app works only inside the workshop.'));
+        lockScreen((f && f.err && v.why==='no-location') ? f.err : (v.message||'The app works only inside the workshop.'), v);
       });
     }).catch(function(){ busy=false; });
   };
