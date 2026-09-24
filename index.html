@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 89;
-window.HERO_BUILD = 'R119-2026.09.24.1';
+window.HERO_RELEASE = 90;
+window.HERO_BUILD = 'R120-2026.09.24.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28166,6 +28166,89 @@ window.heroChangeMobile=function(){
   setInterval(function(){ heroGeoCheck(false); }, 10*60*1000);
   /* re-check straight after a login */
   try{ var _sv=window.showView; if(typeof _sv==='function') window.showView=function(){ var r=_sv.apply(this,arguments); setTimeout(function(){ heroGeoCheck(false); },800); return r; }; }catch(e){}
+})();
+</script>
+<script>
+/* ===========================================================================
+   R120 (Ravi 24-09-2026): "If the Mobile is on WhatsApp or not ... It should show
+   directly as tick marked Green - Is on WhatsApp."
+   Meta's official API has no "does this number have WhatsApp" lookup, so the answer
+   comes from PingMate's own delivery reports for our business number (function
+   wa-status, migration 0093 — ~69,000 numbers already proven by a DELIVERED/READ):
+     ✅ On WhatsApp        a message from us reached this number
+     ❌ Not on WhatsApp    Meta refused it: 131026 "Message undeliverable"
+     ⏳ Waiting            sent, WhatsApp has not reported delivery yet
+     ⚪ Not checked yet    we have never messaged this number
+   The tag sits under Gate Entry mobile / alt. contact and Estimate mobile. It
+   re-checks every 5 s for 2 minutes while it is Waiting / Not checked, so the tick
+   turns green by itself seconds after the first message (e.g. the customer code).
+   =========================================================================== */
+(function(){
+  var FIELDS=['ge-mob','ge-alt','es-mob'];
+  var CACHE={};            /* mobile -> {r, t} */
+  var WATCH={};            /* field id -> {mob, until} */
+  var LAST={};             /* field id -> last value seen */
+  var STY={
+    on:   ['#065f46','#ecfdf5','#a7f3d0','✅ On WhatsApp'],
+    off:  ['#991b1b','#fef2f2','#fecaca','❌ Not on WhatsApp'],
+    wait: ['#92400e','#fffbeb','#fde68a','⏳ Sent — waiting for WhatsApp to confirm'],
+    never:['#475569','#f8fafc','#e2e8f0','⚪ Not checked yet — ticks green once our first WhatsApp reaches']
+  };
+  function tag(id){
+    var inp=document.getElementById(id); if(!inp) return null;
+    var t=document.getElementById(id+'-wa');
+    if(!t){
+      t=document.createElement('div'); t.id=id+'-wa';
+      t.style.cssText='display:none;margin-top:4px;padding:2px 8px;border-radius:999px;border:1px solid;font-size:11.5px;font-weight:700;line-height:1.5;width:max-content;max-width:100%;white-space:normal';
+      inp.insertAdjacentElement('afterend', t);
+    }
+    return t;
+  }
+  function paint(id, state, extra){
+    var t=tag(id); if(!t) return;
+    if(!state){ t.style.display='none'; return; }
+    var s=STY[state]||STY.never;
+    t.style.color=s[0]; t.style.background=s[1]; t.style.borderColor=s[2];
+    t.textContent=s[3]+(extra||''); t.style.display='block';
+  }
+  function norm(v){ var d=String(v||'').replace(/\D/g,''); d=d.slice(-10); return /^[6-9]\d{9}$/.test(d)?d:''; }
+  function ask(mob){
+    var c=CACHE[mob];
+    if(c && Date.now()-c.t < (c.r.state==='on'||c.r.state==='off' ? 10*60*1000 : 4000)) return Promise.resolve(c.r);
+    return sbFetch('/functions/v1/wa-status',{method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mobile:mob}), timeoutMs:15000})
+      .then(function(r){ return r.json(); })
+      .then(function(j){ if(j && j.ok){ CACHE[mob]={r:j,t:Date.now()}; } return j; });
+  }
+  function check(id){
+    var inp=document.getElementById(id); if(!inp) return;
+    var mob=norm(inp.value);
+    if(!mob){ paint(id,null); delete WATCH[id]; return; }
+    ask(mob).then(function(j){
+      if(norm(inp.value)!==mob) return;            /* number changed meanwhile */
+      if(!j || !j.ok){ paint(id,null); return; }
+      paint(id, j.state);
+      if(j.state==='on'||j.state==='off'){ delete WATCH[id]; }
+      else if(!WATCH[id] || WATCH[id].mob!==mob){ WATCH[id]={mob:mob, until:Date.now()+2*60*1000}; }
+    }).catch(function(){ /* not signed in / offline: say nothing rather than guess */ });
+  }
+  window.heroWaCheck=function(id){ if(id){ var w=WATCH[id]; if(w) w.until=Date.now()+2*60*1000; check(id); } else FIELDS.forEach(check); };
+  /* values are often filled by code (customer lookup, gate pick), which fires no
+     input event — so watch the values themselves */
+  setInterval(function(){
+    if(document.visibilityState!=='visible') return;
+    FIELDS.forEach(function(id){
+      var inp=document.getElementById(id); if(!inp) return;
+      var v=String(inp.value||'');
+      if(v!==LAST[id]){ LAST[id]=v; check(id); return; }
+      var w=WATCH[id];
+      if(w && Date.now()<w.until && inp.offsetParent && ((w.k=(w.k||0)+1)%4===0)) check(id);   /* every ~5 s */
+    });
+  }, 1250);
+  /* after the customer code is sent, look again right away and keep looking */
+  var _ask=window.esOtpAsk;
+  if(typeof _ask==='function') window.esOtpAsk=function(){ var r=_ask.apply(this,arguments);
+    setTimeout(function(){ window.heroWaCheck('es-mob'); }, 3000); return r; };
 })();
 </script>
 </body></html>
