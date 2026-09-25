@@ -142,6 +142,8 @@
     });
   }
   /* the session the app gets: the CEO's tokens, wearing the chosen person's id */
+  /* Ravi 25-09-2026: staff log in with their plain employee number (5004, 1001, 275506),
+     never the SA.5004-style code - the list, the strip and the login all use the number. */
   function asPerson(s, p) {
     var out = JSON.parse(JSON.stringify(s));
     out.user = Object.assign({}, out.user || {}, { id: p.id, email: p.email || '' });
@@ -180,7 +182,7 @@
         return people().then(function (list) {
           var p = list.filter(function (x) { return String(x.email || '').toLowerCase() === email; })[0];
           if (!p) return jres({ error: 'invalid_grant', error_description: 'Sandbox: no such login' }, 400);
-          own('acting', { id: p.id, code: p.code, name: p.name, role: p.role, ws: p.ws });
+          own('acting', { id: p.id, code: p.empno || p.code, name: p.name, role: p.role, ws: p.ws });
           return ownerRefresh().then(function (s) { paintStrip(); return jres(asPerson(s, p)); });
         }).catch(function (e) { return jres({ error: 'invalid_grant', error_description: String(e.message || e) }, 400); });
       }
@@ -378,8 +380,8 @@
     people().then(function (list) {
       var sel = document.getElementById('sbx-who');
       sel.innerHTML = list.filter(function (x) { return x.active !== false; }).map(function (x) {
-        return '<option value="' + esc(x.code) + '"' + (a && a.id === x.id ? ' selected' : '') + '>' +
-          esc(x.code) + ' — ' + esc(x.name || '') + ' (' + esc(x.role || '') + (x.ws ? ', ' + esc(x.ws) : '') + ')</option>';
+        return '<option value="' + esc(x.empno || x.code) + '"' + (a && a.id === x.id ? ' selected' : '') + '>' +
+          esc(x.empno || x.code) + ' — ' + esc(x.name || '') + ' (' + esc(x.role || '') + (x.ws ? ', ' + esc(x.ws) : '') + ')</option>';
       }).join('');
     }).catch(function (e) { say(String(e.message || e)); });
     status();
