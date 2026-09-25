@@ -53,3 +53,12 @@
 # the iPhone "Add to Home Screen" steps. No customer data. By NAME, as above.
 !app/
 !app/index.html
+# 0094 (25-09-2026): /sandbox/ is the CEO sandbox (Ravi: log in as anyone, what he
+# saves is seen only by him). index.html there is the live app + one loader line;
+# sandbox.js is the layer, sw.js a do-nothing worker, build.py makes index.html + sw.js.
+# No customer data, no keys beyond the publishable one. By NAME, as above.
+!sandbox/
+!sandbox/index.html
+!sandbox/sandbox.js
+!sandbox/sw.js
+!sandbox/build.py
