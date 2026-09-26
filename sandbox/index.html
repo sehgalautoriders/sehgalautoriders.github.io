@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 91;
-window.HERO_BUILD = 'R121-2026.09.24.1';
+window.HERO_BUILD = 'R123-2026.09.26.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -8169,6 +8169,27 @@ function esBuild(fam, dec, km, modelName){
   esDropOwnedDuplicates_(L);
   esFillComplaintCodes_(L);
   esAddWashing_(L);
+  esPartsBeforeGst_(L);
+  return L;
+}
+
+/* R123 (Ravi 26-09-2026, Research Lab Program H) — GST WAS CHARGED TWICE ON PARTS AND OIL.
+   Every part and oil price in this app is a Hero MRP, and an MRP already holds its GST: the 1 litre Hero 4T Plus is
+   Rs 570 on the shelf and Rs 483.05 + 18 % = Rs 570 on the DMS bill. The screen then added 18 % to the whole subtotal,
+   so the same oil was quoted at Rs 673 - the mistake R101 fixed for the wash, still alive on every part. Measured on
+   529 estimates linked to their own invoices. Here, once, at the one point every line passes through (the composer,
+   the pickers, the all-India finder, the amount fill, a re-opened estimate), a part or oil line becomes its
+   before-GST amount - exactly how the DMS bill prints it - and the 18 % at the bottom is then right for every line.
+   The MRP stays on the line (x.mrp) for anyone who asks. Lines are built fresh on every recompute, so this never
+   runs twice on the same price. */
+function esPartsBeforeGst_(L){
+  [L.oil, L.parts].forEach(function(arr){
+    (arr||[]).forEach(function(x){
+      if(!x || x._preGst) return;
+      var m=+x.p||0;
+      x.mrp=m; x.p=Math.round(m/(1+GST)*100)/100; x._preGst=true;
+    });
+  });
   return L;
 }
 
@@ -24699,7 +24720,7 @@ function esTargetApply_(amount, explicit){
           var partAdded=[], used={}, ji=0, pi=0, guard=0;
           var addPart=function(pt){
             var lab=pickLab(pt);
-            var partCost=Math.round(pt.mrp*(1+gst));
+            var partCost=Math.round(pt.mrp);   /* R123: an MRP already holds its GST */
             var labRate=lab?lab.rate:bandFit(pt);
             if(!(labRate>0)) return false;                                  /* R93 (Ravi): "with each part addition there will be labour" — no job, no part */
             var labCost=labRate>0?Math.round(labRate*(1+gst)):0;
