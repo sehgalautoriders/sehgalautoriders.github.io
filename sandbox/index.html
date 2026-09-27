@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 91;
-window.HERO_BUILD = 'R123-2026.09.26.1';
+window.HERO_BUILD = 'R124-2026.09.27.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5971,7 +5971,9 @@ function loadHoldupSnapshot(){
   const buckets=[
     ['Warranty Approval', r=>String(r['Holdup Status']||'').toLowerCase().includes('warranty'),'red'],
     ['Parts Pending', r=>huIsPartStatus(String(r['Holdup Status']||'')+' '+String(r['Holdup Reason']||'')),'orange'],
-    ['Not Allocated', r=>!String(r['Holdup Status']||'').trim()||String(r['Holdup Status']||'')==='Not Allocated','blue'],
+    /* R124 (Ravi 27-09-2026): Hero Power BI holdup arrives as UNREGISTERED / GATE_MATCHED, which the Holdup screen
+       already shows as 'Not Allocated' (HU_OLD_TO_DRS) - the snapshot compared the raw word and put them all in Others. */
+    ['Not Allocated', r=>!String(r['Holdup Status']||'').trim()||huNormalizeDrs(r['Holdup Status'])==='Not Allocated','blue'],
     ['Approval Pending', r=>huIsApprovalStatus(String(r['Holdup Status']||'')),'green'],
     ['Others', r=>true,'gray']
   ];
