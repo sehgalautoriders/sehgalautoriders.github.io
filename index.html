@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 91;
-window.HERO_BUILD = 'R124-2026.09.27.1';
+window.HERO_BUILD = 'R125-2026.09.28.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28288,6 +28288,144 @@ window.heroChangeMobile=function(){
   var _ask=window.esOtpAsk;
   if(typeof _ask==='function') window.esOtpAsk=function(){ var r=_ask.apply(this,arguments);
     setTimeout(function(){ window.heroWaCheck('es-mob'); }, 3000); return r; };
+})();
+</script>
+<!-- R125 (28-09-2026) AVNI asks - the holdup chase inside the app.
+     Ravi: "Holdup reduction is the objective.. 90% same day delivery. If any vehicle is pending, you have to ask why
+     again and again to the WM, GM, Parts coordinator. On Whatsapp, On notifications of Hero App."
+     Server: migration 0097 (hero_chase_my_items / hero_holdup_update). The same questions go out on WhatsApp by the
+     edge function holdup-chase. Never a lock (Ravi 23-09 "do not lock anything"): the panel opens by itself on start and
+     every 30 min while vehicles are unanswered, and always closes with one tap. -->
+<style>
+#avask-pill{position:fixed;left:12px;bottom:78px;z-index:9990;background:#D71920;color:#fff;border:0;border-radius:18px;
+  padding:8px 14px;font:600 13px/1 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;cursor:pointer}
+#avask-ov{position:fixed;inset:0;z-index:9995;background:#F6F5F2;display:none;flex-direction:column;font:13px system-ui,sans-serif;color:#171717}
+#avask-ov .ah{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border-bottom:1px solid #E5E5E5}
+#avask-ov .ah b{font-size:15px;flex:1}
+#avask-ov .ah button{border:1px solid #E5E5E5;background:#fff;border-radius:6px;padding:6px 10px;font-size:13px}
+#avask-ov .as{padding:6px 12px;background:#fff;border-bottom:1px solid #E5E5E5;font-size:12px}
+#avask-ov .as .bad{color:#D71920;font-weight:700}#avask-ov .as .ok{color:#15803d;font-weight:700}
+#avask-ov .ab{flex:1;overflow:auto}
+#avask-ov table{border-collapse:collapse;width:100%;background:#fff}
+#avask-ov th{position:sticky;top:0;background:#fafafa;text-align:left;font-size:11px;color:#6B6B6B;padding:6px;border-bottom:1px solid #E5E5E5}
+#avask-ov td{padding:5px 6px;border-bottom:1px solid #E5E5E5;vertical-align:top}
+#avask-ov td .q{font-size:11px;color:#6B6B6B;max-width:260px}
+#avask-ov select,#avask-ov input{font-size:12px;padding:4px;border:1px solid #d4d4d4;border-radius:4px;max-width:170px}
+#avask-ov input.w{width:150px}
+#avask-ov button.sv{background:#171717;color:#fff;border:0;border-radius:4px;padding:5px 10px;font-size:12px}
+#avask-ov tr.done td{opacity:.45}
+</style>
+<button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
+<div id="avask-ov" role="dialog" aria-label="AVNI asks">
+  <div class="ah"><b>AVNI asks — why not delivered?</b>
+    <button type="button" id="avask-notif" onclick="avaskNotifOn()">🔔 Alerts</button>
+    <button type="button" onclick="avaskClose()">Close</button></div>
+  <div class="as" id="avask-sum"></div>
+  <div class="ab"><table><thead><tr><th>#</th><th>Vehicle</th><th>Days</th><th>AVNI asks</th><th>Status</th><th>Why</th><th>Promise</th><th>Part no. / where / order no.</th><th></th></tr></thead>
+    <tbody id="avask-tb"></tbody></table></div>
+</div>
+<script>
+(function(){
+  var ROLES=['wm','gm','ceo','parts','supervisor'];
+  var ITEMS=[], LAST_AUTO=0, LAST_N=-1, TIMER=null, LOADING=false;
+  var AUTO_MS=30*60*1000;
+  var DEALER={'23490':'Chinchwad','17057':'Premia','10307':'PDI','61299':'Chakan'};
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function role(){ try{ return String((USER&&(USER.role||USER.Role))||'').toLowerCase(); }catch(e){ return ''; } }
+  function signedIn(){ try{ return !!(USER && localStorage.getItem('sb_rt')); }catch(e){ return false; } }
+  function statuses(){ try{ return (typeof HU_DRS_OPTIONS!=='undefined'&&HU_DRS_OPTIONS.length)?HU_DRS_OPTIONS:['Not Allocated','Work In Progress']; }catch(e){ return ['Work In Progress']; } }
+  function etas(){ try{ return (typeof HU_ETA_OPTIONS!=='undefined')?HU_ETA_OPTIONS:['Today','Tomorrow','4-5 Days','Above 5 Days']; }catch(e){ return ['Today','Tomorrow']; } }
+  function opts(list,cur){ cur=String(cur||''); var h='<option value="">—</option>';
+    list.forEach(function(o){ h+='<option'+(String(o)===cur?' selected':'')+'>'+esc(o)+'</option>'; }); return h; }
+  function sddText(d){
+    var rows=(d.sdd||[]).filter(function(r){ return r.opened>0; }); if(!rows.length) return '';
+    var last=rows[0].day, y=rows.filter(function(r){ return r.day===last; });
+    var o=0,s=0; y.forEach(function(r){ o+=r.opened; s+=r.same_day; });
+    var p=Math.round(100*s/o), t=Number(d.target||90);
+    return 'Same-day delivery '+esc(last.split('-').reverse().join('-'))+': <span class="'+(p>=t?'ok':'bad')+'">'+p+'%</span> ('+s+' of '+o+') · target '+t+'%';
+  }
+  function paint(d){
+    var pill=document.getElementById('avask-pill');
+    var n=ITEMS.length;
+    pill.textContent='AVNI asks · '+n; pill.style.display=n?'block':'none';
+    document.getElementById('avask-sum').innerHTML=
+      '<b>'+n+'</b> vehicle'+(n===1?'':'s')+' with no answer today. Each answer stops the asking for today. '+sddText(d||{});
+    var tb=document.getElementById('avask-tb'), h='';
+    ITEMS.forEach(function(it,i){
+      var parts=it.q_role==='parts';
+      h+='<tr data-i="'+i+'"><td>'+(i+1)+'</td>'
+        +'<td><b>'+esc(it.reg_no||it.jc_number)+'</b><br><span class="q">'+esc(it.model)+' · '+esc(it.jc_type)+' · '+esc(DEALER[it.dealer_code]||it.dealer_code)+'</span></td>'
+        +'<td>'+esc(it.days_open)+'d'+(it.asked_total?'<br><span class="q">asked '+esc(it.asked_total)+'×</span>':'')+'</td>'
+        +'<td><div class="q">'+esc(it.question)+'</div></td>'
+        +'<td><select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></td>'
+        +'<td><input class="w" data-f="rs" placeholder="why" value="'+esc(it.reason)+'"></td>'
+        +'<td><select data-f="eta">'+opts(etas(), it.eta)+'</select></td>'
+        +'<td><input class="w" data-f="rm" placeholder="'+(parts?'part no. · where · order no.':'remarks')+'" value="'+esc(it.remarks)+'"></td>'
+        +'<td><button type="button" class="sv" onclick="avaskSave('+i+')">Save</button></td></tr>';
+    });
+    tb.innerHTML=h||'<tr><td colspan="9" style="padding:14px">Nothing waiting. Every pending vehicle has an answer today.</td></tr>';
+  }
+  function notify(n){
+    try{
+      if(typeof Notification==='undefined' || Notification.permission!=='granted' || document.visibilityState==='visible') return;
+      new Notification('AVNI asks', {body: n+' vehicle'+(n===1?' is':'s are')+' not delivered with no answer today. Why?', tag:'avask'});
+    }catch(e){}
+  }
+  async function load(auto){
+    if(LOADING || !signedIn() || ROLES.indexOf(role())<0 || typeof sbRpc!=='function') return;
+    LOADING=true;
+    try{
+      var d=await sbRpc('hero_chase_my_items',{});
+      ITEMS=(d&&d.items)||[];
+      paint(d);
+      var n=ITEMS.length;
+      if(n && LAST_N>=0 && n!==LAST_N) notify(n);
+      LAST_N=n;
+      if(auto && n && Date.now()-LAST_AUTO>AUTO_MS && document.visibilityState==='visible'){ LAST_AUTO=Date.now(); avaskOpen(false); }
+    }catch(e){ /* not signed in / offline: stay quiet */ }
+    finally{ LOADING=false; }
+  }
+  window.avaskOpen=function(user){
+    var ov=document.getElementById('avask-ov'); ov.style.display='flex'; document.body.style.overflow='hidden';
+    if(user) LAST_AUTO=Date.now();
+    try{ history.pushState({avask:1},''); }catch(e){}
+    var b=document.getElementById('avask-notif'); if(b) b.style.display=(typeof Notification==='undefined'||Notification.permission==='granted')?'none':'';
+  };
+  window.avaskClose=function(){ document.getElementById('avask-ov').style.display='none'; document.body.style.overflow=''; };
+  window.addEventListener('popstate',function(){ var ov=document.getElementById('avask-ov'); if(ov&&ov.style.display==='flex') avaskClose(); });
+  window.avaskNotifOn=function(){ try{ Notification.requestPermission().then(function(){ avaskOpen(true); }); }catch(e){} };
+  window.avaskSave=async function(i){
+    var it=ITEMS[i], tr=document.querySelector('#avask-tb tr[data-i="'+i+'"]'); if(!it||!tr) return;
+    var g=function(f){ var el=tr.querySelector('[data-f="'+f+'"]'); return el?String(el.value||'').trim():''; };
+    var st=g('st'), rs=g('rs'), eta=g('eta'), rm=g('rm');
+    var btn=tr.querySelector('button.sv');
+    if(!st){ btn.textContent='Pick a status'; return; }
+    if(it.q_role==='parts' && (!eta || !rm)){ btn.textContent='Promise + part info'; return; }
+    btn.textContent='Saving…'; btn.disabled=true;
+    try{
+      var r=await sbRpc('hero_holdup_update',{p:{jcNo:it.jc_number, dealerCode:it.dealer_code, reg:it.reg_no,
+        holdupStatus:st, holdupReason:rs, partsEta:eta, remarks:rm,
+        updatedBy:(USER&&(USER.personName||USER.empno))||''}});
+      if(r&&r.ok===false) throw new Error(r.error||'not saved');
+      tr.className='done'; btn.textContent='Saved ✓';
+      setTimeout(function(){ load(false); }, 1500);
+    }catch(e){ btn.disabled=false; btn.textContent='Retry'; }
+  };
+  function deepLink(){
+    if(location.hash!=='#holdup' || !signedIn()) return false;
+    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
+    try{ if(typeof openModule==='function') openModule('holdup'); }catch(e){}
+    LAST_AUTO=0; load(true); return true;
+  }
+  function start(){
+    if(TIMER) return;
+    setTimeout(function(){ if(!deepLink()) load(true); }, 4000);
+    TIMER=setInterval(function(){ deepLink(); load(true); }, 5*60*1000);
+    document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') load(true); });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+  /* a login later in the session starts the asking at once */
+  var waitLogin=setInterval(function(){ if(signedIn() && ROLES.indexOf(role())>=0){ clearInterval(waitLogin); load(true); } }, 5000);
 })();
 </script>
 </body></html>
