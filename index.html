@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 91;
-window.HERO_BUILD = 'R125-2026.09.28.1';
+window.HERO_RELEASE = 92;
+window.HERO_BUILD = 'R126-2026.09.28.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -12014,8 +12014,8 @@ Team Sehgal Autoriders
 Chinchwad, Pune`;
 }
 function huCustomerActionBtns(r, i){
-  const enriched=HU_DATA_ENRICHED&&HU_DATA_ENRICHED.find(e=>e&&e.reg===String(r[HU_COLS.reg]||'').trim().toUpperCase());
-  const mob=enriched&&enriched.mob?String(enriched.mob).replace(/\D/g,''):'';
+  /* 28-Sep-2026: row Mobile, gate match, then any number the customer-master lookup found. */
+  const mob=huRowMobSync(r);
   // WhatsApp SVG icon button
   const waSvg=`<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
   /* R22 (Ravi 03-Aug-2026): the customer's number must be ON the holdup row so
@@ -12032,8 +12032,15 @@ function huFindEnrichedForRow(r){
 }
 function huOpenWa(rowIdx){
   HU_CONTACT_ROW=HU_ROWS_CURRENT[rowIdx]; if(!HU_CONTACT_ROW) return;
-  const enriched=huFindEnrichedForRow(HU_CONTACT_ROW);
-  const mob=enriched&&enriched.mob?String(enriched.mob).replace(/\D/g,'').slice(-10):'';
+  const known=huRowMobSync(HU_CONTACT_ROW);
+  /* No number yet: ask the customer master (phone copy, then server) before
+     falling back to typing it in. */
+  if(!known && !huOpenWa._looked){
+    const row=HU_CONTACT_ROW;
+    huResolveMob(row, function(){ huOpenWa._looked=true; try{ huOpenWa(rowIdx); } finally { huOpenWa._looked=false; } }, true);
+    return;
+  }
+  const mob=known;
   const msg=huBuildWaMsg(HU_CONTACT_ROW);
   const reg=String(HU_CONTACT_ROW[HU_COLS.reg]||'');
   if(mob && mob.length===10){ window.open('https://wa.me/91'+mob+'?text='+encodeURIComponent(msg),'_blank','noopener'); return; }
@@ -14791,16 +14798,86 @@ function goConfirm(){
 }
 
 /* ---------- HOLDUP MOBILE CARDS (Operations Hub design) ---------- */
-function huMobCall(i){
-  const r=HU_ROWS_CURRENT[i]; if(!r) return;
+/* Ravi 28-Sep-2026: "All the phone nos are available in the back for all the
+   customers, still not coming on holdup check." The holdup row and the gate-entry
+   match were the only two places looked at, and the gate match exists only on the
+   device that uploaded the file. The customer master holds the number for nearly
+   every vehicle, so it is now the third source: phone copy first, then the server
+   (heroCustLookup), by Reg No and then by VIN. Found numbers are kept in
+   HU_MOB_CACHE and written onto the row so the next tap is instant. */
+const HU_MOB_CACHE={};
+function huMobKey(r){ return String(r[HU_COLS.reg]||'').trim().toUpperCase()||huGetVin(r); }
+function huRowMobSync(r){
   let mob=String(r['Mobile']||r['Mobile No']||r['Contact Number']||r['Customer Mobile']||'').replace(/\D/g,'').slice(-10);
   /* R22: the DMS holdup export rarely carries the mobile — the gate-entry match does. */
   if(mob.length!==10){
     const en=(typeof huFindEnrichedForRow==='function')&&huFindEnrichedForRow(r);
-    if(en&&en.mob) mob=String(en.mob).replace(/\D/g,'').slice(-10);
+    mob=en&&en.mob?String(en.mob).replace(/\D/g,'').slice(-10):'';
   }
-  if(mob.length===10) window.location.href='tel:+91'+mob;
-  else alert('No customer mobile number available for this vehicle (not in holdup data or gate entries).');
+  if(mob.length!==10) mob=HU_MOB_CACHE[huMobKey(r)]||'';
+  return mob.length===10?mob:'';
+}
+/* serverToo=false keeps the background card fill on the phone's own copy — no
+   burst of server calls when forty cards render at once. */
+function huResolveMob(r, cb, serverToo){
+  const have=huRowMobSync(r); if(have){ cb(have); return; }
+  const reg=String(r[HU_COLS.reg]||'').trim(), vin=huGetVin(r);
+  const ids=[reg,vin].filter(Boolean);
+  /* Cheapest first: the phone's copy, then Supabase customer_master (signed-in
+     read, by reg_key), then the Apps Script customer_find. */
+  const tries=ids.map(q=>['local',q]);
+  if(serverToo){
+    if(reg) tries.push(['sb',reg]);
+    ids.forEach(q=>tries.push(['server',q]));
+  }
+  function take(m){ m=String(m||'').replace(/\D/g,'').slice(-10); return m.length===10?m:''; }
+  function done(m){ HU_MOB_CACHE[huMobKey(r)]=m; r['Mobile']=m; cb(m); }
+  (function next(){
+    if(!tries.length){ cb(''); return; }
+    const t=tries.shift();
+    if(t[0]==='sb'){ huSbMob(t[1], function(m){ m?done(m):next(); }); return; }
+    (t[0]==='local'?heroCustFind:function(q,f){ jgetRaw('customer_find',{q:q},f,30000); })(t[1], function(res){
+      const v=res&&res.found&&res.vehicle;
+      const m=v?(take(v.mob)||take(v.alt)):'';
+      m?done(m):next();
+    });
+  })();
+}
+/* customer_master's phone column name is not pinned in this repo, so take the
+   first 10-digit value from any mobile / phone / contact column on the row. */
+function huSbMob(reg, cb){
+  const key=String(reg||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(key.length<6 || typeof sbFetch!=='function'){ cb(''); return; }
+  sbFetch('/rest/v1/customer_master?reg_key=eq.'+encodeURIComponent(key)+'&select=*&limit=1',{method:'GET'})
+    .then(function(x){ return x.ok?x.json():null; })
+    .then(function(rows){
+      const v=(Array.isArray(rows)&&rows[0])||{};
+      const ks=Object.keys(v).filter(k=>/mob|phone|contact/i.test(k)).sort((a,b)=>/alt|2/.test(a)-/alt|2/.test(b));
+      for(const k of ks){ const m=String(v[k]||'').replace(/\D/g,'').slice(-10); if(m.length===10){ cb(m); return; } }
+      cb('');
+    })
+    .catch(function(){ cb(''); });
+}
+function huMobCall(i){
+  const r=HU_ROWS_CURRENT[i]; if(!r) return;
+  const btn=document.getElementById('hum-call-'+i);
+  const was=btn?btn.innerHTML:'';
+  if(btn&&!huRowMobSync(r)) btn.innerHTML='⏳ Finding…';
+  huResolveMob(r, function(mob){
+    if(btn) btn.innerHTML=was;
+    if(mob){ huMobShowNum(i,mob,r); window.location.href='tel:+91'+mob; }
+    else alert('No customer mobile number found for this vehicle (checked holdup data, gate entries and customer master).');
+  }, true);
+}
+function huMobShowNum(i, mob, r){
+  const el=document.getElementById('hum-mob-'+i);
+  /* A re-render can reuse this id for another vehicle before a lookup returns. */
+  if(el && r && el.getAttribute('data-k')!==huMobKey(r)) return;
+  if(el) el.innerHTML=`<a href="tel:+91${mob}" style="color:#2563eb;text-decoration:none">📱 ${mob}</a>`;
+}
+/* Fill the number onto each card straight after render, from the phone's copy. */
+function huMobFillNums(rows){
+  rows.forEach(function(r,i){ huResolveMob(r, function(m){ if(m) huMobShowNum(i,m,r); }, false); });
 }
 function huRenderMobileCards(rows){
   const canEdit=canEditHoldup();
@@ -14815,7 +14892,7 @@ function huRenderMobileCards(rows){
     const eta=r['Parts ETA']||'—', rem=r['Remarks']||'';
     return `<div class="hum-card" style="border-left-color:${bc}">
       <div class="hum-top">
-        <div onclick="huShowDetail(${i})" style="cursor:pointer"><div class="hum-reg" style="color:#2563eb;text-decoration:underline dotted">${reg}</div><div class="hum-model">${r[HU_COLS.model]||''}</div></div>
+        <div onclick="huShowDetail(${i})" style="cursor:pointer"><div class="hum-reg" style="color:#2563eb;text-decoration:underline dotted">${reg}</div><div class="hum-model">${r[HU_COLS.model]||''}</div><div id="hum-mob-${i}" data-k="${huMobKey(r)}" class="hum-model mono" onclick="event.stopPropagation()">${(m=>m?`<a href="tel:+91${m}" style="color:#2563eb;text-decoration:none">📱 ${m}</a>`:'')(huRowMobSync(r))}</div></div>
         <span class="hum-days" style="background:${dbg};color:${bc}">${days>=0?days+'d':'—'}</span>
       </div>
       <div class="hum-grid">
@@ -14827,12 +14904,13 @@ function huRenderMobileCards(rows){
       ${rem?`<div class="hum-rem">💬 ${String(rem).replace(/</g,'&lt;')}</div>`:''}
       <div class="hum-actions">
         ${canEdit?`<button class="hum-btn upd" style="background:${bc}" onclick="huMobSheetOpen(${i})">✏️ Quick Update</button>`:''}
-        <button class="hum-btn" onclick="huMobCall(${i})">📞 Call</button>
+        <button class="hum-btn" id="hum-call-${i}" onclick="huMobCall(${i})">📞 Call</button>
         <button class="hum-btn" onclick="huShowHistory(${i})">📅</button>
         ${huReqPhotoCell(r,i)}
       </div>
     </div>`;
   }).join('');
+  huMobFillNums(rows);
 }
 let HUM_SEL=-1;
 function huMobSheetOpen(i){
