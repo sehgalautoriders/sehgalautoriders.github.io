@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 97;
-window.HERO_BUILD = 'R128-2026.09.29.6';
+window.HERO_BUILD = 'R129-2026.09.29.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28996,5 +28996,93 @@ var ES_BODY=null;
 (function(){ if(document.getElementById('tg-css')) return; var st=document.createElement('style'); st.id='tg-css';
   st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}.tg-pn{white-space:nowrap}';
   document.head.appendChild(st); })();
+/* ===========================================================================
+   R129 (Ravi 29-09-2026): "The Service advisor told me that after gate entry it
+   is taking 10 minutes for the entry to be seen for making estimate. In that time
+   the vehicle may have been gone inside also. 10 minutes?? I have also been
+   complaining on this for long."
+
+   MEASURED the same day (Supabase edge logs): every gate entry reached the server
+   the moment the guard pressed Save, but SA.5037's phone asked for the list only
+   at 08:27, 08:33, 08:44, 08:53, 09:01, 09:08, 09:18 - only when a new estimate
+   was started. The R119 20 s timer skips while the gate box still has focus, and
+   on Android the box KEEPS focus after its list is closed - so an SA who kept
+   opening the box to look for the vehicle stopped the refresh himself. Each
+   refresh also cost ~5 s on the server (fixed in migration 0102: 0.2 s).
+
+   Now: every 5 s while the app is on screen, ask hero_gate_pulse() (a few bytes).
+   When today's gate/estimate picture changes:
+     - Estimate screen open, no vehicle picked -> the list reloads at once;
+     - otherwise (mid-estimate, other screen) -> "New at gate" note, tap = Estimate.
+   Coming back to the app (screen on / back from WhatsApp or DMS) checks at once.
+   The gate box only counts as "open in the SA's hand" for 15 s after he taps it.
+   =========================================================================== */
+(function(){
+  'use strict';
+  var PULSE_MS=5000, sig=null, lastN=null, busy=false, failUntil=0, openAt=0;
+  function loggedIn(){ return typeof USER!=='undefined' && USER && typeof sbRpc==='function'; }
+  function canEst(){ try{ return typeof canUseModule==='function' && canUseModule('Estimate'); }catch(e){ return false; } }
+  function estOpen(){ var v=document.getElementById('view-estimate'); return !!(v && v.style.display!=='none' && v.offsetParent!==null); }
+  function picked(){ return typeof ES!=='undefined' && ES && (ES.gateId||ES.token); }
+  function boxInHand(){ return openAt && (Date.now()-openAt) < 15000; }
+
+  function reloadList(){
+    if(!estOpen() || picked() || boxInHand()) return false;
+    try{ if(typeof jrClearFresh==='function') jrClearFresh(); }catch(e){}
+    try{ esLoadGateEntries(); }catch(e){}
+    return true;
+  }
+
+  function note(last){
+    try{
+      if(!last || !canEst()) return;
+      if(typeof wsAllowed==='function' && last.location && !wsAllowed(last.location)) return;
+      var t=document.getElementById('r129-note');
+      if(!t){
+        t=document.createElement('div'); t.id='r129-note';
+        t.style.cssText='position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:10000;background:#15803d;color:#fff;font:700 13px Inter,sans-serif;padding:10px 16px;border-radius:12px;max-width:94vw;box-shadow:0 8px 24px rgba(0,0,0,.28);transition:opacity .3s;cursor:pointer;text-align:center';
+        t.addEventListener('click', function(){
+          t.style.opacity='0'; t.style.pointerEvents='none';
+          try{ if(!estOpen() && typeof openModule==='function') openModule('estimate'); else reloadList(); }catch(e){}
+        });
+        document.body.appendChild(t);
+      }
+      var bits=[last.token, last.reg, last.model].filter(function(x){ return x; });
+      t.textContent='🚗 New at gate: '+(bits.join(' · ')||'vehicle')+(estOpen()&&!picked()?'':' — tap to see');
+      t.style.opacity='1'; t.style.pointerEvents='auto';
+      clearTimeout(note._t); note._t=setTimeout(function(){ t.style.opacity='0'; t.style.pointerEvents='none'; }, 8000);
+    }catch(e){}
+  }
+
+  function pulse(){
+    if(busy || !loggedIn() || document.visibilityState!=='visible' || Date.now()<failUntil) return;
+    if(!canEst() && !estOpen()) return;
+    busy=true;
+    sbRpc('hero_gate_pulse', {}).then(function(p){
+      busy=false;
+      if(!p || !p.ok || !p.sig) return;
+      var changed = sig!==null && p.sig!==sig;
+      var grew = lastN!==null && typeof p.n==='number' && p.n>lastN;
+      sig=p.sig; lastN=(typeof p.n==='number')?p.n:lastN;
+      if(!changed) return;
+      reloadList();
+      if(grew) note(p.last);
+    }).catch(function(){ busy=false; failUntil=Date.now()+30000; });
+  }
+
+  setInterval(pulse, PULSE_MS);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState==='visible'){ failUntil=0; reloadList(); pulse(); }
+  });
+  window.addEventListener('online', function(){ failUntil=0; pulse(); });
+
+  var box=document.getElementById('es-gate-pick');
+  if(box){
+    ['touchstart','mousedown','focus'].forEach(function(ev){ box.addEventListener(ev, function(){ openAt=Date.now(); }, {passive:true}); });
+    box.addEventListener('change', function(){ openAt=0; try{ box.blur(); }catch(e){} });
+    box.addEventListener('blur', function(){ openAt=0; });
+  }
+  window.heroGatePulse=pulse;
+})();
 </script>
 </body></html>
