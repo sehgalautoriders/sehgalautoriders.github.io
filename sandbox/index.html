@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 93;
-window.HERO_BUILD = 'R127-2026.09.29.1';
+window.HERO_RELEASE = 94;
+window.HERO_BUILD = 'R128-2026.09.29.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28472,6 +28472,24 @@ window.heroChangeMobile=function(){
 #avask-ov input.w{width:150px}
 #avask-ov button.sv{background:#171717;color:#fff;border:0;border-radius:4px;padding:5px 10px;font-size:12px}
 #avask-ov tr.done td{opacity:.45}
+/* R128 layout */
+#avask-ov .ah b{font-size:15px;line-height:1.25}
+#avask-ov .ab table{table-layout:fixed}
+#avask-ov th,#avask-ov td{word-break:normal;overflow-wrap:anywhere}
+#avask-ov tr.av-q-row td{border-bottom:0;padding-top:8px}
+#avask-ov tr.av-a-row td{padding:4px 6px 10px;border-bottom:2px solid #E5E5E5}
+#avask-ov td .q{max-width:none;margin-top:2px}
+#avask-ov .av-days{color:#D71920;font-weight:700}
+#avask-ov .av-ask{font-size:12.5px;color:#171717;line-height:1.35}
+#avask-ov .av-f{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;align-items:end}
+#avask-ov .av-f label{display:flex;flex-direction:column;font-size:10.5px;color:#6B6B6B;gap:2px;min-width:0}
+#avask-ov .av-f select,#avask-ov .av-f input{max-width:none;width:100%;box-sizing:border-box;font-size:13px;padding:6px}
+#avask-ov .av-f button.sv{grid-column:1 / -1;padding:9px;font-size:13px;font-weight:700}
+@media (min-width:761px){ #avask-ov .av-f{grid-template-columns:1.3fr 1.3fr 1fr 1.6fr auto} #avask-ov .av-f button.sv{grid-column:auto} }
+#avask-extra table{border-collapse:collapse;width:100%;font-size:12px;margin:2px 0 4px;table-layout:auto}
+#avask-extra td{padding:4px 6px;border-bottom:1px solid #E5E5E5;vertical-align:top}
+#avask-extra td.k{white-space:nowrap;color:#6B6B6B;width:96px;position:static}
+#avask-extra .bad{color:#D71920;font-weight:700}#avask-extra .ok{color:#15803d;font-weight:700}
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="AVNI asks">
@@ -28480,7 +28498,7 @@ window.heroChangeMobile=function(){
     <button type="button" onclick="avaskClose()">Close</button></div>
   <div class="as" id="avask-sum"></div>
   <div class="as" id="avask-extra" style="display:none"></div>
-  <div class="ab"><table><thead><tr><th>#</th><th>Vehicle</th><th>Days</th><th>AVNI asks</th><th>Status</th><th>Why</th><th>Promise</th><th>Part no. / where / order no.</th><th></th></tr></thead>
+  <div class="ab"><table><thead><tr><th style="width:38%">Vehicle</th><th>AVNI asks</th></tr></thead>
     <tbody id="avask-tb"></tbody></table></div>
 </div>
 <script>
@@ -28524,17 +28542,20 @@ window.heroChangeMobile=function(){
     var tb=document.getElementById('avask-tb'), h='';
     ITEMS.forEach(function(it,i){
       var parts=it.q_role==='parts';
-      h+='<tr data-i="'+i+'"><td>'+(i+1)+'</td>'
-        +'<td><b>'+esc(it.reg_no||it.jc_number)+'</b><br><span class="q">'+esc(it.model)+' · '+esc(it.jc_type)+' · '+esc(DEALER[it.dealer_code]||it.dealer_code)+'</span></td>'
-        +'<td>'+esc(it.days_open)+'d'+(it.asked_total?'<br><span class="q">asked '+esc(it.asked_total)+'×</span>':'')+'</td>'
-        +'<td><div class="q">'+esc(it.question)+'</div></td>'
-        +'<td><select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></td>'
-        +'<td><input class="w" data-f="rs" placeholder="why" value="'+esc(it.reason)+'"></td>'
-        +'<td><select data-f="eta">'+opts(etas(), it.eta)+'</select></td>'
-        +'<td><input class="w" data-f="rm" placeholder="'+(parts?'part no. · where · order no.':'remarks')+'" value="'+esc(it.remarks)+'"></td>'
-        +'<td><button type="button" class="sv" onclick="avaskSave('+i+')">Save</button></td></tr>';
+      /* R128 (Ravi 29-09-2026: "the formatting is very bad"): two columns a phone can
+         read, and the answer on its own full-width line under the vehicle. */
+      h+='<tr class="av-q-row"><td><b>'+(i+1)+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+        +'<div class="q">'+esc(it.model)+' · '+esc(it.jc_type)+' · '+esc(DEALER[it.dealer_code]||it.dealer_code)+'</div>'
+        +'<div class="q"><span class="av-days">'+esc(it.days_open)+' days</span>'+(it.asked_total?(' · asked '+esc(it.asked_total)+'×'):'')+'</div></td>'
+        +'<td><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
+        +'<tr data-i="'+i+'" class="av-a-row"><td colspan="2"><div class="av-f">'
+        +'<label>Status<select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></label>'
+        +'<label>Why<input data-f="rs" placeholder="why not delivered" value="'+esc(it.reason)+'"></label>'
+        +'<label>Promise<select data-f="eta">'+opts(etas(), it.eta)+'</select></label>'
+        +'<label>'+(parts?'Part no. · where · order no.':'Remarks')+'<input data-f="rm" placeholder="'+(parts?'part no. · where · order no.':'remarks')+'" value="'+esc(it.remarks)+'"></label>'
+        +'<button type="button" class="sv" onclick="avaskSave('+i+')">Save</button></div></td></tr>';
     });
-    tb.innerHTML=h||'<tr><td colspan="9" style="padding:14px">Nothing waiting. Every pending vehicle has an answer today.</td></tr>';
+    tb.innerHTML=h||'<tr><td colspan="2" style="padding:14px">Nothing waiting. Every pending vehicle has an answer today.</td></tr>';
   }
   function notify(n){
     try{
@@ -28660,7 +28681,7 @@ function tgBoot(){
     var cell=function(v){ return v==null?'<span style="color:#94a3b8">—</span>':inr(v); };
     var pct=function(v){ if(v==null) return '<span style="color:#94a3b8">no target</span>'; var c=v>=100?'#15803d':(v>=85?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">'+v+'% achieved</b>'; };
     var rat=function(v){ if(v==null) return '—'; var c=v<=1.05?'#15803d':(v<=1.3?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">1 : '+(Math.round(1/v*100)/100)+'</b><div class="tg-sub">₹'+(Math.round(1/v*100)/100)+' labour per ₹1 of parts · target 1 : 1</div>'; };
-    var tgc=function(v,t,a){ return '<b>'+cell(v)+'</b><div class="tg-sub">Target '+cell(t)+'</div><div class="tg-sub">'+pct(a)+'</div>'; };
+    var tgc=function(v,t,a){ return '<b>'+cell(v)+'</b>'+(t==null?'<div class="tg-sub">no target</div>':('<div class="tg-sub">of '+inr(t)+'</div><div class="tg-sub">'+pct(a)+'</div>')); };
     out.innerHTML='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>Parts</th><th>Parts : Labour</th></tr></thead><tbody>'
       +rows.map(function(x){
         var note=!x.ok?'<div class="tg-sub" style="color:#b91c1c">not loaded</div>':(!x.jobs?'<div class="tg-sub">no billing</div>':(!x.billed?'<div class="tg-sub" style="color:#b45309">estimates, not billed</div>':''));
@@ -28710,7 +28731,7 @@ function paBoot(){
     box.innerHTML=head+'<div style="margin-top:6px"><table class="tg-t"><thead><tr><th>Vehicle</th><th>Part</th><th>Available at</th></tr></thead><tbody>'
       +alerts.map(function(x){ var c=x.where==='OUR OUTLET'?'#15803d':(x.where==='PUNE AREA'?'#b45309':'#475569');
         return '<tr><td><b>'+tgEsc_(x.n.reg)+'</b><div class="tg-sub">'+tgEsc_(x.n.jc)+'</div><div class="tg-sub">'+tgEsc_(x.n.days)+' days waiting</div></td>'
-          +'<td style="font-family:\'Roboto Mono\',monospace">'+tgEsc_(x.pn)+'<div class="tg-sub" style="font-family:inherit">'+tgEsc_(x.desc)+(x.qty?(' · qty '+tgEsc_(x.qty)):'')+'</div></td>'
+          +'<td><span class="tg-pn" style="font-family:\'Roboto Mono\',monospace;font-weight:700">'+tgEsc_(x.pn)+'</span><div class="tg-sub">'+tgEsc_(x.desc)+(x.qty?(' · qty '+tgEsc_(x.qty)):'')+'</div></td>'
           +'<td><b style="color:'+c+'">'+x.where+'</b><div>'+holders(x.at)+'</div></td></tr>'; }).join('')
       +'</tbody></table></div>';
   }).catch(function(e){ box.innerHTML='<div style="font-size:12px;color:#b91c1c">Parts alert could not load: '+tgEsc_(e&&e.message||e)+'.</div>'; });
@@ -28792,28 +28813,31 @@ function r127ChaseExtra_(){
   var lines=[], today=new Date(), ymd=today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
   var mk=ymd.slice(0,7);
   var p1=paCompute_().then(function(R){
-    if(R.alerts.length) lines.push('<span class="bad">'+R.alerts.length+' part'+(R.alerts.length===1?' IS':'s ARE')+' IN OUR STOCK</span> for vehicles still waiting: '
+    if(R.alerts.length) lines.push('Parts in stock|<span class="bad">'+R.alerts.length+' part'+(R.alerts.length===1?' IS':'s ARE')+' IN OUR STOCK</span> for vehicles still waiting: '
       +R.alerts.slice(0,6).map(function(a){ return tgEsc_(a.n.reg)+' → '+tgEsc_(a.pn)+' @ '+tgEsc_((a.at[0]||{}).dealer||''); }).join(' · ')+(R.alerts.length>6?' …':'')+'. Why is the vehicle not delivered?');
-  }).catch(function(){ lines.push('Parts check: not loaded.'); });
+    else lines.push('Parts in stock|<span class="ok">no waiting vehicle has its part in our stock</span>');
+  }).catch(function(){ lines.push('Parts in stock|not loaded'); });
   var p2=window.sbRpc('hero_ratio_today',{p_month:mk, p_ws:null}).then(function(r){
     var lab=Math.round((+(r&&r.labour)||0)/TG_GST), tgt=tgLabourTarget_(mk);
     var dim=new Date(today.getFullYear(), today.getMonth()+1, 0).getDate(), left=Math.max(1, dim-today.getDate()+1);
     var short=Math.max(0,tgt-lab);
-    lines.push('Labour '+tgMonthName_(mk)+' (without GST): <b>'+inr(lab)+'</b> of '+inr(tgt)+' — '
+    lines.push('Labour '+tgMonthName_(mk)+'|<b>'+inr(lab)+'</b> of '+inr(tgt)+' (without GST) — '
       +(short?('<span class="bad">short '+inr(short)+', needs '+inr(Math.ceil(short/left))+' a day for '+left+' day'+(left===1?'':'s')+'</span>'):'<span class="ok">target achieved</span>'));
-  }).catch(function(){ lines.push('Labour target: not loaded.'); });
+  }).catch(function(){ lines.push('Labour|not loaded'); });
   var p3=new Promise(function(res){ try{ jgetRaw('mp_status',{},function(s){
     var d=String((s&&s.stockDate)||''); var fresh=d && (d.indexOf(ymd)===0 || d.indexOf(ymd.split('-').reverse().join('-'))===0);
-    lines.push('Parts stock file: '+(s&&s.ok!==false?(fresh?'<span class="ok">today’s is in</span>':'<span class="bad">NOT uploaded today</span> (stock date '+tgEsc_(d||'—')+')'):'<span class="bad">none loaded</span>'));
+    lines.push('Stock file|'+(s&&s.ok!==false?(fresh?'<span class="ok">today’s is in</span>':'<span class="bad">NOT uploaded today</span> (stock date '+tgEsc_(d||'—')+')'):'<span class="bad">none loaded</span>'));
     res(); },20000); }catch(e){ res(); } });
   var p4=new Promise(function(res){
     var up=''; try{ (HU_DATA||[]).forEach(function(r){ var u=String(r['Uploaded At']||''); if(u>up) up=u; }); }catch(e){}
-    if(!up) lines.push('Holdup file upload time: not measured (the rows do not carry it)');
-    else lines.push('Holdup file: '+(up.indexOf(ymd)===0?'<span class="ok">uploaded today</span>':'<span class="bad">NOT uploaded today</span> (last '+tgEsc_(up.slice(0,16))+')'));
+    if(!up) lines.push('Holdup file|upload time not measured (the rows do not carry it)');
+    else lines.push('Holdup file|'+(up.indexOf(ymd)===0?'<span class="ok">uploaded today</span>':'<span class="bad">NOT uploaded today</span> (last '+tgEsc_(up.slice(0,16))+')'));
     res(); });
   Promise.all([p1,p2,p3,p4]).then(function(){
-    var wa=encodeURIComponent('AVNI chase '+ymd+':\n'+lines.map(function(l){ return '• '+l.replace(/<[^>]+>/g,''); }).join('\n'));
-    el.innerHTML=lines.map(function(l){ return '<div style="margin:2px 0">'+l+'</div>'; }).join('')
+    var order=['Labour','Parts in stock','Stock file','Holdup file'];
+    lines.sort(function(a,b){ var f=function(x){ var k=x.split('|')[0]; for(var i=0;i<order.length;i++) if(k.indexOf(order[i])===0) return i; return 9; }; return f(a)-f(b); });
+    var wa=encodeURIComponent('AVNI chase '+ymd+':\n'+lines.map(function(l){ var p=l.split('|'); return '• '+p[0]+': '+String(p.slice(1).join('|')).replace(/<[^>]+>/g,''); }).join('\n'));
+    el.innerHTML='<table>'+lines.map(function(l){ var p=l.split('|'); return '<tr><td class="k">'+p[0]+'</td><td>'+p.slice(1).join('|')+'</td></tr>'; }).join('')+'</table>'
       +'<div style="margin-top:4px"><a href="https://wa.me/?text='+wa+'" target="_blank" rel="noopener" style="color:#15803d;font-weight:700">🟢 Send this on WhatsApp</a></div>';
   });
 }
@@ -28894,7 +28918,7 @@ var ES_BODY=null;
   };
 })();
 (function(){ if(document.getElementById('tg-css')) return; var st=document.createElement('style'); st.id='tg-css';
-  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}';
+  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}.tg-pn{white-space:nowrap}';
   document.head.appendChild(st); })();
 </script>
 </body></html>
