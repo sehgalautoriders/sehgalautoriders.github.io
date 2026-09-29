@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 97;
-window.HERO_BUILD = 'R129-2026.09.29.1';
+window.HERO_BUILD = 'R130-2026.09.29.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1827,16 +1827,13 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
 <div id="view-targets" style="display:none">
   <div class="wrap">
     <div class="hu-topbar">
-      <h2>🎯 Targets — without GST</h2>
+      <h2>🎯 Labour &amp; Targets</h2>
       <div class="hu-actions">
-        <select id="tg-months" onchange="tgBoot()" style="padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff">
-          <option value="3">Last 3 months</option><option value="6" selected>Last 6 months</option><option value="12">Last 12 months</option>
-        </select>
         <button class="hu-actbtn" style="background:#0f766e" onclick="tgBoot()">↻ Refresh</button>
         <button class="hu-actbtn" id="tg-edit" style="background:#475569;display:none" onclick="tgEditTargets()">✎ Set targets</button>
       </div>
     </div>
-    <div id="tg-msg" style="font-size:12px;color:var(--steel);margin:6px 0"></div>
+    <div id="tg-msg" style="font-size:12px;color:var(--steel);margin:4px 0 8px"></div>
     <div id="tg-out"></div>
   </div>
 </div>
@@ -28724,48 +28721,142 @@ function tgMonths_(n){ var d=new Date(), out=[]; for(var i=0;i<n;i++){ var x=new
 var TG_LABOUR_STANDING=2000000;
 function tgLabourTarget_(m){ var t=tgTargets_()[m]||{}; return +t.labour>0?+t.labour:TG_LABOUR_STANDING; }
 function tgTargets_(){ try{ var t=(typeof APP_SETTINGS!=='undefined' && APP_SETTINGS)?APP_SETTINGS.TARGETS_JSON:''; return t?JSON.parse(t):{}; }catch(e){ return {}; } }
-var TG_LAST=null;
+/* R130 (Ravi 29-09-2026): "every report including this month is wrong ... the UI is dirty. Labour is still not
+   shown correctly ... June and below everything is blank. Last year to this year comparison is not there."
+   One call, hero_perf_months (migration 0103): every month since 01-04-2024 per workshop and service type from the
+   Tally lines (Hero BI Perf 1, joined with AVNI Files), plus Vlead Monthwise. Rules = Ravi's own
+   Hero_Performance_Report_Monthwise_YTD_MTD.xlsx: vehicle = one invoice, labour = JOB lines, parts = PART lines,
+   before GST, cancelled out. Labour paid by Hero (warranty / free-service claims, Rs 0 on Tally) = Vlead labour
+   / 1.18 - Tally labour. The running month is compared with the SAME DAYS of last year. */
+var TG={data:null, tab:'now', ws:'', fy:null, mon:null};
+var TG_WS=[['','All 4'],['23490','23490 SSP'],['17057','17057 Premia'],['61299','61299 Chakan'],['10307','10307 PDI']];
+var TG_TYPES=['Paid Service','Free Service (FSC)','General Repair','Joyride','Accidental'];
+var TG_MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function tgM_(k){ var p=String(k).split('-'); return TG_MN[(+p[1]||1)-1]+' '+p[0]; }
+function tgLY_(k,n){ var p=String(k).split('-'); return (+p[0]-(n||1))+'-'+p[1]; }
+function tgFY_(k){ var p=String(k).split('-'), y=+p[0]; return (+p[1]>=4)?y:y-1; }
+function tgFYName_(y){ return 'FY '+y+'-'+String(y+1).slice(-2); }
+function tgFYMonths_(y){ var o=[]; for(var i=0;i<12;i++){ var mm=3+i, yy=y+Math.floor(mm/12); o.push(yy+'-'+('0'+(mm%12+1)).slice(-2)); } return o; }
+function tgDMY_(iso){ var p=String(iso||'').slice(0,10).split('-'); return p.length===3?p[2]+'-'+p[1]+'-'+p[0]:''; }
+function tgR_(n){ return n==null?'—':'₹'+Math.round(n).toLocaleString('en-IN'); }
+function tgN_(n){ return n==null?'—':Math.round(n).toLocaleString('en-IN'); }
+function tgG_(a,b){ if(a==null||b==null||!(b>0)) return '<span class="tg-mut">—</span>'; var g=Math.round((a-b)/b*1000)/10; return '<span style="color:'+(g>=0?'#15803d':'#b91c1c')+';font-weight:700">'+(g>=0?'▲ +':'▼ ')+g+'%</span>'; }
+/* sum of Tally rows for month m (workshop filter, optional types); d=true -> days 1..D only */
+function tgSum_(m,d,types){ var s={v:0,l:0,p:0,n:0}; (TG.data.rows||[]).forEach(function(r){
+    if(r.m!==m || (TG.ws && r.c!==TG.ws) || (types && types.indexOf(r.t)<0)) return;
+    s.n++; s.v+=+(d?r.vd:r.v)||0; s.l+=+(d?r.ld:r.l)||0; s.p+=+(d?r.pd:r.p)||0; }); return s.n?s:null; }
+/* labour Hero pays by claim for month m = Vlead labour (÷1.18) − Tally labour, per workshop, never below 0 */
+function tgHero_(m){ var vl=(TG.data.vlead||[]).filter(function(x){ return x.m===m && (!TG.ws || x.c===TG.ws); });
+  if(!vl.length) return null; var h=0; vl.forEach(function(x){ var t=0;
+    (TG.data.rows||[]).forEach(function(r){ if(r.m===m && r.c===x.c) t+=+r.l||0; }); h+=Math.max(0,(+x.lab||0)-t); }); return h; }
+function tgVleadAt_(){ var a=''; (TG.data.vlead||[]).forEach(function(x){ if(x.at>a) a=x.at; }); return a; }
+function tgBar_(pct){ var c=pct>=100?'#15803d':(pct>=75?'#b45309':'#b91c1c'); return '<div class="tg-bar"><i style="width:'+Math.min(100,pct)+'%;background:'+c+'"></i></div>'; }
 function tgBoot(){
   var out=document.getElementById('tg-out'), msg=document.getElementById('tg-msg'); if(!out) return;
   var ed=document.getElementById('tg-edit'); if(ed) ed.style.display=(typeof isAdmin==='function' && isAdmin())?'':'none';
-  var n=+((document.getElementById('tg-months')||{}).value||6), months=tgMonths_(n);
-  msg.style.color='#2563eb'; msg.textContent='Loading '+n+' months of billed labour and parts…';
-  var load=function(){ return Promise.all(months.map(function(m){
-    return window.sbRpc('hero_ratio_today',{p_month:m, p_ws:null}).then(function(r){ return r||{ok:false}; }).catch(function(e){ return {ok:false,error:String(e&&e.message||e)}; });
-  })); };
-  /* Settings first, so a target typed on another phone shows here too. */
+  msg.style.color='#2563eb'; msg.textContent='Loading every month since April 2024…'; out.innerHTML='';
   var settings=new Promise(function(res){ try{ jget('app_settings',{},function(r){ if(r&&r.settings){ try{ APP_SETTINGS=r.settings; }catch(e){} } res(); }); }catch(e){ res(); } });
-  settings.then(load).then(function(res){
-    var T=tgTargets_(), fails=res.filter(function(r){ return !r.ok; }).length;
-    var rows=months.map(function(m,i){
-      /* R128.4: Hero BI Tally lines (migration 0099) are already before GST (exGst) — no ÷ 1.18 on them. */
-      var r=res[i]||{}, billed=/billing|bills/i.test(String(r.source||'')), has=r.ok && +r.jobs>0, dv=r.exGst?1:TG_GST;
-      var lab=has?Math.round(+r.labour/dv):null, par=has?Math.round(+r.parts/dv):null, t=T[m]||{};
-      var lt=tgLabourTarget_(m), pt=+t.parts>0?+t.parts:null;
-      return {m:m, ok:r.ok, jobs:+r.jobs||0, billed:billed, src:r.source||'', lab:lab, par:par, lt:lt, pt:pt, bi:!!r.exGst, codes:r.byCode||[], upto:r.upto||'',
-              /* R128.3: no "% achieved" on estimates — only bills count as achievement (Ravi 29-09-2026: September labour wrong) */
-              la:(billed&&lt&&lab!=null)?Math.round(lab/lt*1000)/10:null, pa:(billed&&pt&&par!=null)?Math.round(par/pt*1000)/10:null,
-              ratio:(lab>0)?Math.round(par/lab*100)/100:null};
-    });
-    TG_LAST=rows;
+  settings.then(function(){ return window.sbRpc('hero_perf_months',{}); }).then(function(r){
+    if(!r || !r.ok || !(r.rows||[]).length){ msg.style.color='#b91c1c'; msg.textContent='The Hero bills are not loaded yet.'; return; }
+    TG.data=r; TG.cur=String(r.last).slice(0,7); TG.day=+r.day;
+    if(TG.fy==null) TG.fy=tgFY_(TG.cur); if(!TG.mon) TG.mon=TG.cur;
     msg.style.color='var(--steel)';
-    var est=rows.filter(function(x){ return x.ok && x.jobs && !x.billed; });
-    msg.textContent='Billed labour and parts without GST, all four workshops (10307 · 17057 · 23490 · 61299). Hero BI bills are the before-GST amounts Hero bills; older months from the Total Bill Value upload are ÷ '+TG_GST+'. Latest month first.'+(fails?(' '+fails+' month'+(fails>1?'s':'')+' could not load.'):'');
-    if(est.length){ msg.style.color='#b91c1c'; msg.innerHTML='<b>Bills are not loaded for '+est.map(function(x){ return tgMonthName_(x.m); }).join(', ')+'.</b> Those months show ESTIMATES only, so no % achieved is shown for them. Real billed labour and parts will come from the Hero BI Tally report.'; }
-    var cell=function(v){ return v==null?'<span style="color:#94a3b8">—</span>':inr(v); };
-    var pct=function(v){ if(v==null) return '<span style="color:#94a3b8">no target</span>'; var c=v>=100?'#15803d':(v>=85?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">'+v+'% achieved</b>'; };
-    var rat=function(v){ if(v==null) return '—'; var c=v<=1.05?'#15803d':(v<=1.3?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">1 : '+(Math.round(1/v*100)/100)+'</b><div class="tg-sub">₹'+(Math.round(1/v*100)/100)+' labour per ₹1 of parts · target 1 : 1</div>'; };
-    var tgc=function(v,t,a,b){ return '<b>'+cell(v)+'</b>'+(t==null?'<div class="tg-sub">no target</div>':('<div class="tg-sub">of '+inr(t)+'</div><div class="tg-sub">'+(b===false&&v!=null?'<span style="color:#b45309">estimates — not achievement</span>':pct(a))+'</div>')); };
-    out.innerHTML='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>Parts</th><th>Parts : Labour</th></tr></thead><tbody>'
-      +rows.map(function(x){
-        var note=!x.ok?'<div class="tg-sub" style="color:#b91c1c">not loaded</div>':(!x.jobs?'<div class="tg-sub">no billing</div>':(!x.billed?'<div class="tg-sub" style="color:#b45309">estimates, not billed</div>':''));
-        var srcl=x.bi?'<div class="tg-sub">Hero BI bills'+(x.upto?' to '+x.upto.split('-').reverse().join('-'):'')+'</div>'+x.codes.map(function(c){ return '<div class="tg-sub">'+tgEsc_(c.code)+': '+inr(c.labour)+' labour</div>'; }).join(''):'';
-        return '<tr><td><b>'+tgMonthName_(x.m)+'</b><div class="tg-sub">'+x.jobs+(x.bi?' bills':' JCs')+'</div>'+srcl+note+'</td>'
-          +'<td>'+tgc(x.lab,x.lt,x.la,x.billed)+'</td><td>'+tgc(x.par,x.pt,x.pa,x.billed)+'</td><td>'+rat(x.ratio)+'</td></tr>'; }).join('')
-      +'</tbody></table>'
-      +(rows.some(function(x){ return x.lt==null && x.pt==null; })?'<div style="font-size:11.5px;color:#64748b;margin-top:8px">“no target” = none typed in yet'+((typeof isAdmin==='function'&&isAdmin())?' — press <b>✎ Set targets</b>.':'. The CEO / admin sets them on this screen.')+'</div>':'');
-  });
+    msg.innerHTML='All amounts <b>without GST</b>. Hero bills (Tally) up to <b>'+tgDMY_(r.last)+'</b>'+(tgVleadAt_()?' · Vlead loaded '+tgVleadAt_():'')+'.';
+    tgPaint_();
+  }).catch(function(e){ msg.style.color='#b91c1c'; msg.textContent='Could not load: '+(e&&e.message||e); });
 }
+function tgSet_(k,v){ TG[k]=v; tgPaint_(); }
+function tgPaint_(){
+  var out=document.getElementById('tg-out'); if(!out || !TG.data) return;
+  var tabs=[['now','This month'],['months','Month by month'],['types','Service types'],['yoy','Year on year']];
+  var h='<div class="tg-ws">'+TG_WS.map(function(w){ return '<button class="tg-pill'+(TG.ws===w[0]?' on':'')+'" onclick="tgSet_(\'ws\',\''+w[0]+'\')">'+w[1]+'</button>'; }).join('')+'</div>'
+    +'<div class="tg-tabs">'+tabs.map(function(t){ return '<button class="tg-tab'+(TG.tab===t[0]?' on':'')+'" onclick="tgSet_(\'tab\',\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')+'</div>';
+  h+=(TG.tab==='now'?tgNow_():TG.tab==='months'?tgMonthsTab_():TG.tab==='types'?tgTypes_():tgYoy_());
+  out.innerHTML=h;
+}
+/* ---- tab 1: this month */
+function tgNow_(){
+  var m=TG.cur, D=TG.day, ly=tgLY_(m), s=tgSum_(m,false)||{v:0,l:0,p:0}, sl=tgSum_(ly,true), hero=tgHero_(m), tot=s.l+(hero||0);
+  var dim=new Date(+m.slice(0,4), +m.slice(5,7), 0).getDate(), pace=Math.round(tot/D*dim);
+  var tgt=tgLabourTarget_(m), pct=Math.round(tot/tgt*1000)/10, lyFull=tgSum_(ly,false), lyHero=tgHero_(ly);
+  var h='<div class="tg-card"><div class="tg-k">Labour in '+tgM_(m)+' (1 – '+D+')'+(TG.ws?' · '+TG.ws:' · all 4 workshops')+'</div>'
+    +'<div class="tg-big">'+tgR_(tot)+'</div>';
+  if(!TG.ws) h+='<div class="tg-sub2">of target '+tgR_(tgt)+' · <b>'+pct+'%</b> done · at this pace the month ends near '+tgR_(pace)+' (estimate)</div>'+tgBar_(pct);
+  h+='<div class="tg-split"><div><span>Billed to customers</span><b>'+tgR_(s.l)+'</b></div>'
+    +'<div><span>Paid by Hero (warranty + free service claims)</span><b>'+(hero==null?'not loaded':tgR_(hero))+'</b></div></div></div>';
+  h+='<div class="tg-card"><div class="tg-k">Same days last year · 1 – '+D+' '+tgM_(ly)+'</div><table class="tg-t"><thead><tr><th></th><th>'+tgM_(ly)+'</th><th>'+tgM_(m)+'</th><th>Change</th></tr></thead><tbody>'
+    +'<tr><td>Billed labour</td><td>'+tgR_(sl&&sl.l)+'</td><td><b>'+tgR_(s.l)+'</b></td><td>'+tgG_(s.l,sl&&sl.l)+'</td></tr>'
+    +'<tr><td>Vehicles</td><td>'+tgN_(sl&&sl.v)+'</td><td><b>'+tgN_(s.v)+'</b></td><td>'+tgG_(s.v,sl&&sl.v)+'</td></tr>'
+    +'<tr><td>Labour per vehicle</td><td>'+tgR_(sl&&sl.v?sl.l/sl.v:null)+'</td><td><b>'+tgR_(s.v?s.l/s.v:null)+'</b></td><td>'+tgG_(s.v?s.l/s.v:null,sl&&sl.v?sl.l/sl.v:null)+'</td></tr>'
+    +'<tr><td>Parts</td><td>'+tgR_(sl&&sl.p)+'</td><td><b>'+tgR_(s.p)+'</b></td><td>'+tgG_(s.p,sl&&sl.p)+'</td></tr>'
+    +'</tbody></table><div class="tg-note">Full '+tgM_(ly)+': labour '+tgR_(lyFull&&lyFull.l)+' billed + '+(lyHero==null?'—':tgR_(lyHero))+' paid by Hero = '+tgR_(lyFull?lyFull.l+(lyHero||0):null)+'.</div></div>';
+  if(!TG.ws){
+    h+='<div class="tg-card"><div class="tg-k">By workshop · '+tgM_(m)+' 1 – '+D+'</div><table class="tg-t"><thead><tr><th>Workshop</th><th>Labour</th><th>Vehicles</th><th>vs last year</th></tr></thead><tbody>';
+    var keep=TG.ws; TG_WS.slice(1).forEach(function(w){ TG.ws=w[0]; var a=tgSum_(m,false)||{v:0,l:0}, b=tgSum_(ly,true), hh=tgHero_(m);
+      h+='<tr><td><b>'+w[1]+'</b></td><td><b>'+tgR_(a.l+(hh||0))+'</b><div class="tg-sub">billed '+tgR_(a.l)+' · Hero '+(hh==null?'—':tgR_(hh))+'</div></td><td>'+tgN_(a.v)+'<div class="tg-sub">'+tgR_(a.v?a.l/a.v:null)+' / vehicle</div></td><td>'+tgG_(a.l,b&&b.l)+'<div class="tg-sub">billed labour, same days</div></td></tr>'; });
+    TG.ws=keep; h+='</tbody></table></div>';
+  }
+  return h;
+}
+/* ---- tab 2: month by month, one financial year at a time, each month against the same month last year */
+function tgMonthsTab_(){
+  var fys=[], f0=tgFY_((TG.data.rows[0]||{}).m||TG.cur); for(var y=tgFY_(TG.cur); y>=f0; y--) fys.push(y);
+  var h='<div class="tg-ws">'+fys.map(function(y){ return '<button class="tg-pill'+(TG.fy===y?' on':'')+'" onclick="tgSet_(\'fy\','+y+')">'+tgFYName_(y)+'</button>'; }).join('')+'</div>';
+  h+='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>vs last year</th><th>Vehicles</th><th>Parts</th></tr></thead><tbody>';
+  var ms=tgFYMonths_(TG.fy).filter(function(m){ return m<=TG.cur; }).reverse();
+  ms.forEach(function(m){
+    var run=(m===TG.cur), s=tgSum_(m,false), ly=tgSum_(tgLY_(m),run), he=tgHero_(m), lh=run?null:tgHero_(tgLY_(m));
+    if(!s){ h+='<tr><td><b>'+tgM_(m)+'</b></td><td colspan="4" class="tg-mut">no bills</td></tr>'; return; }
+    var tot=s.l+(he||0), lyt=ly?ly.l+(run?0:(lh||0)):null;
+    h+='<tr><td><b>'+tgM_(m)+'</b>'+(run?'<div class="tg-sub">1 – '+TG.day+' only</div>':'')+'</td>'
+      +'<td><b>'+tgR_(tot)+'</b><div class="tg-sub">billed '+tgR_(s.l)+'</div><div class="tg-sub">Hero '+(he==null?'—':tgR_(he))+'</div></td>'
+      +'<td>'+tgG_(run?s.l:tot,lyt)+'<div class="tg-sub">'+tgM_(tgLY_(m))+(run?' 1 – '+TG.day+', billed':'')+': '+tgR_(lyt)+'</div></td>'
+      +'<td>'+tgN_(s.v)+'<div class="tg-sub">'+tgR_(s.v?s.l/s.v:null)+' / vehicle</div></td>'
+      +'<td>'+tgR_(s.p)+'<div class="tg-sub">'+(s.p>0?'₹'+(Math.round(tot/s.p*100)/100)+' labour per ₹1 parts':'')+'</div></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+/* ---- tab 3: service types for one month, this year vs the same month last year */
+function tgTypes_(){
+  var all=[]; (TG.data.rows||[]).forEach(function(r){ if(all.indexOf(r.m)<0) all.push(r.m); }); all.sort().reverse();
+  var m=TG.mon, run=(m===TG.cur), ly=tgLY_(m);
+  var h='<div class="tg-sel">Month <select onchange="tgSet_(\'mon\',this.value)">'+all.map(function(x){ return '<option value="'+x+'"'+(x===m?' selected':'')+'>'+tgM_(x)+'</option>'; }).join('')+'</select>'
+    +(run?'<span class="tg-sub">1 – '+TG.day+' compared with the same days of '+tgM_(ly)+'</span>':'<span class="tg-sub">compared with '+tgM_(ly)+'</span>')+'</div>';
+  h+='<table class="tg-t"><thead><tr><th>Service type</th><th>Vehicles</th><th>Labour</th><th>Per vehicle</th></tr></thead><tbody>';
+  TG_TYPES.concat(['Total']).forEach(function(t){
+    var ty=t==='Total'?null:[t], a=tgSum_(m,run,ty), b=tgSum_(ly,run,ty); if(!a && !b) return;
+    a=a||{v:0,l:0}; var pa=a.v?a.l/a.v:null, pb=b&&b.v?b.l/b.v:null;
+    h+='<tr'+(t==='Total'?' style="background:#f8fafc"':'')+'><td><b>'+t+'</b></td>'
+      +'<td><b>'+tgN_(a.v)+'</b><div class="tg-sub">last yr '+tgN_(b&&b.v)+'</div>'+tgG_(a.v,b&&b.v)+'</td>'
+      +'<td><b>'+tgR_(a.l)+'</b><div class="tg-sub">last yr '+tgR_(b&&b.l)+'</div>'+tgG_(a.l,b&&b.l)+'</td>'
+      +'<td><b>'+tgR_(pa)+'</b><div class="tg-sub">last yr '+tgR_(pb)+'</div>'+tgG_(pa,pb)+'</td></tr>';
+  });
+  return h+'</tbody></table><div class="tg-note">Billed (Tally) labour. Free-service and warranty labour that Hero pays by claim shows ₹0 here; it is in "This month" and "Month by month".</div>';
+}
+/* ---- tab 4: financial year to date, the same window in all three years */
+function tgYoy_(){
+  var fy=tgFY_(TG.cur), f=[fy-2,fy-1,fy], D=TG.day, cm=TG.cur.slice(5);
+  var win=function(y){ var ms=tgFYMonths_(y), cut=ms.indexOf(ms.filter(function(x){ return x.slice(5)===cm; })[0]); return {full:ms.slice(0,cut), run:ms[cut]}; };
+  var sumW=function(y,ty){ var w=win(y), s={v:0,l:0,p:0,h:0}, any=false;
+    w.full.forEach(function(m){ var a=tgSum_(m,false,ty); if(a){ any=true; s.v+=a.v; s.l+=a.l; s.p+=a.p; } if(!ty){ s.h+=tgHero_(m)||0; } });
+    var a=tgSum_(w.run,true,ty); if(a){ any=true; s.v+=a.v; s.l+=a.l; s.p+=a.p; } return any?s:null; };
+  var first=win(fy).full[0]||TG.cur;
+  var h='<div class="tg-note" style="margin:0 0 8px">1 April to '+D+' '+TG_MN[+cm-1]+' in each year · the same window, so the years compare fairly.</div>'
+    +'<table class="tg-t"><thead><tr><th></th>'+f.map(function(y){ return '<th>'+tgFYName_(y)+'</th>'; }).join('')+'<th>This yr vs last</th></tr></thead><tbody>';
+  var row=function(lbl,fn,money){ var v=f.map(fn); h+='<tr><td><b>'+lbl+'</b></td>'+v.map(function(x){ return '<td>'+(money?tgR_(x):tgN_(x))+'</td>'; }).join('')+'<td>'+tgG_(v[2],v[1])+'</td></tr>'; };
+  var S={}; f.forEach(function(y){ S[y]=sumW(y,null); });
+  row('Total labour',function(y){ return S[y]?S[y].l+S[y].h:null; },true);
+  row('· billed',function(y){ return S[y]?S[y].l:null; },true);
+  row('· paid by Hero',function(y){ return S[y]?S[y].h:null; },true);
+  row('Vehicles',function(y){ return S[y]?S[y].v:null; },false);
+  row('Labour per vehicle (billed)',function(y){ return S[y]&&S[y].v?S[y].l/S[y].v:null; },true);
+  row('Parts',function(y){ return S[y]?S[y].p:null; },true);
+  h+='<tr><td colspan="5" class="tg-k" style="padding-top:12px">Billed labour by service type</td></tr>';
+  TG_TYPES.forEach(function(t){ row(t,function(y){ var a=sumW(y,[t]); return a?a.l:null; },true); });
+  h+='</tbody></table><div class="tg-note">"Paid by Hero" counts full months only ('+tgM_(first)+' onward, Vlead). Hero data before 01-04-2024 does not exist.</div>';
+  return h;
+}
+
 function tgEditTargets(){
   if(!(typeof isAdmin==='function' && isAdmin())){ alert('Only the CEO / admin can set targets.'); return; }
   var T=tgTargets_(), m=tgMonths_(1)[0];
@@ -28994,7 +29085,7 @@ var ES_BODY=null;
   };
 })();
 (function(){ if(document.getElementById('tg-css')) return; var st=document.createElement('style'); st.id='tg-css';
-  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}.tg-pn{white-space:nowrap}';
+  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}.tg-pn{white-space:nowrap}'+'.tg-ws{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}.tg-pill{border:1.5px solid #cbd5e1;background:#fff;color:#334155;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer}.tg-pill.on{background:#0f766e;border-color:#0f766e;color:#fff}'+'.tg-tabs{display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin:0 0 10px;overflow-x:auto}.tg-tab{border:none;background:none;padding:8px 12px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px}.tg-tab.on{color:#0f766e;border-bottom-color:#0f766e}'+'.tg-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:0 0 10px}.tg-k{font-size:11.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}.tg-big{font-size:28px;font-weight:800;color:#0f172a;font-family:\'Roboto Mono\',monospace}.tg-sub2{font-size:12px;color:#475569;margin:2px 0 6px}'+'.tg-bar{height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin:4px 0 10px}.tg-bar i{display:block;height:100%}.tg-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tg-split div{background:#f8fafc;border-radius:8px;padding:8px}.tg-split span{display:block;font-size:11px;color:#64748b}.tg-split b{font-size:15px}'+'.tg-note{font-size:11.5px;color:#64748b;margin-top:8px}.tg-mut{color:#94a3b8}.tg-sel{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:12.5px;font-weight:600}.tg-sel select{width:auto;padding:6px 8px;font-size:13px}';
   document.head.appendChild(st); })();
 /* ===========================================================================
    R129 (Ravi 29-09-2026): "The Service advisor told me that after gate entry it
