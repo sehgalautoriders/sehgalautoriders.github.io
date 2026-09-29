@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script charset="utf-8" src="sandbox.js?v=b09673619a"></script>
+<head><script charset="utf-8" src="sandbox.js?v=9a4cbe265b"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SANDBOX · Sehgal Hero</title>
@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 94;
-window.HERO_BUILD = 'R128-2026.09.29.1';
+window.HERO_RELEASE = 95;
+window.HERO_BUILD = 'R128-2026.09.29.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -12800,7 +12800,7 @@ function huDrawTable_(){
   document.getElementById('hu-table-wrap').innerHTML=`<table class="hu-excel-table">
     <thead><tr>
       <th style="width:32px" title="Select vehicles one by one for bulk update"></th>
-      <th style="width:14px">●</th><th>Reg No</th><th>Model</th><th>Days</th><th>JC Type</th><th>Order Status</th><th>SA</th>
+      <th style="width:14px">●</th><th>Reg No</th><th>Mobile</th><th>Model</th><th>Days</th><th>JC Type</th><th>Order Status</th><th>SA</th>
       <th style="min-width:190px">Daily Review Status</th>
       <th style="min-width:110px">ETA</th><th style="min-width:180px">Remarks</th>
       <th style="width:70px">Req</th><th style="width:64px">Action</th><th style="width:40px">📅</th>
@@ -12833,6 +12833,7 @@ function huDrawTable_(){
         <td style="width:32px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${isSel?'checked':''} onchange="huToggleRow(${i},this.checked)"></td>
         <td style="width:18px;text-align:center;pointer-events:none"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${dotCls==='green'?'var(--ok)':'var(--signal-d)'}"></span></td>
         <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}</td>
+        <td id="hu-mob-${i}" data-k="${huMobKey(r)}" class="mono" style="white-space:nowrap;font-size:12px;min-width:104px" onclick="event.stopPropagation()">${(m=>m?`<a href="tel:+91${m}" style="color:#2563eb;text-decoration:none">📱 ${m}</a>`:'<span style="color:var(--steel)">—</span>')(huRowMobSync(r))}</td>
         <td class="hu-wrapcell" style="font-size:12px;min-width:96px">${r[HU_COLS.model]||'—'}</td>
         <td class="td-days ${dClass}">${days>=0?days+'d':'—'}</td>
         <td class="hu-wrapcell" style="font-size:11px;min-width:72px">${r[HU_COLS.type]||'—'}${isFreeLate?`<button class="hu-free-late" title="Free-service vehicle pending ${days} days — deliver on priority">⚠ FREE ${days}d</button>`:''}</td>
