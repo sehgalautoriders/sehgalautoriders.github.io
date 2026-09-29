@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 92;
-window.HERO_BUILD = 'R126-2026.09.28.1';
+window.HERO_RELEASE = 93;
+window.HERO_BUILD = 'R127-2026.09.29.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1822,6 +1822,24 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
 </div>
 
 <!-- ================= HOLDUP VIEW ================= -->
+<!-- R127 (Ravi 29-09-2026): Targets — target vs achievement, labour, parts,
+     ratio, last months, all without GST. One line per month, latest first. -->
+<div id="view-targets" style="display:none">
+  <div class="wrap">
+    <div class="hu-topbar">
+      <h2>🎯 Targets — without GST</h2>
+      <div class="hu-actions">
+        <select id="tg-months" onchange="tgBoot()" style="padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff">
+          <option value="3">Last 3 months</option><option value="6" selected>Last 6 months</option><option value="12">Last 12 months</option>
+        </select>
+        <button class="hu-actbtn" style="background:#0f766e" onclick="tgBoot()">↻ Refresh</button>
+        <button class="hu-actbtn" id="tg-edit" style="background:#475569;display:none" onclick="tgEditTargets()">✎ Set targets</button>
+      </div>
+    </div>
+    <div id="tg-msg" style="font-size:12px;color:var(--steel);margin:6px 0"></div>
+    <div id="tg-out"></div>
+  </div>
+</div>
 <div id="view-holdup" style="display:none">
   <div class="wrap">
     <div class="hu-topbar">
@@ -5661,7 +5679,8 @@ function finishLogin_(u, emp){
     ws: String(u.ws || 'ALL').trim().toUpperCase(),
     designation: u.designation || u.level || '',
     level: String(u.level || '').trim().toLowerCase(),
-    modules: modules
+    modules: modules,
+    role: String(u.role || '').toLowerCase()   /* R127: AVNI asks (R125) reads USER.role — it was dropped here */
   });
   goHome();
 }
@@ -5816,7 +5835,7 @@ function showView(name){
       if(_y>0) INS3._scroll=_y;
     }
   }catch(e){}
-  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard'].forEach(v=>{
+  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard','targets'].forEach(v=>{
     const el = document.getElementById('view-'+v);
     if(el) el.style.display = (v===name) ? 'block' : 'none';
   });
@@ -6062,8 +6081,8 @@ function openModule(id){
   /* Screens that are not in moduleMap, or that are one screen wearing two names.
      (Was a window.openModule wrapper further down the file; folded in
      14-Aug-2026 so every route out of Home is decided in one place.) */
-  if(id==='targets'){ placeholderToast('Targets'); return; }
-  if(id==='partsdesk'){ huBoot(); showView('holdup'); return; }   // Parts Desk = the parts-filtered Holdup screen (HU_IS_PARTS_PERSON restricts it)
+  if(id==='targets'){ tgBoot(); showView('targets'); return; }   /* R127: live */
+  if(id==='partsdesk'){ huBoot(); showView('holdup'); try{ paBoot(); }catch(e){} return; }   // Parts Desk = the parts-filtered Holdup screen (HU_IS_PARTS_PERSON restricts it)
   if(id==='holdup' && typeof isSAUser==='function' && isSAUser()){ huBoot(); showView('holdup'); return; }  // SA: read-only view of his own rows
   const moduleMap={gate:'GateEntry',estimate:'Estimate',master:'MasterData',control:'ControlRoom',holdup:'HoldupMonitor'};
   // Policy (Ravi 15-Jul): estimates are gate-pick-only, so every SA must be able to
@@ -6074,7 +6093,7 @@ function openModule(id){
   if(id==='estimate') esBoot();
   if(id==='master') mdBoot();
   if(id==='control') ctlBoot();
-  if(id==='holdup') huBoot();
+  if(id==='holdup'){ huBoot(); try{ paBoot(); }catch(e){} }
   if(id==='billing') blBoot();
   if(id==='partfinder') pfBoot();
   if(id==='gateout') goBoot();
@@ -6105,7 +6124,7 @@ const GE_FIELDS=[
   {key:'Model',label:'Model',def:{table:'MODEL',column:'MODEL'}}
 ];
 let GE_CONFIG={}, GE_TABLES=[], GE_OPTIONS={}, GE_MISSING=[], GE_PURPOSE='', GE_SVC_TYPE='', GE_GUARD_LOCKED=false;
-const GE_SIDES=[{k:'front',l:'Front'},{k:'back',l:'Back'},{k:'odo',l:'Odometer'},{k:'dicky',l:'Dicky (if any)'}];
+const GE_SIDES=[{k:'front',l:'Front'},{k:'back',l:'Back'},{k:'left',l:'Left side'},{k:'right',l:'Right side'},{k:'odo',l:'Odometer'},{k:'dicky',l:'Dicky (if any)'}];   /* R127: left + right for the bodyshop check (Ravi 29-09-2026) */
 /* R66: focus score per side, and the line below which a photo is called blurred.
    Measured on real gate photos: a sharp daylight shot scores 300-1500, an
    in-focus indoor one 120-400, and the blurred Splendor Ravi sent scores 18.
@@ -7030,6 +7049,7 @@ function geSaveEntry(){
       purpose, guard, photo:photos.front||'', photoBack:photos.back||'', photoRight:photos.right||'', photoLeft:photos.left||'',
       photoOdo:photos.odo||'', photoDicky:photos.dicky||'',
       aiPlate:aiSnap?geNormPlate(aiSnap.registration_number):'', aiModel:aiSnap?(aiSnap.model||''):'',
+      aiBody:(window.GE_BODY&&GE_BODY.needs_bodyshop)?JSON.stringify(GE_BODY):'',   /* R127 bodyshop flag */
       empno:USER.empno, empname:USER.personName};
     jpost(rec).then(()=>{
       const ban=document.getElementById('ge-okban');
@@ -9670,6 +9690,48 @@ function esShowManualGate_(list){
     setTimeout(function(){ try{ esGenerate(); }catch(e){} }, 40);
   }
 }
+/* R127 (Ravi 29-09-2026) — THE PROCESS IS IN PLACE; THE HUMAN IS NOT POLICED.
+   "We have to ensure we follow the process - preventive maintenance parts, oil
+    for pms, each part having equivalent labour in place, complaint codes
+    everything. Human follows or not is none of our concern."
+   The compose chain already puts PM parts, oil, part-labour and complaint codes
+   on the estimate. This reads the finished estimate and lists what the process
+   still lacks. The gaps are saved on the estimate (items.process) and shown on
+   one line above it — never a blocked button. Consumables and scheduled lines
+   are exempt from the complaint number, exactly as esCodeHtml treats them. */
+function esProcessGaps_(c){
+  var gaps=[]; if(!c||!c.items) return gaps;
+  var it=c.items, key=function(v){ return String(v==null?'':v).trim().toUpperCase(); };
+  var svc=(c.type==='paid'||c.type==='free');
+  var hasOil=(it.oil||[]).some(function(o){ return o && (o.free || +o.p>0 || +o.baseP>0); });
+  if(svc && !hasOil) gaps.push('Engine oil is not on this service estimate');
+  var covered=new Set();
+  (it.labour||[]).forEach(function(lb){ if(lb&&lb._fromPart) covered.add(key(lb._fromPart)); if(lb&&lb._fromPn) covered.add(key(lb._fromPn)); });
+  (it.parts||[]).forEach(function(pt){
+    if(!pt||!pt.l) return;
+    var cons=false; try{ cons=esIsConsumable_(pt.l,pt.pn); }catch(e){}
+    if(!cons && !covered.has(key(pt.l)) && !(pt.pn && covered.has(key(pt.pn)))) gaps.push('No fitting labour for '+pt.l);
+  });
+  var sched={service:1,washing:1,consumable:1,oil:1,express:1,rule:1};
+  (it.parts||[]).concat(it.labour||[]).forEach(function(x){
+    if(!x||!x.l||x.cc||sched[x.src]) return;
+    if(x.pn||x.code) gaps.push('No complaint no for '+x.l);
+  });
+  return gaps;
+}
+function esShowProcess_(gaps){
+  var out=document.getElementById('es-out'); if(!out||!out.parentNode) return;
+  var el=document.getElementById('es-proc');
+  if(!el){ el=document.createElement('div'); el.id='es-proc'; out.parentNode.insertBefore(el,out); }
+  el.style.cssText='font-size:12px;margin:6px 0;padding:6px 8px;border-radius:6px;'+(gaps.length?'background:#fff7ed;color:#9a3412;border:1px solid #fed7aa':'background:#f0fdf4;color:#166534;border:1px solid #bbf7d0');
+  el.textContent=gaps.length?('Process check — '+gaps.length+' gap'+(gaps.length>1?'s':'')+' recorded: '+gaps.join(' · ')):'Process check — oil, PM parts, labour on every part and complaint numbers are all in place.';
+}
+function esHasOil_(c){
+  var it=(c&&c.items)||{};
+  if((it.oil||[]).some(function(o){ return o && (+o.p>0 || +o.baseP>0 || o.free); })) return true;
+  return (it.parts||[]).some(function(x){ var l=String(x&&x.l||'');
+    return /\bOIL\b/i.test(l) && !/FILTER|SEAL|PUMP|STRAINER|GAUGE|LEVEL|COOLER|PIPE|HOSE|CAP|BOLT|RING|SENSOR|SWITCH/i.test(l); });
+}
 function esGenerate(){
   if(ES.locked) return;
   /* REGISTRATION NUMBER CHECK, before anything is generated (folded in
@@ -9735,12 +9797,30 @@ function esGenerate(){
   esGenerate._skipGate=false;
   const c=esComputeCurrent();
   if(!c){ msg.textContent='Select a model and a service type.'; return; }
+  /* R127 (Ravi 29-09-2026): "Whenever a jobcard has oil that automatically becomes
+     a paid service jc. General repair is not allowed if the jc has oil in it. Even
+     if the SA selects general repair, you have to change it to paid service or not
+     allow the estimate only." The type is switched and the estimate is NOT generated
+     on this press: a paid service composes differently (PM parts, service labour),
+     so the advisor sees the new estimate before it goes out. */
+  if((c.type==='general'||c.type==='accidental') && esHasOil_(c)){
+    var _t=document.getElementById('es-type');
+    if(_t){ _t.value='paid'; try{ _t.dispatchEvent(new Event('change')); }catch(e){} }
+    msg.style.color='var(--signal-d)';
+    msg.textContent='Oil is on this job card, so it is a Paid Service, not '+(c.type==='general'?'General Repair':'Accidental')+'. Switched to Paid service — check the estimate and press Generate again.';
+    return;
+  }
   ES.current={id:'EST'+Date.now().toString().slice(-7),ts:Date.now(),name:val('es-name'),mob:val('es-mob'),reg:val('es-reg').toUpperCase(),
     model:c.modelName,fam:c.fam.name,km:c.km,mo:esMonthsSince(c.dos),service:c.dec.label,type:c.type,items:{...c.items,demanded:ES_DEMANDED.slice()},demanded:ES_DEMANDED.slice(),
     parts:c.parts,oil:c.oil,labour:c.labour,protection:c.protection,initial:c.initial,pre:c.pre,disc:c.disc,lineDiscount:c.lineDisc||0,tax:c.tax,total:c.total,floor:c.floor,
     anchorBase:c.anchorBase||0,anchorCap:c.anchorCap||0,anchorSrc:c.custLast?'customer':(c.modelMed?'model':''),
     overCap:!!c.overCap,anchorN:c.modelN||0,modelAvg:c.modelAvg||0,modelMin:c.modelMin||0,trimFloor:c.trimFloor||0};
+  /* R127: process gaps travel inside items (saved as JSON with the estimate). */
+  var _pg=[]; try{ _pg=esProcessGaps_(c); }catch(e){}
+  ES.current.items.process={ok:!_pg.length, gaps:_pg};
+  if(typeof ES_BODY!=='undefined' && ES_BODY) ES.current.items.bodyshop=ES_BODY;   /* R127 bodyshop flag */
   esRender(ES.current); esLockForm(true); esPushSheet(ES.current);
+  try{ esShowProcess_(_pg); }catch(e){}
   try{ if(typeof window.esJoyrideOnGenerate_==='function') window.esJoyrideOnGenerate_(ES.current); }catch(e){}   /* R91: a Joyride visit is counted */
   try{ if(typeof window.esDraftClear_==='function') window.esDraftClear_(); }catch(e){}                            /* R91: a generated estimate is done — no draft to resume */
 }
@@ -13591,7 +13671,7 @@ function showEstimatePreview(est, reg, name, mob){
       {key:'Estimate',id:'esthistory',ic:'📅',tt:'My Estimates — Month & Date wise',dd:'Your estimates of every day. Month → date → estimate → PDF/WhatsApp.',c:'#16a34a',bg:'#ecfdf5',live:true,force:isSA},
       {key:'Estimate',id:'estimate',ic:'📋',tt:isSA?'Estimate Preparation / My Estimates':'Estimate Preparation',dd:isSA?'Prepare estimates and resend PDF/WhatsApp any time today.':'Prepare, review & send estimates quickly.',c:'#16a34a',bg:'#ecfdf5',live:true},
       {key:'HoldupMonitor',id:'holdup',ic:'⛔',tt:isSA?'My Holdup Cases':'Holdup Monitor',dd:isSA?'Read-only status, ETA, history and customer update for your vehicles.':'Track holdup cases, reasons, ETA & status in real time.',c:'#dc2626',bg:'#fef2f2',live:true,force:isSA},
-      {key:'Targets',id:'targets',ic:'🎯',tt:isSA?'My Targets':'Targets',dd:'Labour and load target tracking. More parameters can be added later.',c:'#0f766e',bg:'#f0fdfa',live:false,force:isSA||isTopMgmtUser()},
+      {key:'Targets',id:'targets',ic:'🎯',tt:isSA?'My Targets':'Targets',dd:'Target vs achievement — labour, parts and ratio, month by month, without GST.',c:'#0f766e',bg:'#f0fdfa',live:true,force:isSA||isTopMgmtUser()},
       {key:'BillingComparison',id:'billing',ic:'₹',tt:isSA?'My Estimates & Billing':'Estimates & Billing',dd:isSA?'All your estimates, actual billing done and your deviation %.':'All estimates of all dates + actual DMS billing comparison & deviation %.',c:'#7c3aed',bg:'#f5f3ff',live:true,force:isSA||isTopMgmtUser()},
       {key:'PartFinder',id:'partfinder',ic:'🔎',tt:'All-India Part Finder',dd:'Find any part across all Hero dealers. Nearest-first — tell the customer with confidence.',c:'#0891b2',bg:'#ecfeff',live:true,force:true},
       {key:'PartsDesk',id:'partsdesk',ic:'📦',tt:'Parts Desk',dd:'Parts-pending vehicles from Holdup — status, ETA & requisition photos.',c:'#0891b2',bg:'#ecfeff',live:true,force:isPartsPerson()},
@@ -13642,7 +13722,7 @@ function showEstimatePreview(est, reg, name, mob){
         {ok:true,ic:'🟢',t:'WhatsApp Customer',fn:"raviQuickCustomer('wa')"},
         {ok:true,ic:'✉️',t:'Email Customer',fn:"raviQuickCustomer('mail')"},
         {ok:true,ic:'☁️',t:'Upload Documents',fn:"raviOpenDocModal()"},
-        {ok:true,ic:'🎯',t:'Targets',fn:"placeholderToast('Targets')"},
+        {ok:true,ic:'🎯',t:'Targets',fn:"openModule('targets')"},
         {ok:true,ic:'↻',t:'Sync Now',fn:"globalSyncNow()"}
       ];
     } else {
@@ -28399,6 +28479,7 @@ window.heroChangeMobile=function(){
     <button type="button" id="avask-notif" onclick="avaskNotifOn()">🔔 Alerts</button>
     <button type="button" onclick="avaskClose()">Close</button></div>
   <div class="as" id="avask-sum"></div>
+  <div class="as" id="avask-extra" style="display:none"></div>
   <div class="ab"><table><thead><tr><th>#</th><th>Vehicle</th><th>Days</th><th>AVNI asks</th><th>Status</th><th>Why</th><th>Promise</th><th>Part no. / where / order no.</th><th></th></tr></thead>
     <tbody id="avask-tb"></tbody></table></div>
 </div>
@@ -28406,10 +28487,22 @@ window.heroChangeMobile=function(){
 (function(){
   var ROLES=['wm','gm','ceo','parts','supervisor'];
   var ITEMS=[], LAST_AUTO=0, LAST_N=-1, TIMER=null, LOADING=false;
-  var AUTO_MS=30*60*1000;
+  var AUTO_MS=15*60*1000;   /* R127: every 15 min, not 30 — "till the vehicles are delivered" */
   var DEALER={'23490':'Chinchwad','17057':'Premia','10307':'PDI','61299':'Chakan'};
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-  function role(){ try{ return String((USER&&(USER.role||USER.Role))||'').toLowerCase(); }catch(e){ return ''; } }
+  /* R127: USER.role was never saved at login (fixed in finishLogin_), so for
+     everyone already logged in it is worked out from the designation. */
+  function role(){ try{
+    var r=String((USER&&(USER.role||USER.Role))||'').toLowerCase(); if(r) return r;
+    var t=String((USER&&USER.designation)||'')+' '+String((USER&&USER.level)||'');
+    t=t.toUpperCase();
+    if(/\bCEO\d*\b|SUPERADMIN|\bADMIN\b|DEALERADMIN/.test(t)) return 'ceo';
+    if(/\bGM\d*\b|GENERAL MANAGER/.test(t)) return 'gm';
+    if(/\bWM\d*\b|WORKS? ?SHOP MANAGER|WORKS MANAGER/.test(t)) return 'wm';
+    if(typeof isPartsPerson==='function' && isPartsPerson()) return 'parts';
+    if(/SUPERVISOR/.test(t)) return 'supervisor';
+    return '';
+  }catch(e){ return ''; } }
   function signedIn(){ try{ return !!(USER && localStorage.getItem('sb_rt')); }catch(e){ return false; } }
   function statuses(){ try{ return (typeof HU_DRS_OPTIONS!=='undefined'&&HU_DRS_OPTIONS.length)?HU_DRS_OPTIONS:['Not Allocated','Work In Progress']; }catch(e){ return ['Work In Progress']; } }
   function etas(){ try{ return (typeof HU_ETA_OPTIONS!=='undefined')?HU_ETA_OPTIONS:['Today','Tomorrow','4-5 Days','Above 5 Days']; }catch(e){ return ['Today','Tomorrow']; } }
@@ -28457,7 +28550,7 @@ window.heroChangeMobile=function(){
       ITEMS=(d&&d.items)||[];
       paint(d);
       var n=ITEMS.length;
-      if(n && LAST_N>=0 && n!==LAST_N) notify(n);
+      if(n && (LAST_N<0 || n!==LAST_N || Date.now()-(window.AVASK_LAST_NOTE||0)>AUTO_MS)){ window.AVASK_LAST_NOTE=Date.now(); notify(n); }
       LAST_N=n;
       if(auto && n && Date.now()-LAST_AUTO>AUTO_MS && document.visibilityState==='visible'){ LAST_AUTO=Date.now(); avaskOpen(false); }
     }catch(e){ /* not signed in / offline: stay quiet */ }
@@ -28465,6 +28558,7 @@ window.heroChangeMobile=function(){
   }
   window.avaskOpen=function(user){
     var ov=document.getElementById('avask-ov'); ov.style.display='flex'; document.body.style.overflow='hidden';
+    try{ if(typeof r127ChaseExtra_==='function') r127ChaseExtra_(); }catch(e){}
     if(user) LAST_AUTO=Date.now();
     try{ history.pushState({avask:1},''); }catch(e){}
     var b=document.getElementById('avask-notif'); if(b) b.style.display=(typeof Notification==='undefined'||Notification.permission==='granted')?'none':'';
@@ -28505,5 +28599,302 @@ window.heroChangeMobile=function(){
   /* a login later in the session starts the asking at once */
   var waitLogin=setInterval(function(){ if(signedIn() && ROLES.indexOf(role())>=0){ clearInterval(waitLogin); load(true); } }, 5000);
 })();
+</script>
+
+<script>
+/* ================= R127 TARGETS + PARTS-AVAILABLE ALERT =================
+   Ravi 29-09-2026. Supabase only — Apps Script is retired (R104).
+   Internal figures only; nothing here reaches a customer (rule 7).
+
+   TARGETS. Each month is one hero_ratio_today(p_month) call — the same
+   function the top-bar ratio chip already trusts. Its amounts are the billed
+   (Total Bill Value) figures WITH GST, so they are divided by 1.18 here and
+   the screen says so. A month with no billing falls back to estimates inside
+   that function; the row then says "estimates, not billed".
+   Targets are typed on this screen by the CEO/admin and kept as one app
+   setting, TARGETS_JSON = {"yyyy-MM":{"labour":n,"parts":n}}. A month without
+   one shows "no target" — nothing is invented.
+
+   PARTS ALERT. "If some part is not available and vehicle is pending for the
+   same and requisition is scanned and read by document scanner, you should
+   alert the parts manager that parts are available at you or nearest
+   stockists first then dealers." Active holdup vehicles x the requisition
+   lists saved by the slip reader (hero_requisition_index / _for) x
+   hero_mp_stock (what the live Part Finder reads). That stock is OUR OUTLETS
+   ONLY today, so the alert names which of our outlets holds the part. Stockists
+   and other dealers are shown the moment a stock feed carries them (own=false);
+   until then they are not measured, and the screen says nowhere-in-stock. */
+var TG_GST=1.18;
+function tgEsc_(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+function tgMonthName_(k){ var p=String(k).split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][(+p[1]||1)-1]+' '+p[0]; }
+function tgMonths_(n){ var d=new Date(), out=[]; for(var i=0;i<n;i++){ var x=new Date(d.getFullYear(), d.getMonth()-i, 1); out.push(x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)); } return out; }
+/* Ravi 29-09-2026: "Keep targets for labour as 20 lacs till that figure is achieved."
+   20,00,000 (without GST) stands for every month that has no typed labour target. */
+var TG_LABOUR_STANDING=2000000;
+function tgLabourTarget_(m){ var t=tgTargets_()[m]||{}; return +t.labour>0?+t.labour:TG_LABOUR_STANDING; }
+function tgTargets_(){ try{ var t=(typeof APP_SETTINGS!=='undefined' && APP_SETTINGS)?APP_SETTINGS.TARGETS_JSON:''; return t?JSON.parse(t):{}; }catch(e){ return {}; } }
+var TG_LAST=null;
+function tgBoot(){
+  var out=document.getElementById('tg-out'), msg=document.getElementById('tg-msg'); if(!out) return;
+  var ed=document.getElementById('tg-edit'); if(ed) ed.style.display=(typeof isAdmin==='function' && isAdmin())?'':'none';
+  var n=+((document.getElementById('tg-months')||{}).value||6), months=tgMonths_(n);
+  msg.style.color='#2563eb'; msg.textContent='Loading '+n+' months of billed labour and parts…';
+  var load=function(){ return Promise.all(months.map(function(m){
+    return window.sbRpc('hero_ratio_today',{p_month:m, p_ws:null}).then(function(r){ return r||{ok:false}; }).catch(function(e){ return {ok:false,error:String(e&&e.message||e)}; });
+  })); };
+  /* Settings first, so a target typed on another phone shows here too. */
+  var settings=new Promise(function(res){ try{ jget('app_settings',{},function(r){ if(r&&r.settings){ try{ APP_SETTINGS=r.settings; }catch(e){} } res(); }); }catch(e){ res(); } });
+  settings.then(load).then(function(res){
+    var T=tgTargets_(), fails=res.filter(function(r){ return !r.ok; }).length;
+    var rows=months.map(function(m,i){
+      var r=res[i]||{}, billed=/billing/i.test(String(r.source||'')), has=r.ok && +r.jobs>0;
+      var lab=has?Math.round(+r.labour/TG_GST):null, par=has?Math.round(+r.parts/TG_GST):null, t=T[m]||{};
+      var lt=tgLabourTarget_(m), pt=+t.parts>0?+t.parts:null;
+      return {m:m, ok:r.ok, jobs:+r.jobs||0, billed:billed, src:r.source||'', lab:lab, par:par, lt:lt, pt:pt,
+              la:(lt&&lab!=null)?Math.round(lab/lt*1000)/10:null, pa:(pt&&par!=null)?Math.round(par/pt*1000)/10:null,
+              ratio:(lab>0)?Math.round(par/lab*100)/100:null};
+    });
+    TG_LAST=rows;
+    msg.style.color='var(--steel)';
+    msg.textContent='Billed labour and parts from the Total Bill Value uploads, shown without GST (amount ÷ '+TG_GST+'). Latest month first.'+(fails?(' '+fails+' month'+(fails>1?'s':'')+' could not load.'):'');
+    var cell=function(v){ return v==null?'<span style="color:#94a3b8">—</span>':inr(v); };
+    var pct=function(v){ if(v==null) return '<span style="color:#94a3b8">no target</span>'; var c=v>=100?'#15803d':(v>=85?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">'+v+'% achieved</b>'; };
+    var rat=function(v){ if(v==null) return '—'; var c=v<=1.05?'#15803d':(v<=1.3?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">1 : '+(Math.round(1/v*100)/100)+'</b><div class="tg-sub">₹'+(Math.round(1/v*100)/100)+' labour per ₹1 of parts · target 1 : 1</div>'; };
+    var tgc=function(v,t,a){ return '<b>'+cell(v)+'</b><div class="tg-sub">Target '+cell(t)+'</div><div class="tg-sub">'+pct(a)+'</div>'; };
+    out.innerHTML='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>Parts</th><th>Parts : Labour</th></tr></thead><tbody>'
+      +rows.map(function(x){
+        var note=!x.ok?'<div class="tg-sub" style="color:#b91c1c">not loaded</div>':(!x.jobs?'<div class="tg-sub">no billing</div>':(!x.billed?'<div class="tg-sub" style="color:#b45309">estimates, not billed</div>':''));
+        return '<tr><td><b>'+tgMonthName_(x.m)+'</b><div class="tg-sub">'+x.jobs+' JCs</div>'+note+'</td>'
+          +'<td>'+tgc(x.lab,x.lt,x.la)+'</td><td>'+tgc(x.par,x.pt,x.pa)+'</td><td>'+rat(x.ratio)+'</td></tr>'; }).join('')
+      +'</tbody></table>'
+      +(rows.some(function(x){ return x.lt==null && x.pt==null; })?'<div style="font-size:11.5px;color:#64748b;margin-top:8px">“no target” = none typed in yet'+((typeof isAdmin==='function'&&isAdmin())?' — press <b>✎ Set targets</b>.':'. The CEO / admin sets them on this screen.')+'</div>':'');
+  });
+}
+function tgEditTargets(){
+  if(!(typeof isAdmin==='function' && isAdmin())){ alert('Only the CEO / admin can set targets.'); return; }
+  var T=tgTargets_(), m=tgMonths_(1)[0];
+  var mm=prompt('Which month? (yyyy-mm)', m); if(!mm) return; mm=String(mm).trim().slice(0,7);
+  if(!/^\d{4}-\d{2}$/.test(mm)){ alert('Month must look like 2026-09.'); return; }
+  var cur=T[mm]||{};
+  var l=prompt('Labour target for '+tgMonthName_(mm)+', ₹ without GST', cur.labour||''); if(l===null) return;
+  var pp=prompt('Parts target for '+tgMonthName_(mm)+', ₹ without GST', cur.parts||''); if(pp===null) return;
+  T[mm]={labour:Math.round(+String(l).replace(/[^0-9.]/g,'')||0), parts:Math.round(+String(pp).replace(/[^0-9.]/g,'')||0)};
+  var msg=document.getElementById('tg-msg'); if(msg){ msg.style.color='#2563eb'; msg.textContent='Saving the target for '+tgMonthName_(mm)+'…'; }
+  jpost({type:'set_app_setting', key:'TARGETS_JSON', value:JSON.stringify(T), by:(typeof USER!=='undefined'&&USER&&USER.personName)||''})
+    .then(function(){ try{ APP_SETTINGS.TARGETS_JSON=JSON.stringify(T); }catch(e){} tgBoot(); })
+    .catch(function(e){ if(msg){ msg.style.color='var(--signal-d)'; msg.textContent='Target not saved: '+(e&&e.message||e); } });
+}
+/* ---------------------------------------------------------------- parts alert */
+function paPool_(items, n, fn){
+  var i=0, out=new Array(items.length);
+  function next(){ if(i>=items.length) return Promise.resolve(); var k=i++; return Promise.resolve(fn(items[k])).then(function(v){ out[k]=v; }, function(){ out[k]=null; }).then(next); }
+  var w=[]; for(var j=0;j<Math.min(n,items.length);j++) w.push(next());
+  return Promise.all(w).then(function(){ return out; });
+}
+function paBoot(){
+  var v=document.getElementById('view-holdup'); if(!v || typeof window.sbRpc!=='function') return;
+  var box=document.getElementById('pa-box');
+  if(!box){
+    box=document.createElement('div'); box.id='pa-box';
+    box.style.cssText='margin:8px 0;border:1.5px solid #fca5a5;border-radius:8px;background:#fff7f7;padding:8px 10px';
+    var bar=v.querySelector('.hu-topbar'); if(bar && bar.parentNode) bar.parentNode.insertBefore(box, bar.nextSibling); else v.insertBefore(box, v.firstChild);
+  }
+  box.innerHTML='<div style="font-size:12px;color:#2563eb">Checking stock for vehicles waiting on parts…</div>';
+  paCompute_().then(function(R){
+    if(!R.list){ box.innerHTML='<div style="font-size:12px;color:#475569">No vehicle on holdup has a saved requisition parts list yet (📷 Req punching → 📋 on the row).</div>'; return; }
+    var alerts=R.alerts, list=R.list, none=R.none;
+    var head='<div style="font-weight:800;color:#991b1b;font-size:13px">⚠ '+alerts.length+' part'+(alerts.length===1?'':'s')+' in stock for vehicles waiting on them — why is the vehicle still waiting?'
+      +' <span style="font-weight:400;color:#64748b;font-size:11px">· '+list+' vehicle'+(list===1?'':'s')+' with a parts list · '+none+' part'+(none===1?'':'s')+' nowhere in stock</span></div>';
+    if(!alerts.length){ box.innerHTML=head; return; }
+    var holders=function(a){ return a.map(function(x){ return tgEsc_(x.dealer||x.dealerCode)+(x.town?(' ('+tgEsc_(x.town)+')'):'')+' ×'+tgEsc_(x.qty); }).join(', '); };
+    box.innerHTML=head+'<div style="margin-top:6px"><table class="tg-t"><thead><tr><th>Vehicle</th><th>Part</th><th>Available at</th></tr></thead><tbody>'
+      +alerts.map(function(x){ var c=x.where==='OUR OUTLET'?'#15803d':(x.where==='PUNE AREA'?'#b45309':'#475569');
+        return '<tr><td><b>'+tgEsc_(x.n.reg)+'</b><div class="tg-sub">'+tgEsc_(x.n.jc)+'</div><div class="tg-sub">'+tgEsc_(x.n.days)+' days waiting</div></td>'
+          +'<td style="font-family:\'Roboto Mono\',monospace">'+tgEsc_(x.pn)+'<div class="tg-sub" style="font-family:inherit">'+tgEsc_(x.desc)+(x.qty?(' · qty '+tgEsc_(x.qty)):'')+'</div></td>'
+          +'<td><b style="color:'+c+'">'+x.where+'</b><div>'+holders(x.at)+'</div></td></tr>'; }).join('')
+      +'</tbody></table></div>';
+  }).catch(function(e){ box.innerHTML='<div style="font-size:12px;color:#b91c1c">Parts alert could not load: '+tgEsc_(e&&e.message||e)+'.</div>'; });
+}
+/* The alert's arithmetic, shared by the Holdup box and the AVNI-asks chase.
+   Resolves {list:<vehicles with a parts list>, none:<parts nowhere in stock>, alerts:[...]}.
+   Cached 10 minutes so the chase opening every 15 minutes costs nothing extra. */
+var PA_CACHE=null;
+function paCompute_(){
+  if(PA_CACHE && Date.now()-PA_CACHE.at<10*60*1000) return Promise.resolve(PA_CACHE.r);
+  var norm=function(x){ return String(x||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase(); };
+  var active=new Promise(function(res){
+    var done=function(){ var rows=[]; try{ rows=(typeof huActiveRows==='function')?huActiveRows(HU_DATA||[]):(HU_DATA||[]); }catch(e){ rows=HU_DATA||[]; } res(rows); };
+    try{ if(typeof huHydrateFromBackend==='function') huHydrateFromBackend(done); else done(); }catch(e){ done(); }
+  });
+  return Promise.all([active, window.sbRpc('hero_requisition_index',{p_days:60})]).then(function(a){
+    var rows=a[0]||[], idx=(a[1]&&a[1].rows)||[];
+    var byJc={}, byReg={};
+    idx.forEach(function(x){ if(x.jcNo) byJc[norm(x.jcNo)]=x; if(x.reg) byReg[norm(x.reg)]=x; });
+    var need=[];
+    rows.forEach(function(r){
+      var jc=r[HU_COLS.jcNo], reg=r[HU_COLS.reg], q=byJc[norm(jc)]||byReg[norm(reg)];
+      if(q) need.push({jc:q.jcNo||jc, dealer:q.dealer||'', reg:q.reg||reg, days:+r[HU_COLS.pendingDays]||0});
+    });
+    if(!need.length) return {list:0, none:0, alerts:[]};
+    return paPool_(need, 4, function(n){
+      return window.sbRpc('hero_requisition_for',{p_jc:n.jc, p_dealer:n.dealer, p_reg:n.reg}).then(function(r){
+        n.lines=((r&&r.requisition&&r.requisition.lines)||[]).filter(function(l){ return norm(l.partNo); }); return n; });
+    }).then(function(list){
+      list=list.filter(Boolean);
+      var pns={}; list.forEach(function(n){ (n.lines||[]).forEach(function(l){ pns[norm(l.partNo)]=1; }); });
+      var keys=Object.keys(pns);
+      return paPool_(keys, 4, function(pn){ return window.sbRpc('hero_mp_stock',{p_pn:pn}); }).then(function(st){
+        var S={}; keys.forEach(function(k,i){ S[k]=st[i]; });
+        var alerts=[], none=0;
+        list.forEach(function(n){ (n.lines||[]).forEach(function(l){
+          var s=S[norm(l.partNo)], rr=((s&&s.ok!==false&&s.rows)||[]).filter(function(x){ return +x.qty>0; });
+          if(!rr.length){ none++; return; }
+          var own=rr.filter(function(x){ return x.own; }), near=rr.filter(function(x){ return !x.own && x.pune; }), far=rr.filter(function(x){ return !x.own && !x.pune; });
+          alerts.push({n:n, pn:norm(l.partNo), desc:l.desc||(s.summary&&s.summary.desc)||'', qty:l.qty,
+            where:own.length?'OUR OUTLET':(near.length?'PUNE AREA':'OTHER DEALER'), at:(own.length?own:(near.length?near:far)).slice(0,3)});
+        }); });
+        var rank={'OUR OUTLET':0,'PUNE AREA':1,'OTHER DEALER':2};
+        alerts.sort(function(a,b){ return (rank[a.where]-rank[b.where]) || (b.n.days-a.n.days); });
+        var R={list:list.length, none:none, alerts:alerts}; PA_CACHE={at:Date.now(), r:R}; return R;
+      });
+    });
+  });
+}
+/* ---------------------------------------------------- holdup mobile numbers
+   Ravi 29-09-2026: "In holdup we did mobile nos yesterday, they are seeing only
+   on clicks. Let they be seen all the time. That reminds the wm of speaking with
+   the customer there only." R126 filled the card from the phone's own copy only;
+   the customer_master read ran on the Call tap. This reads customer_master for
+   every row that still has no number, four at a time, once per vehicle, then
+   redraws once so both the phone cards and the desktop table show it. */
+var HU_MOB_TRIED={};
+function huMobPrefetch_(rows){
+  if(typeof huSbMob!=='function' || typeof huRowMobSync!=='function') return;
+  var todo=(rows||[]).filter(function(r){ var k=huMobKey(r); if(!k || HU_MOB_TRIED[k] || huRowMobSync(r)) return false; HU_MOB_TRIED[k]=1; return true; });
+  if(!todo.length) return;
+  var found=0;
+  paPool_(todo, 4, function(r){ return new Promise(function(res){
+    huSbMob(String(r[HU_COLS.reg]||''), function(m){ if(m){ HU_MOB_CACHE[huMobKey(r)]=m; r['Mobile']=m; found++; } res(); }); }); })
+  .then(function(){ if(found){ try{ huRender(); }catch(e){} } });
+}
+(function(){
+  var _r=window.huRender; if(typeof _r!=='function') return;
+  window.huRender=function(){ var o=_r.apply(this,arguments); try{ huMobPrefetch_(HU_ROWS_CURRENT||[]); }catch(e){} return o; };
+})();
+/* ---------------------------------------------------- the chase, harder
+   Ravi 29-09-2026: "make the wms, gms and parts incharge life miserable till the
+   vehicles are delivered". On top of AVNI asks' own list: parts sitting in our
+   stock for a waiting vehicle, the labour month against the 20 lakh standing
+   target, and whether this morning's holdup and stock files are in. */
+function r127ChaseExtra_(){
+  var el=document.getElementById('avask-extra'); if(!el) return;
+  el.style.display='block'; el.innerHTML='<span style="color:#64748b">Checking parts in stock, labour target and this morning’s uploads…</span>';
+  var lines=[], today=new Date(), ymd=today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
+  var mk=ymd.slice(0,7);
+  var p1=paCompute_().then(function(R){
+    if(R.alerts.length) lines.push('<span class="bad">'+R.alerts.length+' part'+(R.alerts.length===1?' IS':'s ARE')+' IN OUR STOCK</span> for vehicles still waiting: '
+      +R.alerts.slice(0,6).map(function(a){ return tgEsc_(a.n.reg)+' → '+tgEsc_(a.pn)+' @ '+tgEsc_((a.at[0]||{}).dealer||''); }).join(' · ')+(R.alerts.length>6?' …':'')+'. Why is the vehicle not delivered?');
+  }).catch(function(){ lines.push('Parts check: not loaded.'); });
+  var p2=window.sbRpc('hero_ratio_today',{p_month:mk, p_ws:null}).then(function(r){
+    var lab=Math.round((+(r&&r.labour)||0)/TG_GST), tgt=tgLabourTarget_(mk);
+    var dim=new Date(today.getFullYear(), today.getMonth()+1, 0).getDate(), left=Math.max(1, dim-today.getDate()+1);
+    var short=Math.max(0,tgt-lab);
+    lines.push('Labour '+tgMonthName_(mk)+' (without GST): <b>'+inr(lab)+'</b> of '+inr(tgt)+' — '
+      +(short?('<span class="bad">short '+inr(short)+', needs '+inr(Math.ceil(short/left))+' a day for '+left+' day'+(left===1?'':'s')+'</span>'):'<span class="ok">target achieved</span>'));
+  }).catch(function(){ lines.push('Labour target: not loaded.'); });
+  var p3=new Promise(function(res){ try{ jgetRaw('mp_status',{},function(s){
+    var d=String((s&&s.stockDate)||''); var fresh=d && (d.indexOf(ymd)===0 || d.indexOf(ymd.split('-').reverse().join('-'))===0);
+    lines.push('Parts stock file: '+(s&&s.ok!==false?(fresh?'<span class="ok">today’s is in</span>':'<span class="bad">NOT uploaded today</span> (stock date '+tgEsc_(d||'—')+')'):'<span class="bad">none loaded</span>'));
+    res(); },20000); }catch(e){ res(); } });
+  var p4=new Promise(function(res){
+    var up=''; try{ (HU_DATA||[]).forEach(function(r){ var u=String(r['Uploaded At']||''); if(u>up) up=u; }); }catch(e){}
+    if(!up) lines.push('Holdup file upload time: not measured (the rows do not carry it)');
+    else lines.push('Holdup file: '+(up.indexOf(ymd)===0?'<span class="ok">uploaded today</span>':'<span class="bad">NOT uploaded today</span> (last '+tgEsc_(up.slice(0,16))+')'));
+    res(); });
+  Promise.all([p1,p2,p3,p4]).then(function(){
+    var wa=encodeURIComponent('AVNI chase '+ymd+':\n'+lines.map(function(l){ return '• '+l.replace(/<[^>]+>/g,''); }).join('\n'));
+    el.innerHTML=lines.map(function(l){ return '<div style="margin:2px 0">'+l+'</div>'; }).join('')
+      +'<div style="margin-top:4px"><a href="https://wa.me/?text='+wa+'" target="_blank" rel="noopener" style="color:#15803d;font-weight:700">🟢 Send this on WhatsApp</a></div>';
+  });
+}
+/* ---------------------------------------------------- bodyshop flag
+   Ravi 29-09-2026: "From the images we have to find out whether the vehicle is due
+   for bodyshop repairs also and if it can be done... Flag all such vehicles. You
+   get the photographs from the gate entry only." One Gemini call per vehicle with
+   every side photo in it, through the same key and model the plate reader uses.
+   At the gate it runs as the photos come in and rides on the entry (aiBody); on the
+   estimate it runs on the stored gate photos and is saved in items.bodyshop. */
+var BODY_PROMPT='These are gate photos of one Indian two-wheeler arriving at a service workshop (front, back, left, right). '+
+  'Look only at the body: dents, scratches, cracked or broken panels, bent parts, missing or broken visor, mudguard, indicators, mirrors, side panels, tank dents, paint damage. '+
+  'Ignore dirt, dust and normal wear. Decide if the vehicle needs bodyshop / accidental repair work, and whether it can be done in a two-wheeler workshop. '+
+  'Return ONLY JSON: {"needs_bodyshop":true|false,"severity":"none|minor|major","areas":["..."],"can_be_done":true|false,"reason":"one short line"}';
+var GE_BODY=null, GE_BODY_T=null;
+async function r127BodyCheck_(dataUrls){
+  var key=(typeof geGeminiKey==='function')?geGeminiKey():''; if(!key || !dataUrls.length) return null;
+  var parts=[{text:BODY_PROMPT}];
+  for(var i=0;i<dataUrls.length;i++){ try{ parts.push({inline_data:{mime_type:'image/jpeg',data:await geCompressForAi(dataUrls[i])}}); }catch(e){} }
+  if(parts.length<2) return null;
+  var url=GE_GEMINI_BASE+GE_GEMINI_MODEL+':generateContent?key='+encodeURIComponent(key);
+  var body=JSON.stringify({contents:[{parts:parts}],generationConfig:{temperature:0,response_mime_type:'application/json'}});
+  try{
+    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body});
+    if(r.status===429){ await new Promise(function(s){ setTimeout(s,3500); }); r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body}); }
+    if(!r.ok) return null;
+    var j=await r.json();
+    var t=((((j.candidates||[])[0]||{}).content||{}).parts||[]).map(function(p){ return p.text||''; }).join('').trim().replace(/^```json\s*/i,'').replace(/```$/,'');
+    var a=t.indexOf('{'), b=t.lastIndexOf('}'); if(a>=0) t=t.slice(a,b+1);
+    var o=JSON.parse(t); o.checkedAt=new Date().toISOString(); o.photos=dataUrls.length; return o;
+  }catch(e){ return null; }
+}
+function r127BodyBadge_(o){
+  if(!o) return '';
+  if(!o.needs_bodyshop) return '<div style="font-size:11.5px;color:#166534;margin:4px 0">🛠 Body check: no bodyshop work seen'+(o.photos?(' ('+o.photos+' photos)'):'')+'.</div>';
+  return '<div style="font-size:12px;margin:4px 0;padding:6px 8px;border-radius:6px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412"><b>🛠 BODYSHOP — '+tgEsc_(String(o.severity||'').toUpperCase())+'</b>'
+    +(o.areas&&o.areas.length?(' · '+tgEsc_(o.areas.join(', '))):'')+(o.can_be_done===false?' · <b>outside our scope</b>':' · can be done here')
+    +'<div class="tg-sub" style="color:#9a3412">'+tgEsc_(o.reason||'')+' — offer the bodyshop estimate to the customer.</div></div>';
+}
+/* Gate: re-check a moment after any side photo changes. */
+(function(){
+  var _p=window.geOnPhotoChange; if(typeof _p!=='function') return;
+  window.geOnPhotoChange=function(){
+    var o=_p.apply(this,arguments);
+    clearTimeout(GE_BODY_T);
+    GE_BODY_T=setTimeout(function(){
+      var urls=['front','back','left','right'].map(function(k){ return (typeof GE_PHOTOS!=='undefined'&&GE_PHOTOS[k])||''; }).filter(function(u){ return /^data:image/.test(u); });
+      if(urls.length<2){ GE_BODY=null; return; }
+      r127BodyCheck_(urls).then(function(res){
+        GE_BODY=res;
+        var grid=document.getElementById('ge-photo-grid')||document.querySelector('[id^="ge-photo-"]');
+        var host=document.getElementById('ge-body-flag');
+        if(!host && grid && grid.parentNode){ host=document.createElement('div'); host.id='ge-body-flag'; grid.parentNode.insertBefore(host, grid.nextSibling); }
+        if(host) host.innerHTML=r127BodyBadge_(res);
+      });
+    }, 1800);
+    return o;
+  };
+})();
+/* Estimate: check the gate photos the advisor is looking at. */
+var ES_BODY=null;
+(function(){
+  var _g=window.esRenderGatePhotos; if(typeof _g!=='function') return;
+  window.esRenderGatePhotos=function(g){
+    var o=_g.apply(this,arguments); ES_BODY=null;
+    try{
+      var ph=(g&&g.photos)||{};
+      var urls=['front','back','left','right'].map(function(k){ return ph[k]; }).filter(function(u){ return u && String(u).indexOf('http')===0; });
+      var box=document.getElementById('es-gate-photos');
+      if(urls.length && box){
+        var tag=document.createElement('div'); tag.id='es-body-flag'; tag.innerHTML='<div style="font-size:11px;color:#2563eb;margin:4px 0">🛠 Checking the gate photos for bodyshop work…</div>'; box.appendChild(tag);
+        Promise.all(urls.map(function(u){ return fetch(u).then(function(x){ return x.blob(); }).then(function(b){ return new Promise(function(res){ var fr=new FileReader(); fr.onload=function(){ res(fr.result); }; fr.onerror=function(){ res(''); }; fr.readAsDataURL(b); }); }).catch(function(){ return ''; }); }))
+          .then(function(d){ return r127BodyCheck_(d.filter(Boolean)); })
+          .then(function(res){ ES_BODY=res; var t=document.getElementById('es-body-flag'); if(t) t.innerHTML=res?r127BodyBadge_(res):'<div class="tg-sub">🛠 Body check: could not read the photos.</div>'; });
+      }
+    }catch(e){}
+    return o;
+  };
+})();
+(function(){ if(document.getElementById('tg-css')) return; var st=document.createElement('style'); st.id='tg-css';
+  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}';
+  document.head.appendChild(st); })();
 </script>
 </body></html>
