@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 97;
-window.HERO_BUILD = 'R128-2026.09.29.4';
+window.HERO_BUILD = 'R128-2026.09.29.5';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -6341,7 +6341,45 @@ function geEntryDetailHtml(g){
     <div class="modal-row"><span class="k">Purpose</span><span class="v">${raviEsc(g.purpose||'—')}</span></div>
     ${(typeof isSAUser==='function' && isSAUser())?'':`<div class="modal-row"><span class="k">KM at Gate</span><span class="v">${raviEsc(g.km||'—')}</span></div>`}
     <div class="modal-row"><span class="k">Guard</span><span class="v">${raviEsc(g.guard||g.empname||'—')}</span></div>
-    ${pics?`<div class="hero-photostrip" style="margin-top:8px">${pics}</div>`:'<div class="hint" style="margin-top:6px">No photos on this entry.</div>'}</div>`;
+    ${pics?`<div class="hero-photostrip" style="margin-top:8px">${pics}</div>`:'<div class="hint" style="margin-top:6px">No photos on this entry.</div>'}${geCancelBtnHtml(g)}</div>`;
+}
+/* R128.5 (Ravi 29-09-2026): "Gate entry cancelled option to be given to GM account only."
+   GM sees a Cancel button on a gate entry; the server (hero_gate_cancel, migration 0100)
+   refuses everyone else and moves the entry to sheet_gate_cancelled, so it leaves every
+   list (today, history, Estimate waiting) at once. Nothing is deleted. */
+function heroIsGM(){
+  try{
+    var r=String((USER&&(USER.role||USER.Role))||'').toLowerCase(); if(r) return r==='gm';
+    return /\bGM\d*\b|GENERAL MANAGER/.test(String((USER&&USER.designation)||'').toUpperCase());
+  }catch(e){ return false; }
+}
+function geCancelBtnHtml(g){
+  if(!heroIsGM() || !g || !g.entryId) return '';
+  var id=String(g.entryId).replace(/[^A-Za-z0-9_.:-]/g,'');
+  return '<button class="btn ghost sm" style="margin-top:8px;color:#b91c1c;border-color:#b91c1c" onclick="event.stopPropagation();geCancelEntry(\''+id+'\',this)">\u2716 Cancel this gate entry</button>';
+}
+async function geCancelEntry(id, btn){
+  if(!heroIsGM()){ alert('Only the GM login can cancel a gate entry.'); return; }
+  var pick=function(arr){ return (arr||[]).filter(function(g){ return g&&String(g.entryId)===String(id); })[0]; };
+  var g=pick(typeof GE_MY_LIST!=='undefined'?GE_MY_LIST:null)||pick(window.GE_HIST_DAY)||pick(window.GE_TODAY_ROWS)||{};
+  var reason=prompt('Cancel gate entry '+(g.token||'')+' '+(g.reg||'')+'\n\nReason for cancelling:');
+  if(reason===null) return;
+  reason=String(reason).trim();
+  if(!reason){ alert('Please write the reason.'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Cancelling\u2026'; }
+  try{
+    var res=await sbRpc('hero_gate_cancel',{p_entry_id:String(id),p_reason:reason});
+    if(!res||res.ok===false) throw new Error((res&&res.error)||'Could not cancel');
+    var drop=function(arr){ if(!Array.isArray(arr)) return; for(var i=arr.length-1;i>=0;i--){ if(arr[i]&&String(arr[i].entryId)===String(id)) arr.splice(i,1); } };
+    if(typeof GE_MY_LIST!=='undefined') drop(GE_MY_LIST); drop(window.GE_HIST_DAY); drop(window.GE_TODAY_ROWS);
+    (window.GE_HIST||[]).forEach(function(mo){ (mo.dates||[]).forEach(function(d){ drop(d.items); }); });
+    try{ if(typeof geRenderMyList==='function') geRenderMyList(); }catch(e){}
+    var card=btn&&btn.closest?btn.closest('.ctlitem'):null; if(card) card.remove();
+    alert('Gate entry cancelled.');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='\u2716 Cancel this gate entry'; }
+    alert('Not cancelled: '+String((e&&(e.server||e.message))||e));
+  }
 }
 function geFillSelect(id, options){
   document.getElementById(id).innerHTML = '<option value="">Select…</option>'+options.map(o=>`<option value="${o}">${o}</option>`).join('');
@@ -16883,12 +16921,13 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
       const rows=(typeof raviRowsAllowedForUser==='function')?raviRowsAllowedForUser(all,'location'):all;
       const more='<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="raviOpenGateHistory()">📅 All gate entries — full history</button>';
       if(!rows.length){ m.body.innerHTML=more+'<div class="hint">No gate entries yet today.</div>'; return; }
+      window.GE_TODAY_ROWS=rows;
       m.body.innerHTML=more+rows.map(function(g,i){
         const t=new Date(g.time);
         const hhmm=isNaN(t.getTime())?'':t.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
         return '<div class="ctlitem"><div><div class="big">'+(i+1)+'. '+raviEsc(g.reg||'—')+' · '+raviEsc(g.model||'')+'</div>'
           +'<div class="small">'+raviEsc(g.name||'')+' · '+raviEsc(g.purpose||'')+' · '+raviEsc(g.location||'')+'</div></div>'
-          +'<div><span class="badge done">'+raviEsc(g.token||hhmm)+'</span></div></div>';
+          +'<div style="text-align:right"><span class="badge done">'+raviEsc(g.token||hhmm)+'</span>'+geCancelBtnHtml(g)+'</div></div>';
       }).join('');
       if(typeof heroViewSave==='function') heroViewSave(m.body,'gate_today');
     }).catch(function(){
