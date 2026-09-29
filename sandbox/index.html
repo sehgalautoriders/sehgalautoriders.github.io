@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 95;
-window.HERO_BUILD = 'R128-2026.09.29.2';
+window.HERO_RELEASE = 96;
+window.HERO_BUILD = 'R128-2026.09.29.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28673,21 +28673,24 @@ function tgBoot(){
       var lab=has?Math.round(+r.labour/TG_GST):null, par=has?Math.round(+r.parts/TG_GST):null, t=T[m]||{};
       var lt=tgLabourTarget_(m), pt=+t.parts>0?+t.parts:null;
       return {m:m, ok:r.ok, jobs:+r.jobs||0, billed:billed, src:r.source||'', lab:lab, par:par, lt:lt, pt:pt,
-              la:(lt&&lab!=null)?Math.round(lab/lt*1000)/10:null, pa:(pt&&par!=null)?Math.round(par/pt*1000)/10:null,
+              /* R128.3: no "% achieved" on estimates — only bills count as achievement (Ravi 29-09-2026: September labour wrong) */
+              la:(billed&&lt&&lab!=null)?Math.round(lab/lt*1000)/10:null, pa:(billed&&pt&&par!=null)?Math.round(par/pt*1000)/10:null,
               ratio:(lab>0)?Math.round(par/lab*100)/100:null};
     });
     TG_LAST=rows;
     msg.style.color='var(--steel)';
+    var est=rows.filter(function(x){ return x.ok && x.jobs && !x.billed; });
     msg.textContent='Billed labour and parts from the Total Bill Value uploads, shown without GST (amount ÷ '+TG_GST+'). Latest month first.'+(fails?(' '+fails+' month'+(fails>1?'s':'')+' could not load.'):'');
+    if(est.length){ msg.style.color='#b91c1c'; msg.innerHTML='<b>Bills are not loaded for '+est.map(function(x){ return tgMonthName_(x.m); }).join(', ')+'.</b> Those months show ESTIMATES only, so no % achieved is shown for them. Real billed labour and parts will come from the Hero BI Tally report.'; }
     var cell=function(v){ return v==null?'<span style="color:#94a3b8">—</span>':inr(v); };
     var pct=function(v){ if(v==null) return '<span style="color:#94a3b8">no target</span>'; var c=v>=100?'#15803d':(v>=85?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">'+v+'% achieved</b>'; };
     var rat=function(v){ if(v==null) return '—'; var c=v<=1.05?'#15803d':(v<=1.3?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">1 : '+(Math.round(1/v*100)/100)+'</b><div class="tg-sub">₹'+(Math.round(1/v*100)/100)+' labour per ₹1 of parts · target 1 : 1</div>'; };
-    var tgc=function(v,t,a){ return '<b>'+cell(v)+'</b>'+(t==null?'<div class="tg-sub">no target</div>':('<div class="tg-sub">of '+inr(t)+'</div><div class="tg-sub">'+pct(a)+'</div>')); };
+    var tgc=function(v,t,a,b){ return '<b>'+cell(v)+'</b>'+(t==null?'<div class="tg-sub">no target</div>':('<div class="tg-sub">of '+inr(t)+'</div><div class="tg-sub">'+(b===false&&v!=null?'<span style="color:#b45309">estimates — not achievement</span>':pct(a))+'</div>')); };
     out.innerHTML='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>Parts</th><th>Parts : Labour</th></tr></thead><tbody>'
       +rows.map(function(x){
         var note=!x.ok?'<div class="tg-sub" style="color:#b91c1c">not loaded</div>':(!x.jobs?'<div class="tg-sub">no billing</div>':(!x.billed?'<div class="tg-sub" style="color:#b45309">estimates, not billed</div>':''));
         return '<tr><td><b>'+tgMonthName_(x.m)+'</b><div class="tg-sub">'+x.jobs+' JCs</div>'+note+'</td>'
-          +'<td>'+tgc(x.lab,x.lt,x.la)+'</td><td>'+tgc(x.par,x.pt,x.pa)+'</td><td>'+rat(x.ratio)+'</td></tr>'; }).join('')
+          +'<td>'+tgc(x.lab,x.lt,x.la,x.billed)+'</td><td>'+tgc(x.par,x.pt,x.pa,x.billed)+'</td><td>'+rat(x.ratio)+'</td></tr>'; }).join('')
       +'</tbody></table>'
       +(rows.some(function(x){ return x.lt==null && x.pt==null; })?'<div style="font-size:11.5px;color:#64748b;margin-top:8px">“no target” = none typed in yet'+((typeof isAdmin==='function'&&isAdmin())?' — press <b>✎ Set targets</b>.':'. The CEO / admin sets them on this screen.')+'</div>':'');
   });
@@ -28822,6 +28825,7 @@ function r127ChaseExtra_(){
     var lab=Math.round((+(r&&r.labour)||0)/TG_GST), tgt=tgLabourTarget_(mk);
     var dim=new Date(today.getFullYear(), today.getMonth()+1, 0).getDate(), left=Math.max(1, dim-today.getDate()+1);
     var short=Math.max(0,tgt-lab);
+    if(!/billing/i.test(String(r&&r.source||''))){ lines.push('Labour '+tgMonthName_(mk)+'|<span class="bad">bills not loaded for this month</span> — estimates alone show '+inr(lab)+' of '+inr(tgt)+'; real billed labour comes from the Hero BI Tally report'); return; }
     lines.push('Labour '+tgMonthName_(mk)+'|<b>'+inr(lab)+'</b> of '+inr(tgt)+' (without GST) — '
       +(short?('<span class="bad">short '+inr(short)+', needs '+inr(Math.ceil(short/left))+' a day for '+left+' day'+(left===1?'':'s')+'</span>'):'<span class="ok">target achieved</span>'));
   }).catch(function(){ lines.push('Labour|not loaded'); });
