@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R133-2026.10.01.1';
+window.HERO_BUILD = 'R134-2026.10.01.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28690,6 +28690,15 @@ window.heroChangeMobile=function(){
 #avask-extra td{padding:4px 6px;border-bottom:1px solid #E5E5E5;vertical-align:top}
 #avask-extra td.k{white-space:nowrap;color:#6B6B6B;width:96px;position:static}
 #avask-extra .bad{color:#D71920;font-weight:700}#avask-extra .ok{color:#15803d;font-weight:700}
+/* R134 (Ravi 01-10-2026): four big location buttons */
+#avask-loc{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid #E5E5E5}
+#avask-loc button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:64px;padding:8px 4px;border:2px solid #E5E5E5;border-radius:10px;background:#fff;color:#171717;font:700 15px system-ui,sans-serif;cursor:pointer}
+#avask-loc button .n{font-size:22px;line-height:1}
+#avask-loc button .c{font-size:11px;font-weight:400;color:#6B6B6B}
+#avask-loc button.on{background:#171717;border-color:#171717;color:#fff}
+#avask-loc button.on .c{color:#d4d4d4}
+#avask-loc button.zero{opacity:.5}
+@media (max-width:480px){ #avask-loc{grid-template-columns:repeat(2,1fr)} }
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="AVNI asks">
@@ -28698,6 +28707,7 @@ window.heroChangeMobile=function(){
     <button type="button" onclick="avaskClose()">Close</button></div>
   <div class="as" id="avask-sum"></div>
   <div class="as" id="avask-extra" style="display:none"></div>
+  <div id="avask-loc"></div>
   <div class="ab"><table><thead><tr><th style="width:38%">Vehicle</th><th>AVNI asks</th></tr></thead>
     <tbody id="avask-tb"></tbody></table></div>
 </div>
@@ -28707,6 +28717,9 @@ window.heroChangeMobile=function(){
   var ITEMS=[], LAST_AUTO=0, LAST_N=-1, TIMER=null, LOADING=false;
   var AUTO_MS=15*60*1000;   /* R127: every 15 min, not 30 — "till the vehicles are delivered" */
   var DEALER={'23490':'Chinchwad','17057':'Premia','10307':'PDI','61299':'Chakan'};
+  var LOCS=['23490','17057','10307','61299'], LOC='';
+  window.avaskLoc=function(c){ LOC=(LOC===c)?'':c; paint(LAST_D); var ab=document.querySelector('#avask-ov .ab'); if(ab) ab.scrollTop=0; };
+  var LAST_D=null;
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   /* R127: USER.role was never saved at login (fixed in finishLogin_), so for
      everyone already logged in it is worked out from the designation. */
@@ -28734,17 +28747,29 @@ window.heroChangeMobile=function(){
     return 'Same-day delivery '+esc(last.split('-').reverse().join('-'))+': <span class="'+(p>=t?'ok':'bad')+'">'+p+'%</span> ('+s+' of '+o+') · target '+t+'%';
   }
   function paint(d){
+    LAST_D=d;
     var pill=document.getElementById('avask-pill');
     var n=ITEMS.length;
     pill.textContent='AVNI asks · '+n; pill.style.display=n?'block':'none';
     document.getElementById('avask-sum').innerHTML=
       '<b>'+n+'</b> vehicle'+(n===1?'':'s')+' with no answer today. Each answer stops the asking for today. '+sddText(d||{});
-    var tb=document.getElementById('avask-tb'), h='';
+    /* R134 (Ravi 01-10-2026: "Give 4 big buttons for the locations classification"):
+       one button per dealer code with its count; tap = only that location, tap again = all. */
+    var cnt={}; ITEMS.forEach(function(it){ var c=String(it.dealer_code); cnt[c]=(cnt[c]||0)+1; });
+    if(LOC && !cnt[LOC]) LOC='';
+    document.getElementById('avask-loc').innerHTML=LOCS.map(function(c){
+      var k=cnt[c]||0;
+      return '<button type="button" class="'+(LOC===c?'on':'')+(k?'':' zero')+'" onclick="avaskLoc(\''+c+'\')">'
+        +'<span class="n">'+k+'</span>'+esc(DEALER[c])+'<span class="c">'+c+'</span></button>';
+    }).join('');
+    var tb=document.getElementById('avask-tb'), h='', no=0;
     ITEMS.forEach(function(it,i){
+      if(LOC && String(it.dealer_code)!==LOC) return;
+      no++;
       var parts=it.q_role==='parts';
       /* R128 (Ravi 29-09-2026: "the formatting is very bad"): two columns a phone can
          read, and the answer on its own full-width line under the vehicle. */
-      h+='<tr class="av-q-row"><td><b>'+(i+1)+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+      h+='<tr class="av-q-row"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
         +'<div class="q">'+esc(it.model)+' · '+esc(it.jc_type)+' · '+esc(DEALER[it.dealer_code]||it.dealer_code)+'</div>'
         +'<div class="q"><span class="av-days">'+esc(it.days_open)+' days</span>'+(it.asked_total?(' · asked '+esc(it.asked_total)+'×'):'')+'</div></td>'
         +'<td><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
