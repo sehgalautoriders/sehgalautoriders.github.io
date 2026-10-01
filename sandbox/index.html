@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script charset="utf-8" src="sandbox.js?v=9a4cbe265b"></script>
+<head><script charset="utf-8" src="sandbox.js?v=26fc7c7eb9"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SANDBOX · Sehgal Hero</title>
@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 99;
-window.HERO_BUILD = 'R131-2026.10.01.1';
+window.HERO_BUILD = 'R132-2026.10.01.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -10300,13 +10300,19 @@ function esLoadGateEntries(){
        in this morning was shown a vehicle from 15 July and had to scroll past a
        thousand rows to reach today. Today's vehicles now come first, under a
        "Today" heading, and older pending ones follow newest-first — so the
-       16-Jul rule (yesterday's vehicle must still be reachable) is untouched. */
+       16-Jul rule (yesterday's vehicle must still be reachable) is untouched.
+       R132 (Ravi 01-10-2026): "It should be 01 - 100 and not 100 to 01." Since
+       R85 the list is today-only, so the day grouping no longer pushes old rows
+       up; within the day the vehicles now run in gate order — first in, first
+       on the list (token 001 at the top), the way the SAs work the queue. */
     entries.sort(function(a,b){
       var ka=String(a.dateKey||'').slice(0,10), kb=String(b.dateKey||'').slice(0,10);
       if(!ka){ var ta=new Date(a.time); if(!isNaN(ta.getTime())) ka=ta.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
       if(!kb){ var tb=new Date(b.time); if(!isNaN(tb.getTime())) kb=tb.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
       if(ka!==kb) return kb.localeCompare(ka);              // later day first
-      return new Date(b.time)-new Date(a.time);             // later time first
+      var d=new Date(a.time)-new Date(b.time);              // earlier time first (R132)
+      if(d) return d;
+      return String(a.token||'').localeCompare(String(b.token||''));  // then token 001, 002 …
     });
     ES_GATE_ENTRIES=entries;
     const sel=document.getElementById('es-gate-pick');
