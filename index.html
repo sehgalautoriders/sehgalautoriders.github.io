@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 99;
-window.HERO_BUILD = 'R132-2026.10.01.2';
+window.HERO_RELEASE = 100;
+window.HERO_BUILD = 'R133-2026.10.01.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28876,15 +28876,17 @@ function tgR_(n){ return n==null?'—':'₹'+Math.round(n).toLocaleString('en-IN
 function tgN_(n){ return n==null?'—':Math.round(n).toLocaleString('en-IN'); }
 function tgG_(a,b){ if(a==null||b==null||!(b>0)) return '<span class="tg-mut">—</span>'; var g=Math.round((a-b)/b*1000)/10; return '<span style="color:'+(g>=0?'#15803d':'#b91c1c')+';font-weight:700">'+(g>=0?'▲ +':'▼ ')+g+'%</span>'; }
 /* Vlead totals for month m (workshop filter) */
-function tgV_(m){ var s={v:0,l:0,p:0,o:0,fsc:0,paid:0,amc:0,gr:0,acc:0,n:0}; (TG.data.vlead||[]).forEach(function(x){
-    if(x.m!==m || (TG.ws && x.c!==TG.ws)) return; s.n++; s.v+=+x.rep||0; s.l+=+x.lab||0; s.p+=+x.par||0; s.o+=+x.oil||0;
+/* R133 (Ravi 01-10-2026, 0105): Vlead carries GST. Labour = customer labour WITH 18 % GST + Hero's coupon credit, so labour
+   before GST = Vlead labour - 0.18 x the month's Tally labour (tl); parts before GST = the bills (tp); oil = Vlead oil / 1.18.
+   Warranty labour + handling (wl, Hero SAP) is not in Vlead and is added only in "This month". Same numbers as the MD report. */
+function tgV_(m){ var s={v:0,l:0,p:0,o:0,fsc:0,paid:0,amc:0,gr:0,acc:0,n:0,b:0,w:0,nb:0}; (TG.data.vlead||[]).forEach(function(x){
+    if(x.m!==m || (TG.ws && x.c!==TG.ws)) return; s.n++; s.v+=+x.rep||0;
+    var tl=(x.tl==null)?null:+x.tl; if(tl==null && (+x.lab||0)>0) s.nb++;
+    s.l+=(tl==null)?(+x.lab||0)/1.18:(+x.lab||0)-0.18*tl; s.b+=tl||0; s.w+=+x.wl||0;
+    s.p+=(x.tp==null)?(+x.par||0)/1.18:+x.tp; s.o+=(+x.oil||0)/1.18;
     s.fsc+=+x.fsc||0; s.paid+=+x.paid||0; s.amc+=+x.amc||0; s.gr+=+x.gr||0; s.acc+=+x.acc||0; }); return s.n?s:null; }
 /* labour billed to customers (Tally) for month m, only when every Vlead workshop of that month has Tally lines */
-function tgBilled_(m){ var codes={}, t=0; (TG.data.rows||[]).forEach(function(r){ if(r.m===m && (!TG.ws || r.c===TG.ws)){ codes[r.c]=1; t+=+r.l||0; } });
-  var need=(TG.data.vlead||[]).filter(function(x){ return x.m===m && (!TG.ws || x.c===TG.ws) && (+x.lab||0)>0; });
-  if(!need.length || need.some(function(x){ return !codes[x.c]; })) return null;
-  if(m===TG.cur && TG.day) return null;   /* the running month: Tally runs past the Vlead date, so no split until it is whole */
-  return t; }
+function tgBilled_(m){ var s=tgV_(m); return (!s || s.nb)?null:s.b; }
 function tgVleadAt_(){ var a=''; (TG.data.vlead||[]).forEach(function(x){ if(x.at>a) a=x.at; }); return a; }
 function tgBar_(pct){ var c=pct>=100?'#15803d':(pct>=75?'#b45309':'#b91c1c'); return '<div class="tg-bar"><i style="width:'+Math.min(100,pct)+'%;background:'+c+'"></i></div>'; }
 function tgPV_(a,b){ return b?a/b:null; }
@@ -28901,7 +28903,7 @@ function tgBoot(){
     var dim0=new Date(+last.slice(0,4), +last.slice(5,7), 0).getDate(); TG.day=(up && +up.slice(8,10)<dim0)?+up.slice(8,10):null;
     if(TG.fy==null) TG.fy=tgFY_(TG.cur); if(!TG.mon) TG.mon=TG.cur;
     msg.style.color='var(--steel)';
-    msg.innerHTML='All amounts <b>without GST</b> · Hero Vlead months, the same numbers as the MD report'+(tgVleadAt_()?' (loaded '+tgVleadAt_()+')':'')
+    msg.innerHTML='All amounts <b>without GST</b> · Hero Vlead months with the GST taken out (labour = bills + Hero&#39;s free-service credit), the same numbers as the MD report'+(tgVleadAt_()?' (loaded '+tgVleadAt_()+')':'')
       +(TG.day?' · '+tgM_(TG.cur)+' runs to '+TG.day+'-'+TG.cur.slice(5)+'-'+TG.cur.slice(0,4):'')+'.';
     tgPaint_();
   }).catch(function(e){ msg.style.color='#b91c1c'; msg.textContent='Could not load: '+(e&&e.message||e); });
@@ -28918,14 +28920,16 @@ function tgPaint_(){
 function tgRunNote_(m){ return (m===TG.cur && TG.day)?'<div class="tg-sub">1 – '+TG.day+' only</div>':''; }
 /* ---- tab 1: this month */
 function tgNow_(){
-  var m=TG.cur, ly=tgLY_(m), s=tgV_(m)||{v:0,l:0,p:0,acc:0}, b=tgV_(ly), billed=tgBilled_(m);
-  var dim=new Date(+m.slice(0,4), +m.slice(5,7), 0).getDate(), D=TG.day||dim, pace=Math.round(s.l/D*dim);
-  var tgt=tgLabourTarget_(m), pct=Math.round(s.l/tgt*1000)/10;
+  var m=TG.cur, ly=tgLY_(m), s=tgV_(m)||{v:0,l:0,p:0,acc:0,w:0}, b=tgV_(ly), billed=tgBilled_(m), tot=s.l+(s.w||0);
+  var dim=new Date(+m.slice(0,4), +m.slice(5,7), 0).getDate(), D=TG.day||dim, pace=Math.round(tot/D*dim);
+  var tgt=tgLabourTarget_(m), pct=Math.round(tot/tgt*1000)/10;
   var h='<div class="tg-card"><div class="tg-k">Labour in '+tgM_(m)+(TG.day?' (1 – '+TG.day+')':'')+(TG.ws?' · '+TG.ws:' · all 4 workshops')+'</div>'
-    +'<div class="tg-big">'+tgR_(s.l)+'</div>';
+    +'<div class="tg-big">'+tgR_(tot)+'</div>';
   if(!TG.ws) h+='<div class="tg-sub2">of target '+tgR_(tgt)+' · <b>'+pct+'%</b> done'+(TG.day?' · at this pace the month ends near '+tgR_(pace)+' (estimate)':'')+'</div>'+tgBar_(pct);
-  h+='<div class="tg-split"><div><span>Billed to customers (Tally)</span><b>'+(billed==null?(TG.day?'after month end':'not loaded'):tgR_(billed))+'</b></div>'
-    +'<div><span>Paid by Hero (free service + warranty)</span><b>'+(billed==null?'—':tgR_(Math.max(0,s.l-billed)))+'</b></div></div>'+(billed==null&&TG.day?'<div class="tg-note">The split is shown once the month is complete.</div>':'')+'</div>';
+  h+='<div class="tg-split" style="grid-template-columns:1fr 1fr 1fr"><div><span>Billed to customers (Tally)</span><b>'+(billed==null?(TG.day?'after month end':'not loaded'):tgR_(billed))+'</b></div>'
+    +'<div><span>Free services, paid by Hero</span><b>'+(billed==null?'—':tgR_(Math.max(0,s.l-billed)))+'</b></div>'
+    +'<div><span>Warranty, paid by Hero (SAP)</span><b>'+(s.w?tgR_(s.w):'not loaded')+'</b></div></div>'
+    +'<div class="tg-note">'+(billed==null&&TG.day?'The split is shown once the month is complete. ':'')+'Warranty comes from Hero&#39;s SAP claims (Chinchwad so far); Hero settles it after the month.</div></div>';
   h+='<div class="tg-card"><div class="tg-k">Against '+tgM_(ly)+(TG.day?' (whole month — this month is still running)':'')+'</div><table class="tg-t"><thead><tr><th></th><th>'+tgM_(ly)+'</th><th>'+tgM_(m)+'</th><th>Change</th></tr></thead><tbody>'
     +'<tr><td>Labour</td><td>'+tgR_(b&&b.l)+'</td><td><b>'+tgR_(s.l)+'</b></td><td>'+tgG_(s.l,b&&b.l)+'</td></tr>'
     +'<tr><td>Vehicles</td><td>'+tgN_(b&&b.v)+'</td><td><b>'+tgN_(s.v)+'</b></td><td>'+tgG_(s.v,b&&b.v)+'</td></tr>'
@@ -28990,7 +28994,7 @@ function tgYoy_(){
   row('Labour per vehicle',function(s){ return tgPV_(s.l,s.v); },true);
   row('Parts per vehicle',function(s){ return tgPV_(s.p,s.v); },true);
   TG_TYPES.forEach(function(t){ row(t[1]+' jobs',function(s){ return s[t[0]]; },false); });
-  return h+'</tbody></table><div class="tg-note">Hero Vlead, before GST. Hero data starts 01-04-2024; 17057 Premia starts Feb-2025, so its two-year growth is not shown.</div>';
+  return h+'</tbody></table><div class="tg-note">Hero Vlead with the GST taken out (labour = bills + Hero&#39;s free-service credit, parts from the bills); warranty not included. Hero data starts 01-04-2024; 17057 Premia starts Feb-2025, so its two-year growth is not shown.</div>';
 }
 
 /* R129-2026.10.01 (Ravi 30-09-2026): "Also excel reports i need to fetch and send to MD also." The Research Lab writes
