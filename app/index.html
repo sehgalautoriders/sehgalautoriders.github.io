@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Get the Sehgal Hero App</title>
+<title>Download Sehgal Hero App</title>
+<meta property="og:title" content="Download the Sehgal Hero App">
+<meta property="og:description" content="Android · iPhone · Windows">
+<meta property="og:image" content="https://sehgalautoriders.github.io/icon-192.png">
 <meta name="theme-color" content="#15181c">
 <link rel="icon" href="../icon-192.png">
 <style>
@@ -16,9 +19,14 @@
   .lang{display:flex;gap:4px}
   .lang button{border:1px solid #475569;background:transparent;color:#fff;border-radius:8px;padding:3px 9px;font-weight:800;font-size:13px}
   .lang button.on{background:#fff;color:#15181c}
-  nav{display:flex;border-bottom:1px solid var(--line);background:var(--card)}
-  nav button{flex:1;border:0;background:none;padding:12px 4px;font:700 15px system-ui,sans-serif;color:var(--mute);border-bottom:3px solid transparent}
-  nav button.on{color:var(--ink);border-bottom-color:var(--red)}
+  .pick{text-align:center;font-weight:700;color:var(--mute);margin:18px 16px 8px}
+  nav.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:560px;margin:0 auto;padding:0 16px}
+  nav.tiles button{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card);border:2px solid var(--line);border-radius:16px;padding:16px 6px 12px;cursor:pointer;font:800 16px system-ui,sans-serif;color:var(--ink)}
+  nav.tiles button svg{width:56px;height:56px}
+  nav.tiles button small{font-weight:600;font-size:12px;color:var(--mute)}
+  nav.tiles button.on{border-color:var(--red);box-shadow:0 4px 14px rgba(215,25,32,.18)}
+  .get svg{width:26px;height:26px;vertical-align:-6px;margin-right:8px}
+  .get.dark{background:#111}
   main{max-width:560px;margin:0 auto;padding:16px}
   .tab{display:none}.tab.on{display:block}
   .get{display:block;text-align:center;background:var(--red);color:#fff;text-decoration:none;font-weight:800;font-size:18px;padding:14px;border-radius:12px;margin:4px 0 14px}
@@ -35,14 +43,15 @@
   <h1 data-t="title">Sehgal Hero App</h1>
   <div class="lang"><button data-l="en">EN</button><button data-l="hi">हिं</button><button data-l="mr">मरा</button></div>
 </header>
-<nav>
-  <button data-tab="android">Android</button>
-  <button data-tab="windows">Windows</button>
-  <button data-tab="iphone">iPhone</button>
+<div class="pick" data-t="pick">Choose your phone or computer</div>
+<nav class="tiles">
+  <button data-tab="android"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="#3DDC84"><path d="M14 30a18 18 0 0 1 36 0z"/><rect x="14" y="32" width="36" height="22" rx="4"/><rect x="5" y="32" width="7" height="18" rx="3.5"/><rect x="52" y="32" width="7" height="18" rx="3.5"/><rect x="21" y="50" width="7" height="12" rx="3.5"/><rect x="36" y="50" width="7" height="12" rx="3.5"/><path d="M21 9.5l4 6.5M43 9.5l-4 6.5" stroke="#3DDC84" stroke-width="2.6" stroke-linecap="round"/></g><circle cx="25" cy="23" r="2.4" fill="#fff"/><circle cx="39" cy="23" r="2.4" fill="#fff"/></svg><span>Android</span><small data-t="tA">APK</small></button>
+  <button data-tab="iphone"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#111" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span>iPhone</span><small data-t="tI">iOS</small></button>
+  <button data-tab="windows"><svg viewBox="0 0 22 22" aria-hidden="true"><rect x="0" y="0" width="10.5" height="10.5" fill="#F25022"/><rect x="11.5" y="0" width="10.5" height="10.5" fill="#7FBA00"/><rect x="0" y="11.5" width="10.5" height="10.5" fill="#00A4EF"/><rect x="11.5" y="11.5" width="10.5" height="10.5" fill="#FFB900"/></svg><span>Windows</span><small data-t="tW">Microsoft</small></button>
 </nav>
 <main>
   <section class="tab" id="android">
-    <a class="get" id="apk" href="https://github.com/sehgalautoriders/sehgalautoriders.github.io/releases/latest/download/SehgalHero.apk" data-t="getApk">Download the Android app</a>
+    <a class="get" id="apk" href="https://github.com/sehgalautoriders/sehgalautoriders.github.io/releases/latest/download/SehgalHero.apk"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="#fff"><path d="M14 30a18 18 0 0 1 36 0z"/><rect x="14" y="32" width="36" height="22" rx="4"/><rect x="5" y="32" width="7" height="18" rx="3.5"/><rect x="52" y="32" width="7" height="18" rx="3.5"/><rect x="21" y="50" width="7" height="12" rx="3.5"/><rect x="36" y="50" width="7" height="12" rx="3.5"/><path d="M21 9.5l4 6.5M43 9.5l-4 6.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></g><circle cx="25" cy="23" r="2.4" fill="#d71920"/><circle cx="39" cy="23" r="2.4" fill="#d71920"/></svg><span data-t="getApk">Download the Android app</span></a>
     <p class="meta" id="apkmeta"></p>
     <ol>
       <li data-t="a1">Tap the red button. The file SehgalHero.apk downloads.</li>
@@ -55,7 +64,7 @@
   </section>
 
   <section class="tab" id="windows">
-    <a class="get" id="msi" href="https://github.com/sehgalautoriders/sehgalautoriders.github.io/releases/latest/download/SehgalHero-Setup.msi" data-t="getWin">Download for Windows</a>
+    <a class="get" id="msi" href="https://github.com/sehgalautoriders/sehgalautoriders.github.io/releases/latest/download/SehgalHero-Setup.msi"><svg viewBox="0 0 22 22" aria-hidden="true"><rect x="0" y="0" width="10.5" height="10.5" fill="#F25022"/><rect x="11.5" y="0" width="10.5" height="10.5" fill="#7FBA00"/><rect x="0" y="11.5" width="10.5" height="10.5" fill="#00A4EF"/><rect x="11.5" y="11.5" width="10.5" height="10.5" fill="#FFB900"/></svg><span data-t="getWin">Download for Windows</span></a>
     <p class="meta" id="msimeta"></p>
     <ol>
       <li data-t="w1">Click the red button. SehgalHero-Setup.msi downloads.</li>
@@ -65,6 +74,8 @@
   </section>
 
   <section class="tab" id="iphone">
+    <a class="get dark" href="https://sehgalautoriders.github.io/"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span data-t="getIos">Open the iPhone app</span></a>
+    <p class="meta" data-t="iMeta">No App Store needed — add it to the Home Screen (steps below)</p>
     <ol>
       <li data-t="i1">Open this link in Safari or Chrome on the iPhone: sehgalautoriders.github.io</li>
       <li data-t="i2">Tap the Share button (square with an arrow; in Chrome it is at the top right).</li>
@@ -78,6 +89,10 @@
 (function(){
   var T={
     title:['Sehgal Hero App','सहगल हीरो ऐप','सहगल हीरो ॲप'],
+    pick:['Choose your phone or computer','अपना फ़ोन या कंप्यूटर चुनें','तुमचा फोन किंवा कॉम्प्युटर निवडा'],
+    tA:['APK','APK','APK'],tI:['iOS','iOS','iOS'],tW:['Microsoft','Microsoft','Microsoft'],
+    getIos:['Open the iPhone app','iPhone ऐप खोलें','iPhone ॲप उघडा'],
+    iMeta:['No App Store needed — add it to the Home Screen (steps below)','App Store की ज़रूरत नहीं — होम स्क्रीन पर जोड़ें (नीचे के स्टेप)','App Store ची गरज नाही — होम स्क्रीनवर जोडा (खालील स्टेप्स)'],
     getApk:['Download the Android app','Android ऐप डाउनलोड करें','Android ॲप डाउनलोड करा'],
     a1:['Tap the red button. The file SehgalHero.apk downloads.','लाल बटन दबाएँ। SehgalHero.apk फ़ाइल डाउनलोड होगी।','लाल बटण दाबा. SehgalHero.apk फाइल डाउनलोड होईल.'],
     a2:['Open it from the notification (or Files → Downloads).','नोटिफ़िकेशन से खोलें (या Files → Downloads में)।','नोटिफिकेशनमधून उघडा (किंवा Files → Downloads मध्ये).'],
@@ -105,10 +120,10 @@
   }
   function tab(t){
     document.querySelectorAll('.tab').forEach(function(s){ s.classList.toggle('on',s.id===t); });
-    document.querySelectorAll('nav button').forEach(function(b){ b.classList.toggle('on',b.getAttribute('data-tab')===t); });
+    document.querySelectorAll('nav.tiles button').forEach(function(b){ b.classList.toggle('on',b.getAttribute('data-tab')===t); });
   }
   document.querySelectorAll('.lang button').forEach(function(b){ b.onclick=function(){ lang(b.getAttribute('data-l')); }; });
-  document.querySelectorAll('nav button').forEach(function(b){ b.onclick=function(){ tab(b.getAttribute('data-tab')); }; });
+  document.querySelectorAll('nav.tiles button').forEach(function(b){ b.onclick=function(){ tab(b.getAttribute('data-tab')); }; });
   var ua=navigator.userAgent;
   tab(/iPhone|iPad|iPod/.test(ua)?'iphone':(/Android/.test(ua)?'android':(/Windows/.test(ua)?'windows':'android')));
   lang(get('hero_lang','en'));
