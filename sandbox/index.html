@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 99;
-window.HERO_BUILD = 'R132-2026.10.01.1';
+window.HERO_BUILD = 'R132-2026.10.01.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -390,6 +390,9 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
   input:focus,select:focus{outline:none;border-color:var(--signal)}
   input:disabled,select:disabled{background:#f4f2ee;color:#8a8f96;cursor:not-allowed}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* R132 (from held R122): grid cells may shrink, so the WhatsApp tag and long labels wrap instead of pushing the Mobile / Reg. number boxes off the card (Ravi 01-10-2026 'UI Disturbance') */
+.row2>*{min-width:0} label{overflow-wrap:break-word}
+@media(max-width:600px){#ge-details-block .row2{grid-template-columns:1fr}}
   .hint{font-size:11px;color:var(--steel);margin-top:4px}
   .btn{width:100%;background:var(--signal);color:#fff;border:none;border-radius:8px;padding:13px;font-family:'Barlow Condensed';font-weight:700;font-size:18px;text-transform:uppercase;letter-spacing:.05em;cursor:pointer}
   .btn:hover{background:var(--signal-d)} .btn:disabled{background:#c9b8b4;cursor:not-allowed}
@@ -28593,7 +28596,7 @@ window.heroChangeMobile=function(){
     var t=document.getElementById(id+'-wa');
     if(!t){
       t=document.createElement('div'); t.id=id+'-wa';
-      t.style.cssText='display:none;margin-top:4px;padding:2px 8px;border-radius:999px;border:1px solid;font-size:11.5px;font-weight:700;line-height:1.5;width:max-content;max-width:100%;white-space:normal';
+      t.style.cssText='display:none;margin-top:4px;padding:2px 8px;border-radius:999px;border:1px solid;font-size:11.5px;font-weight:700;line-height:1.5;width:fit-content;max-width:100%;white-space:normal;overflow-wrap:break-word';
       inp.insertAdjacentElement('afterend', t);
     }
     return t;
