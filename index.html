@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 98;
-window.HERO_BUILD = 'R129-2026.10.01.1';
+window.HERO_RELEASE = 99;
+window.HERO_BUILD = 'R130-2026.10.01.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1827,17 +1827,14 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
 <div id="view-targets" style="display:none">
   <div class="wrap">
     <div class="hu-topbar">
-      <h2>🎯 Targets — without GST</h2>
+      <h2>🎯 Labour &amp; Targets</h2>
       <div class="hu-actions">
-        <select id="tg-months" onchange="tgBoot()" style="padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff">
-          <option value="3">Last 3 months</option><option value="6" selected>Last 6 months</option><option value="12">Last 12 months</option>
-        </select>
         <button class="hu-actbtn" style="background:#0f766e" onclick="tgBoot()">↻ Refresh</button>
         <button class="hu-actbtn" id="tg-edit" style="background:#475569;display:none" onclick="tgEditTargets()">✎ Set targets</button>
         <button class="hu-actbtn" id="tg-md" style="background:#1f3864;display:none" onclick="tgMdReport(this)">📊 MD report (Excel)</button>
       </div>
     </div>
-    <div id="tg-msg" style="font-size:12px;color:var(--steel);margin:6px 0"></div>
+    <div id="tg-msg" style="font-size:12px;color:var(--steel);margin:4px 0 8px"></div>
     <div id="tg-out"></div>
   </div>
 </div>
@@ -28725,49 +28722,145 @@ function tgMonths_(n){ var d=new Date(), out=[]; for(var i=0;i<n;i++){ var x=new
 var TG_LABOUR_STANDING=2000000;
 function tgLabourTarget_(m){ var t=tgTargets_()[m]||{}; return +t.labour>0?+t.labour:TG_LABOUR_STANDING; }
 function tgTargets_(){ try{ var t=(typeof APP_SETTINGS!=='undefined' && APP_SETTINGS)?APP_SETTINGS.TARGETS_JSON:''; return t?JSON.parse(t):{}; }catch(e){ return {}; } }
-var TG_LAST=null;
+/* R130 (Ravi 29-09-2026): "every report including this month is wrong ... the UI is dirty. Labour is still not
+   shown correctly ... June and below everything is blank. Last year to this year comparison is not there."
+   + 30-09-2026: "It is not possible for reports to be different everywhere."
+   ONE NUMBER = the Hero MD Report's: Hero's Vlead month report (hero_vlead_month, migration 0103), BEFORE GST, all four
+   workshops since April 2024. Checked 01-10-2026: Vlead parts = Tally parts within ~3 %; Vlead labour = labour billed to
+   the customer + labour Hero pays on free-service coupons / warranty (Rs 173-257 per free service for 27 months).
+   The Tally lines (hero_perf_months rows, Hero BI Perf 1) are used only to split labour into "billed to customers" and
+   "paid by Hero" for the months they cover. Every comparison uses whole months; the running month is marked. */
+var TG={data:null, tab:'now', ws:'', fy:null, mon:null};
+var TG_WS=[['','All 4'],['23490','23490 SSP'],['17057','17057 Premia'],['61299','61299 Chakan'],['10307','10307 PDI']];
+var TG_TYPES=[['fsc','Free service'],['paid','Paid service'],['amc','AMC (Joyride)'],['gr','General repair'],['acc','Accidental']];
+var TG_MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function tgM_(k){ var p=String(k).split('-'); return TG_MN[(+p[1]||1)-1]+' '+p[0]; }
+function tgLY_(k,n){ var p=String(k).split('-'); return (+p[0]-(n||1))+'-'+p[1]; }
+function tgFY_(k){ var p=String(k).split('-'), y=+p[0]; return (+p[1]>=4)?y:y-1; }
+function tgFYName_(y){ return 'FY '+y+'-'+String(y+1).slice(-2); }
+function tgFYMonths_(y){ var o=[]; for(var i=0;i<12;i++){ var mm=3+i, yy=y+Math.floor(mm/12); o.push(yy+'-'+('0'+(mm%12+1)).slice(-2)); } return o; }
+function tgDMY_(iso){ var p=String(iso||'').slice(0,10).split('-'); return p.length===3?p[2]+'-'+p[1]+'-'+p[0]:''; }
+function tgR_(n){ return n==null?'—':'₹'+Math.round(n).toLocaleString('en-IN'); }
+function tgN_(n){ return n==null?'—':Math.round(n).toLocaleString('en-IN'); }
+function tgG_(a,b){ if(a==null||b==null||!(b>0)) return '<span class="tg-mut">—</span>'; var g=Math.round((a-b)/b*1000)/10; return '<span style="color:'+(g>=0?'#15803d':'#b91c1c')+';font-weight:700">'+(g>=0?'▲ +':'▼ ')+g+'%</span>'; }
+/* Vlead totals for month m (workshop filter) */
+function tgV_(m){ var s={v:0,l:0,p:0,o:0,fsc:0,paid:0,amc:0,gr:0,acc:0,n:0}; (TG.data.vlead||[]).forEach(function(x){
+    if(x.m!==m || (TG.ws && x.c!==TG.ws)) return; s.n++; s.v+=+x.rep||0; s.l+=+x.lab||0; s.p+=+x.par||0; s.o+=+x.oil||0;
+    s.fsc+=+x.fsc||0; s.paid+=+x.paid||0; s.amc+=+x.amc||0; s.gr+=+x.gr||0; s.acc+=+x.acc||0; }); return s.n?s:null; }
+/* labour billed to customers (Tally) for month m, only when every Vlead workshop of that month has Tally lines */
+function tgBilled_(m){ var codes={}, t=0; (TG.data.rows||[]).forEach(function(r){ if(r.m===m && (!TG.ws || r.c===TG.ws)){ codes[r.c]=1; t+=+r.l||0; } });
+  var need=(TG.data.vlead||[]).filter(function(x){ return x.m===m && (!TG.ws || x.c===TG.ws) && (+x.lab||0)>0; });
+  if(!need.length || need.some(function(x){ return !codes[x.c]; })) return null;
+  if(m===TG.cur && TG.day) return null;   /* the running month: Tally runs past the Vlead date, so no split until it is whole */
+  return t; }
+function tgVleadAt_(){ var a=''; (TG.data.vlead||[]).forEach(function(x){ if(x.at>a) a=x.at; }); return a; }
+function tgBar_(pct){ var c=pct>=100?'#15803d':(pct>=75?'#b45309':'#b91c1c'); return '<div class="tg-bar"><i style="width:'+Math.min(100,pct)+'%;background:'+c+'"></i></div>'; }
+function tgPV_(a,b){ return b?a/b:null; }
 function tgBoot(){
   var out=document.getElementById('tg-out'), msg=document.getElementById('tg-msg'); if(!out) return;
   var ed=document.getElementById('tg-edit'); if(ed) ed.style.display=(typeof isAdmin==='function' && isAdmin())?'':'none';
-  var md=document.getElementById('tg-md'); if(md) md.style.display=tgMdAllowed_()?'':'none';
-  var n=+((document.getElementById('tg-months')||{}).value||6), months=tgMonths_(n);
-  msg.style.color='#2563eb'; msg.textContent='Loading '+n+' months of billed labour and parts…';
-  var load=function(){ return Promise.all(months.map(function(m){
-    return window.sbRpc('hero_ratio_today',{p_month:m, p_ws:null}).then(function(r){ return r||{ok:false}; }).catch(function(e){ return {ok:false,error:String(e&&e.message||e)}; });
-  })); };
-  /* Settings first, so a target typed on another phone shows here too. */
+  var md=document.getElementById('tg-md'); if(md) md.style.display=(typeof tgMdAllowed_==='function' && tgMdAllowed_())?'':'none';
+  msg.style.color='#2563eb'; msg.textContent='Loading every month since April 2024…'; out.innerHTML='';
   var settings=new Promise(function(res){ try{ jget('app_settings',{},function(r){ if(r&&r.settings){ try{ APP_SETTINGS=r.settings; }catch(e){} } res(); }); }catch(e){ res(); } });
-  settings.then(load).then(function(res){
-    var T=tgTargets_(), fails=res.filter(function(r){ return !r.ok; }).length;
-    var rows=months.map(function(m,i){
-      /* R128.4: Hero BI Tally lines (migration 0099) are already before GST (exGst) — no ÷ 1.18 on them. */
-      var r=res[i]||{}, billed=/billing|bills/i.test(String(r.source||'')), has=r.ok && +r.jobs>0, dv=r.exGst?1:TG_GST;
-      var lab=has?Math.round(+r.labour/dv):null, par=has?Math.round(+r.parts/dv):null, t=T[m]||{};
-      var lt=tgLabourTarget_(m), pt=+t.parts>0?+t.parts:null;
-      return {m:m, ok:r.ok, jobs:+r.jobs||0, billed:billed, src:r.source||'', lab:lab, par:par, lt:lt, pt:pt, bi:!!r.exGst, codes:r.byCode||[], upto:r.upto||'',
-              /* R128.3: no "% achieved" on estimates — only bills count as achievement (Ravi 29-09-2026: September labour wrong) */
-              la:(billed&&lt&&lab!=null)?Math.round(lab/lt*1000)/10:null, pa:(billed&&pt&&par!=null)?Math.round(par/pt*1000)/10:null,
-              ratio:(lab>0)?Math.round(par/lab*100)/100:null};
-    });
-    TG_LAST=rows;
+  settings.then(function(){ return window.sbRpc('hero_perf_months',{}); }).then(function(r){
+    if(!r || !r.ok || !(r.vlead||[]).length){ msg.style.color='#b91c1c'; msg.textContent='The Hero Vlead months are not loaded yet.'; return; }
+    TG.data=r; var last='', up=''; r.vlead.forEach(function(x){ if(x.m>last) last=x.m; }); TG.cur=last;
+    r.vlead.forEach(function(x){ if(x.m===last && x.upto && x.upto>up) up=x.upto; });
+    var dim0=new Date(+last.slice(0,4), +last.slice(5,7), 0).getDate(); TG.day=(up && +up.slice(8,10)<dim0)?+up.slice(8,10):null;
+    if(TG.fy==null) TG.fy=tgFY_(TG.cur); if(!TG.mon) TG.mon=TG.cur;
     msg.style.color='var(--steel)';
-    var est=rows.filter(function(x){ return x.ok && x.jobs && !x.billed; });
-    msg.textContent='Billed labour and parts without GST, all four workshops (10307 · 17057 · 23490 · 61299). Hero BI bills are the before-GST amounts Hero bills; older months from the Total Bill Value upload are ÷ '+TG_GST+'. Latest month first.'+(fails?(' '+fails+' month'+(fails>1?'s':'')+' could not load.'):'');
-    if(est.length){ msg.style.color='#b91c1c'; msg.innerHTML='<b>Bills are not loaded for '+est.map(function(x){ return tgMonthName_(x.m); }).join(', ')+'.</b> Those months show ESTIMATES only, so no % achieved is shown for them. Real billed labour and parts will come from the Hero BI Tally report.'; }
-    var cell=function(v){ return v==null?'<span style="color:#94a3b8">—</span>':inr(v); };
-    var pct=function(v){ if(v==null) return '<span style="color:#94a3b8">no target</span>'; var c=v>=100?'#15803d':(v>=85?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">'+v+'% achieved</b>'; };
-    var rat=function(v){ if(v==null) return '—'; var c=v<=1.05?'#15803d':(v<=1.3?'#b45309':'#b91c1c'); return '<b style="color:'+c+'">1 : '+(Math.round(1/v*100)/100)+'</b><div class="tg-sub">₹'+(Math.round(1/v*100)/100)+' labour per ₹1 of parts · target 1 : 1</div>'; };
-    var tgc=function(v,t,a,b){ return '<b>'+cell(v)+'</b>'+(t==null?'<div class="tg-sub">no target</div>':('<div class="tg-sub">of '+inr(t)+'</div><div class="tg-sub">'+(b===false&&v!=null?'<span style="color:#b45309">estimates — not achievement</span>':pct(a))+'</div>')); };
-    out.innerHTML='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>Parts</th><th>Parts : Labour</th></tr></thead><tbody>'
-      +rows.map(function(x){
-        var note=!x.ok?'<div class="tg-sub" style="color:#b91c1c">not loaded</div>':(!x.jobs?'<div class="tg-sub">no billing</div>':(!x.billed?'<div class="tg-sub" style="color:#b45309">estimates, not billed</div>':''));
-        var srcl=x.bi?'<div class="tg-sub">Hero BI bills'+(x.upto?' to '+x.upto.split('-').reverse().join('-'):'')+'</div>'+x.codes.map(function(c){ return '<div class="tg-sub">'+tgEsc_(c.code)+': '+inr(c.labour)+' labour</div>'; }).join(''):'';
-        return '<tr><td><b>'+tgMonthName_(x.m)+'</b><div class="tg-sub">'+x.jobs+(x.bi?' bills':' JCs')+'</div>'+srcl+note+'</td>'
-          +'<td>'+tgc(x.lab,x.lt,x.la,x.billed)+'</td><td>'+tgc(x.par,x.pt,x.pa,x.billed)+'</td><td>'+rat(x.ratio)+'</td></tr>'; }).join('')
-      +'</tbody></table>'
-      +(rows.some(function(x){ return x.lt==null && x.pt==null; })?'<div style="font-size:11.5px;color:#64748b;margin-top:8px">“no target” = none typed in yet'+((typeof isAdmin==='function'&&isAdmin())?' — press <b>✎ Set targets</b>.':'. The CEO / admin sets them on this screen.')+'</div>':'');
-  });
+    msg.innerHTML='All amounts <b>without GST</b> · Hero Vlead months, the same numbers as the MD report'+(tgVleadAt_()?' (loaded '+tgVleadAt_()+')':'')
+      +(TG.day?' · '+tgM_(TG.cur)+' runs to '+TG.day+'-'+TG.cur.slice(5)+'-'+TG.cur.slice(0,4):'')+'.';
+    tgPaint_();
+  }).catch(function(e){ msg.style.color='#b91c1c'; msg.textContent='Could not load: '+(e&&e.message||e); });
 }
+function tgSet_(k,v){ TG[k]=v; tgPaint_(); }
+function tgPaint_(){
+  var out=document.getElementById('tg-out'); if(!out || !TG.data) return;
+  var tabs=[['now','This month'],['months','Month by month'],['types','Service types'],['yoy','Year on year']];
+  var h='<div class="tg-ws">'+TG_WS.map(function(w){ return '<button class="tg-pill'+(TG.ws===w[0]?' on':'')+'" onclick="tgSet_(\'ws\',\''+w[0]+'\')">'+w[1]+'</button>'; }).join('')+'</div>'
+    +'<div class="tg-tabs">'+tabs.map(function(t){ return '<button class="tg-tab'+(TG.tab===t[0]?' on':'')+'" onclick="tgSet_(\'tab\',\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')+'</div>';
+  h+=(TG.tab==='now'?tgNow_():TG.tab==='months'?tgMonthsTab_():TG.tab==='types'?tgTypes_():tgYoy_());
+  out.innerHTML=h;
+}
+function tgRunNote_(m){ return (m===TG.cur && TG.day)?'<div class="tg-sub">1 – '+TG.day+' only</div>':''; }
+/* ---- tab 1: this month */
+function tgNow_(){
+  var m=TG.cur, ly=tgLY_(m), s=tgV_(m)||{v:0,l:0,p:0,acc:0}, b=tgV_(ly), billed=tgBilled_(m);
+  var dim=new Date(+m.slice(0,4), +m.slice(5,7), 0).getDate(), D=TG.day||dim, pace=Math.round(s.l/D*dim);
+  var tgt=tgLabourTarget_(m), pct=Math.round(s.l/tgt*1000)/10;
+  var h='<div class="tg-card"><div class="tg-k">Labour in '+tgM_(m)+(TG.day?' (1 – '+TG.day+')':'')+(TG.ws?' · '+TG.ws:' · all 4 workshops')+'</div>'
+    +'<div class="tg-big">'+tgR_(s.l)+'</div>';
+  if(!TG.ws) h+='<div class="tg-sub2">of target '+tgR_(tgt)+' · <b>'+pct+'%</b> done'+(TG.day?' · at this pace the month ends near '+tgR_(pace)+' (estimate)':'')+'</div>'+tgBar_(pct);
+  h+='<div class="tg-split"><div><span>Billed to customers (Tally)</span><b>'+(billed==null?(TG.day?'after month end':'not loaded'):tgR_(billed))+'</b></div>'
+    +'<div><span>Paid by Hero (free service + warranty)</span><b>'+(billed==null?'—':tgR_(Math.max(0,s.l-billed)))+'</b></div></div>'+(billed==null&&TG.day?'<div class="tg-note">The split is shown once the month is complete.</div>':'')+'</div>';
+  h+='<div class="tg-card"><div class="tg-k">Against '+tgM_(ly)+(TG.day?' (whole month — this month is still running)':'')+'</div><table class="tg-t"><thead><tr><th></th><th>'+tgM_(ly)+'</th><th>'+tgM_(m)+'</th><th>Change</th></tr></thead><tbody>'
+    +'<tr><td>Labour</td><td>'+tgR_(b&&b.l)+'</td><td><b>'+tgR_(s.l)+'</b></td><td>'+tgG_(s.l,b&&b.l)+'</td></tr>'
+    +'<tr><td>Vehicles</td><td>'+tgN_(b&&b.v)+'</td><td><b>'+tgN_(s.v)+'</b></td><td>'+tgG_(s.v,b&&b.v)+'</td></tr>'
+    +'<tr><td>Labour per vehicle</td><td>'+tgR_(b&&tgPV_(b.l,b.v))+'</td><td><b>'+tgR_(tgPV_(s.l,s.v))+'</b></td><td>'+tgG_(tgPV_(s.l,s.v),b&&tgPV_(b.l,b.v))+'</td></tr>'
+    +'<tr><td>Parts</td><td>'+tgR_(b&&b.p)+'</td><td><b>'+tgR_(s.p)+'</b></td><td>'+tgG_(s.p,b&&b.p)+'</td></tr>'
+    +'<tr><td>Parts per vehicle</td><td>'+tgR_(b&&tgPV_(b.p,b.v))+'</td><td><b>'+tgR_(tgPV_(s.p,s.v))+'</b></td><td>'+tgG_(tgPV_(s.p,s.v),b&&tgPV_(b.p,b.v))+'</td></tr>'
+    +'<tr><td>Accidental jobs</td><td>'+tgN_(b&&b.acc)+'</td><td><b>'+tgN_(s.acc)+'</b></td><td>'+tgG_(s.acc,b&&b.acc)+'</td></tr>'
+    +'</tbody></table></div>';
+  if(!TG.ws){
+    h+='<div class="tg-card"><div class="tg-k">By workshop · '+tgM_(m)+'</div><table class="tg-t"><thead><tr><th>Workshop</th><th>Labour</th><th>Vehicles</th><th>vs '+tgM_(ly)+'</th></tr></thead><tbody>';
+    var keep=TG.ws; TG_WS.slice(1).forEach(function(w){ TG.ws=w[0]; var a=tgV_(m), c=tgV_(ly), bl=tgBilled_(m);
+      if(!a){ return; }
+      h+='<tr><td><b>'+w[1]+'</b></td><td><b>'+tgR_(a.l)+'</b><div class="tg-sub">'+(bl==null?'':'billed '+tgR_(bl)+' · Hero '+tgR_(Math.max(0,a.l-bl)))+'</div></td><td>'+tgN_(a.v)+'<div class="tg-sub">'+tgR_(tgPV_(a.l,a.v))+' / vehicle</div></td><td>'+tgG_(a.l,c&&c.l)+'<div class="tg-sub">labour</div></td></tr>'; });
+    TG.ws=keep; h+='</tbody></table></div>';
+  }
+  return h;
+}
+/* ---- tab 2: month by month, one financial year at a time, each month against the same month last year */
+function tgMonthsTab_(){
+  var first='9999'; (TG.data.vlead||[]).forEach(function(x){ if(x.m<first) first=x.m; });
+  var fys=[]; for(var y=tgFY_(TG.cur); y>=tgFY_(first); y--) fys.push(y);
+  var h='<div class="tg-ws">'+fys.map(function(y){ return '<button class="tg-pill'+(TG.fy===y?' on':'')+'" onclick="tgSet_(\'fy\','+y+')">'+tgFYName_(y)+'</button>'; }).join('')+'</div>';
+  h+='<table class="tg-t"><thead><tr><th>Month</th><th>Labour</th><th>vs last year</th><th>Vehicles</th><th>Parts</th></tr></thead><tbody>';
+  tgFYMonths_(TG.fy).filter(function(m){ return m<=TG.cur; }).reverse().forEach(function(m){
+    var s=tgV_(m), ly=tgV_(tgLY_(m)), bl=tgBilled_(m);
+    if(!s){ h+='<tr><td><b>'+tgM_(m)+'</b></td><td colspan="4" class="tg-mut">no Vlead month</td></tr>'; return; }
+    h+='<tr><td><b>'+tgM_(m)+'</b>'+tgRunNote_(m)+'</td>'
+      +'<td><b>'+tgR_(s.l)+'</b>'+(bl==null?'':'<div class="tg-sub">billed '+tgR_(bl)+'</div><div class="tg-sub">Hero '+tgR_(Math.max(0,s.l-bl))+'</div>')+'</td>'
+      +'<td>'+tgG_(s.l,ly&&ly.l)+'<div class="tg-sub">'+tgM_(tgLY_(m))+': '+tgR_(ly&&ly.l)+'</div></td>'
+      +'<td>'+tgN_(s.v)+'<div class="tg-sub">'+tgR_(tgPV_(s.l,s.v))+' labour / vehicle</div></td>'
+      +'<td>'+tgR_(s.p)+'<div class="tg-sub">'+tgR_(tgPV_(s.p,s.v))+' / vehicle</div></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+/* ---- tab 3: service types for one month, this year vs the same month last year */
+function tgTypes_(){
+  var all=[]; (TG.data.vlead||[]).forEach(function(x){ if(all.indexOf(x.m)<0) all.push(x.m); }); all.sort().reverse();
+  var m=TG.mon, ly=tgLY_(m), a=tgV_(m)||{}, b=tgV_(ly);
+  var h='<div class="tg-sel">Month <select onchange="tgSet_(\'mon\',this.value)">'+all.map(function(x){ return '<option value="'+x+'"'+(x===m?' selected':'')+'>'+tgM_(x)+'</option>'; }).join('')+'</select>'
+    +'<span class="tg-sub">compared with '+tgM_(ly)+(m===TG.cur&&TG.day?' (this month runs to the '+TG.day+'th)':'')+'</span></div>';
+  h+='<table class="tg-t"><thead><tr><th>Jobs</th><th>'+tgM_(ly)+'</th><th>'+tgM_(m)+'</th><th>Change</th></tr></thead><tbody>';
+  TG_TYPES.forEach(function(t){ h+='<tr><td><b>'+t[1]+'</b></td><td>'+tgN_(b&&b[t[0]])+'</td><td><b>'+tgN_(a[t[0]])+'</b></td><td>'+tgG_(a[t[0]],b&&b[t[0]])+'</td></tr>'; });
+  h+='<tr style="background:#f8fafc"><td><b>Vehicles reported</b></td><td>'+tgN_(b&&b.v)+'</td><td><b>'+tgN_(a.v)+'</b></td><td>'+tgG_(a.v,b&&b.v)+'</td></tr>';
+  return h+'</tbody></table><div class="tg-note">Job counts from Hero Vlead. A vehicle can carry more than one kind of job, so the rows do not add up to the vehicles.</div>';
+}
+/* ---- tab 4: financial year to date - April to the current month in each of the three years (as in the MD report) */
+function tgYoy_(){
+  var fy=tgFY_(TG.cur), f=[fy-2,fy-1,fy], cm=TG.cur.slice(5);
+  var sumW=function(y){ var ms=tgFYMonths_(y), cut=ms.map(function(x){ return x.slice(5); }).indexOf(cm), s=null;
+    ms.slice(0,cut+1).forEach(function(m){ var a=tgV_(m); if(!a) return; s=s||{v:0,l:0,p:0,o:0,fsc:0,paid:0,amc:0,gr:0,acc:0};
+      ['v','l','p','o','fsc','paid','amc','gr','acc'].forEach(function(k){ s[k]+=a[k]; }); }); return s; };
+  var S={}; f.forEach(function(y){ S[y]=sumW(y); });
+  var cg=function(a,b){ if(!(a>0)||!(b>0)) return '<span class="tg-mut">—</span>'; var g=Math.round((Math.pow(a/b,1/2)-1)*1000)/10; return '<span style="color:'+(g>=0?'#15803d':'#b91c1c')+';font-weight:700">'+(g>=0?'+':'')+g+'%</span>'; };
+  var h='<div class="tg-note" style="margin:0 0 8px">April to '+TG_MN[+cm-1]+' in each financial year'+(TG.day?' ('+tgM_(TG.cur)+' runs to the '+TG.day+'th)':'')+' · the same months, so the years compare fairly.</div>'
+    +'<table class="tg-t"><thead><tr><th></th>'+f.map(function(y){ return '<th>'+tgFYName_(y)+'</th>'; }).join('')+'<th>vs last yr</th><th>CAGR 2 yr</th></tr></thead><tbody>';
+  var row=function(lbl,fn,money){ var v=f.map(function(y){ return S[y]?fn(S[y]):null; });
+    h+='<tr><td><b>'+lbl+'</b></td>'+v.map(function(x){ return '<td>'+(money?tgR_(x):tgN_(x))+'</td>'; }).join('')+'<td>'+tgG_(v[2],v[1])+'</td><td>'+cg(v[2],v[0])+'</td></tr>'; };
+  row('Labour',function(s){ return s.l; },true);
+  row('Parts',function(s){ return s.p; },true);
+  row('Engine oil',function(s){ return s.o; },true);
+  row('Vehicles',function(s){ return s.v; },false);
+  row('Labour per vehicle',function(s){ return tgPV_(s.l,s.v); },true);
+  row('Parts per vehicle',function(s){ return tgPV_(s.p,s.v); },true);
+  TG_TYPES.forEach(function(t){ row(t[1]+' jobs',function(s){ return s[t[0]]; },false); });
+  return h+'</tbody></table><div class="tg-note">Hero Vlead, before GST. Hero data starts 01-04-2024; 17057 Premia starts Feb-2025, so its two-year growth is not shown.</div>';
+}
+
 /* R129-2026.10.01 (Ravi 30-09-2026): "Also excel reports i need to fetch and send to MD also." The Research Lab writes
    the Hero MD Report (lab/hero_md_report.py: all four workshops from Hero's Vlead, before GST, YTD x 3 years, CAGR,
    per vehicle, labour split, Hero App proof) into the private Storage bucket md-reports every run. Only CEO / GM /
@@ -28931,12 +29024,18 @@ function r127ChaseExtra_(){
       +R.alerts.slice(0,6).map(function(a){ return tgEsc_(a.n.reg)+' → '+tgEsc_(a.pn)+' @ '+tgEsc_((a.at[0]||{}).dealer||''); }).join(' · ')+(R.alerts.length>6?' …':'')+'. Why is the vehicle not delivered?');
     else lines.push('Parts in stock|<span class="ok">no waiting vehicle has its part in our stock</span>');
   }).catch(function(){ lines.push('Parts in stock|not loaded'); });
-  var p2=window.sbRpc('hero_ratio_today',{p_month:mk, p_ws:null}).then(function(r){
-    var lab=Math.round((+(r&&r.labour)||0)/((r&&r.exGst)?1:TG_GST)), tgt=tgLabourTarget_(mk);   /* R128.4: Hero BI is before GST */
+  /* R130-2026.10.01: ONE NUMBER - a month that is in Hero Vlead (hero_vlead_month) shows the Vlead labour, the same as
+     Targets and the MD report; a month not yet in Vlead shows the Tally bills so far, labelled as billed only. */
+  var p2=Promise.all([window.sbRpc('hero_ratio_today',{p_month:mk, p_ws:null}), window.sbRpc('hero_perf_months',{}).catch(function(){ return null; })]).then(function(rr){
+    var r=rr[0], pm=rr[1], vl=((pm&&pm.vlead)||[]).filter(function(x){ return x.m===mk; });
+    var tgt=tgLabourTarget_(mk), lab;
+    if(vl.length){ lab=0; vl.forEach(function(x){ lab+=+x.lab||0; }); lab=Math.round(lab); }
+    else { lab=Math.round((+(r&&r.labour)||0)/((r&&r.exGst)?1:TG_GST)); }
+    var vnote=vl.length?' (Hero Vlead)':' (billed so far - Hero coupon / warranty labour is added when the Vlead month is loaded)';
     var dim=new Date(today.getFullYear(), today.getMonth()+1, 0).getDate(), left=Math.max(1, dim-today.getDate()+1);
     var short=Math.max(0,tgt-lab);
-    if(!/billing|bills/i.test(String(r&&r.source||''))){ lines.push('Labour '+tgMonthName_(mk)+'|<span class="bad">bills not loaded for this month</span> — estimates alone show '+inr(lab)+' of '+inr(tgt)+'; real billed labour comes from the Hero BI Tally report'); return; }
-    lines.push('Labour '+tgMonthName_(mk)+'|<b>'+inr(lab)+'</b> of '+inr(tgt)+' (without GST) — '
+    if(!vl.length && !/billing|bills/i.test(String(r&&r.source||''))){ lines.push('Labour '+tgMonthName_(mk)+'|<span class="bad">bills not loaded for this month</span> — estimates alone show '+inr(lab)+' of '+inr(tgt)+'; real billed labour comes from the Hero BI Tally report'); return; }
+    lines.push('Labour '+tgMonthName_(mk)+'|<b>'+inr(lab)+'</b> of '+inr(tgt)+' (without GST'+vnote+') — '
       +(short?('<span class="bad">short '+inr(short)+', needs '+inr(Math.ceil(short/left))+' a day for '+left+' day'+(left===1?'':'s')+'</span>'):'<span class="ok">target achieved</span>'));
   }).catch(function(){ lines.push('Labour|not loaded'); });
   var p3=new Promise(function(res){ try{ jgetRaw('mp_status',{},function(s){
@@ -29033,7 +29132,7 @@ var ES_BODY=null;
   };
 })();
 (function(){ if(document.getElementById('tg-css')) return; var st=document.createElement('style'); st.id='tg-css';
-  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}.tg-pn{white-space:nowrap}';
+  st.textContent='.tg-t{width:100%;border-collapse:collapse;table-layout:auto!important;font-size:12.5px;background:#fff}.tg-t th{text-align:left;font-size:11px;color:#475569;padding:6px;border-bottom:1.5px solid #cbd5e1;position:static!important;width:auto!important}.tg-t td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;position:static!important;width:auto!important;word-break:break-word;white-space:normal}.tg-sub{font-size:10.5px;color:#64748b;font-weight:400;margin-top:1px}.tg-t td b{white-space:nowrap}.tg-pn{white-space:nowrap}'+'.tg-ws{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}.tg-pill{border:1.5px solid #cbd5e1;background:#fff;color:#334155;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer}.tg-pill.on{background:#0f766e;border-color:#0f766e;color:#fff}'+'.tg-tabs{display:flex;gap:0;border-bottom:2px solid #e2e8f0;margin:0 0 10px;overflow-x:auto}.tg-tab{border:none;background:none;padding:8px 12px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px}.tg-tab.on{color:#0f766e;border-bottom-color:#0f766e}'+'.tg-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:0 0 10px}.tg-k{font-size:11.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}.tg-big{font-size:28px;font-weight:800;color:#0f172a;font-family:Roboto Mono,monospace}.tg-sub2{font-size:12px;color:#475569;margin:2px 0 6px}'+'.tg-bar{height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin:4px 0 10px}.tg-bar i{display:block;height:100%}.tg-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tg-split div{background:#f8fafc;border-radius:8px;padding:8px}.tg-split span{display:block;font-size:11px;color:#64748b}.tg-split b{font-size:15px}'+'.tg-note{font-size:11.5px;color:#64748b;margin-top:8px}.tg-mut{color:#94a3b8}.tg-sel{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:12.5px;font-weight:600}.tg-sel select{width:auto;padding:6px 8px;font-size:13px}';
   document.head.appendChild(st); })();
 /* ===========================================================================
    R129 (Ravi 29-09-2026): "The Service advisor told me that after gate entry it
