@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script charset="utf-8" src="sandbox.js?v=26fc7c7eb9"></script>
+<head><script charset="utf-8" src="sandbox.js?v=9a4cbe265b"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SANDBOX · Sehgal Hero</title>
@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 97;
-window.HERO_BUILD = 'R129-2026.09.29.1';
+window.HERO_RELEASE = 98;
+window.HERO_BUILD = 'R129-2026.10.01.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1834,6 +1834,7 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
         </select>
         <button class="hu-actbtn" style="background:#0f766e" onclick="tgBoot()">↻ Refresh</button>
         <button class="hu-actbtn" id="tg-edit" style="background:#475569;display:none" onclick="tgEditTargets()">✎ Set targets</button>
+        <button class="hu-actbtn" id="tg-md" style="background:#1f3864;display:none" onclick="tgMdReport(this)">📊 MD report (Excel)</button>
       </div>
     </div>
     <div id="tg-msg" style="font-size:12px;color:var(--steel);margin:6px 0"></div>
@@ -28728,6 +28729,7 @@ var TG_LAST=null;
 function tgBoot(){
   var out=document.getElementById('tg-out'), msg=document.getElementById('tg-msg'); if(!out) return;
   var ed=document.getElementById('tg-edit'); if(ed) ed.style.display=(typeof isAdmin==='function' && isAdmin())?'':'none';
+  var md=document.getElementById('tg-md'); if(md) md.style.display=tgMdAllowed_()?'':'none';
   var n=+((document.getElementById('tg-months')||{}).value||6), months=tgMonths_(n);
   msg.style.color='#2563eb'; msg.textContent='Loading '+n+' months of billed labour and parts…';
   var load=function(){ return Promise.all(months.map(function(m){
@@ -28765,6 +28767,43 @@ function tgBoot(){
       +'</tbody></table>'
       +(rows.some(function(x){ return x.lt==null && x.pt==null; })?'<div style="font-size:11.5px;color:#64748b;margin-top:8px">“no target” = none typed in yet'+((typeof isAdmin==='function'&&isAdmin())?' — press <b>✎ Set targets</b>.':'. The CEO / admin sets them on this screen.')+'</div>':'');
   });
+}
+/* R129-2026.10.01 (Ravi 30-09-2026): "Also excel reports i need to fetch and send to MD also." The Research Lab writes
+   the Hero MD Report (lab/hero_md_report.py: all four workshops from Hero's Vlead, before GST, YTD x 3 years, CAGR,
+   per vehicle, labour split, Hero App proof) into the private Storage bucket md-reports every run. Only CEO / GM /
+   admin can read it (storage rule md_reports_read) - the button is hidden for everyone else. On a phone it opens the
+   share sheet (WhatsApp / mail to the MD); on a PC it downloads. */
+function tgMdAllowed_(){
+  try{ var r=String((USER&&USER.role)||'').toLowerCase(); return r==='ceo'||r==='gm'||(typeof isAdmin==='function'&&isAdmin()); }catch(e){ return false; }
+}
+async function tgMdReport(btn){
+  var was=btn?btn.innerHTML:'', msg=document.getElementById('tg-msg');
+  var say=function(t,bad){ if(msg){ msg.style.color=bad?'var(--signal-d)':'#2563eb'; msg.textContent=t; } };
+  if(btn){ btn.disabled=true; btn.innerHTML='⏳ Fetching…'; }
+  try{
+    var ls=await sbFetch('/storage/v1/object/list/md-reports',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prefix:'',limit:200,sortBy:{column:'name',order:'asc'}})});
+    var files=ls.ok?await ls.json():[];
+    var key=function(n){ var m=/(\d{2})-(\d{2})-(\d{4})/.exec(n||''); return m?(m[3]+m[2]+m[1]):''; };
+    files=(files||[]).filter(function(f){ return /\.xlsx$/i.test(f.name||''); }).sort(function(a,b){ return key(b.name).localeCompare(key(a.name)); });
+    if(!files.length){ say('No MD report is available for your login yet.',true); return; }
+    var name=files[0].name;
+    var sg=await sbFetch('/storage/v1/object/sign/md-reports/'+encodeURIComponent(name),{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({expiresIn:3600})});
+    var sj=sg.ok?await sg.json():{}; var u=sj.signedURL||sj.signedUrl;
+    if(!u){ say('Could not open the report ('+sg.status+').',true); return; }
+    var url=SB_URL+'/storage/v1'+(u.charAt(0)==='/'?u:'/'+u);
+    var blob=await (await fetch(url)).blob();
+    var file=null; try{ file=new File([blob],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); }catch(e){}
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],title:name,text:'Hero MD Report'}); say(name+' - shared.'); return; }
+      catch(e){ if(e && e.name==='AbortError'){ say(name+' - share cancelled.'); return; } }
+    }
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },4000);
+    say(name+' - downloaded.');
+  }catch(e){ say('MD report not fetched: '+(e&&e.message||e),true); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML=was; } }
 }
 function tgEditTargets(){
   if(!(typeof isAdmin==='function' && isAdmin())){ alert('Only the CEO / admin can set targets.'); return; }
