@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R135-2026.10.02.2';
+window.HERO_BUILD = 'R136-2026.10.02.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5710,6 +5710,9 @@ function aliasWs(s){ const a={CHINCHWAND:'CHINCHWAD',MANJARI:'MANJRI'}; return a
 function allowedWsList(){
   if(!USER||!USER.ws) return [];
   if(USER.ws.trim().toUpperCase()==='ALL') return null; // null = no restriction
+  /* R136 (Ravi 02-10-2026): "Rajesh WM is shown the holdup of only Chinchwad. Show him for all 4 locations."
+     The Chinchwad WM sees every location (Chinchwad, Premia, PDI and Chakan); a Chakan WM stays on Chakan. */
+  if((String(USER.role||'').toLowerCase()==='wm' || /^WM\./i.test(String(USER.code||''))) && aliasWs(normWs(USER.ws))==='CHINCHWAD') return null;
   return USER.ws.split(',').map(s=>aliasWs(normWs(s.trim()))).filter(Boolean);
 }
 function sameWsJs(a,b){ a=aliasWs(normWs(a)); b=aliasWs(normWs(b)); return a&&b&&a===b; }
@@ -11628,6 +11631,7 @@ function mdCloseModal(id){ document.getElementById(id).style.display='none'; }
 /* ================= CONTROL ROOM MODULE (WM / GM / CEO visibility) ================= */
 let CTL_DATA=null, CTL_TAB='pending', CTL_EST_LIST=[];
 function ctlBoot(){
+  try{ r136CtlLoad(); }catch(e){}   /* R136: management summary on top (holdup per location, SAs, morning report) */
   // Re-entering Control Room keeps what was already drawn. Only a genuinely
   // first open shows "Loading…". (Ravi 26-Jul-2026)
   if(!CTL_DATA) document.getElementById('ctl-list').innerHTML='<div class="hint">Loading…</div>';
@@ -24302,7 +24306,7 @@ var HQS_TREE_TTL=12*3600e3, HQS_ALIAS_TTL=6*3600e3, HQS_RESULT_TTL=24*3600e3, HQ
    up to 12 hours, so every cached answer is stamped with this version and an
    unstamped one is never painted. Same keys, so an old answer is simply
    overwritten by the next live one — nothing piles up. */
-var HQS_COMPOSE_V=2;
+var HQS_COMPOSE_V=3;   /* R136: 0109 free-service code fix - drop every phone's cached FSC I compositions */
 var HQS_STOP=/^(hai|hain|ha|he|ho|ka|ki|ke|ko|se|me|mein|aur|and|the|of|to|for|nahi|nahin|na|karna|karo|kar|karke|change|badal|badalna|badlo|badalo|lagana|lagao|laga|dalna|dalo|check|dekho|dekhna|problem|issue|awaaz|awaz|sound|noise|new|naya|nayi|purana|old|wala|wali|hua|hui|gaya|gayi|raha|rahi|tha|thi|please|plz|bhi|sir|ji)$/i;
 var HQS_SAFETY=/BRAKE|SHOE|PAD\b|DISC|TYRE|TIRE|TUBE|BEARING|CONE SET|STEERING|HANDLE|BULB|LAMP|HEADLIGHT|WINKER|INDICATOR|HORN|CHAIN|SPROCKET|CABLE|FORK|SHOCK|CUSHION|ABSORBER|AXLE|WHEEL|SPOKE|RIM\b|LEVER|SWITCH|BATTERY|HARNESS|FUEL|PETROL|OIL SEAL|SEAL/i;
 
@@ -28701,14 +28705,14 @@ window.heroChangeMobile=function(){
 @media (max-width:480px){ #avask-loc{grid-template-columns:repeat(2,1fr)} }
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
-<div id="avask-ov" role="dialog" aria-label="AVNI asks">
-  <div class="ah"><b>AVNI asks — why not delivered?</b>
+<div id="avask-ov" role="dialog" aria-label="Why pending">
+  <div class="ah"><b>Why not delivered? — we ask every vehicle</b>
     <button type="button" id="avask-notif" onclick="avaskNotifOn()">🔔 Alerts</button>
     <button type="button" onclick="avaskClose()">Close</button></div>
   <div class="as" id="avask-sum"></div>
   <div class="as" id="avask-extra" style="display:none"></div>
   <div id="avask-loc"></div>
-  <div class="ab"><table><thead><tr><th style="width:38%">Vehicle</th><th>AVNI asks</th></tr></thead>
+  <div class="ab"><table><thead><tr><th style="width:38%">Vehicle</th><th>Our question</th></tr></thead>
     <tbody id="avask-tb"></tbody></table></div>
 </div>
 <script>
@@ -28750,7 +28754,7 @@ window.heroChangeMobile=function(){
     LAST_D=d;
     var pill=document.getElementById('avask-pill');
     var n=ITEMS.length;
-    pill.textContent='AVNI asks · '+n; pill.style.display=n?'block':'none';
+    pill.textContent='Why pending · '+n; pill.style.display=n?'block':'none';
     document.getElementById('avask-sum').innerHTML=
       '<b>'+n+'</b> vehicle'+(n===1?'':'s')+' with no answer today. Each answer stops the asking for today. '+sddText(d||{});
     /* R134 (Ravi 01-10-2026: "Give 4 big buttons for the locations classification"):
@@ -28785,7 +28789,7 @@ window.heroChangeMobile=function(){
   function notify(n){
     try{
       if(typeof Notification==='undefined' || Notification.permission!=='granted' || document.visibilityState==='visible') return;
-      new Notification('AVNI asks', {body: n+' vehicle'+(n===1?' is':'s are')+' not delivered with no answer today. Why?', tag:'avask'});
+      new Notification('Why pending?', {body: n+' vehicle'+(n===1?' is':'s are')+' not delivered with no answer today. Why?', tag:'avask'});
     }catch(e){}
   }
   async function load(auto){
@@ -29320,7 +29324,7 @@ window.avaskSendNow=async function(){
         b.textContent='Sent ✓';
         return;
       }
-      if(tries<12){ setTimeout(poll,2500); } else { r.innerHTML='<span class="bad">no result in 30 s - see Holdup › AVNI asks board</span>'; b.disabled=false; b.textContent='🟢 Send this on WhatsApp now'; }
+      if(tries<12){ setTimeout(poll,2500); } else { r.innerHTML='<span class="bad">no result in 30 s - see Holdup › Why pending board</span>'; b.disabled=false; b.textContent='🟢 Send this on WhatsApp now'; }
     };
     setTimeout(poll,3000);
   }catch(e){ r.innerHTML='<span class="bad">'+tgEsc_(String(e&&e.message||e))+'</span>'; b.disabled=false; b.textContent='🟢 Send this on WhatsApp now'; }
@@ -29491,6 +29495,254 @@ var ES_BODY=null;
     box.addEventListener('blur', function(){ openAt=0; });
   }
   window.heroGatePulse=pulse;
+})();
+</script>
+<!-- R136 (Ravi 02-10-2026): "There is nothing in the top management control room ... what are the differences between
+     what is in the estimate and what is being charged to the customer daily Service Advisor wise. That should be shown
+     in the app against each SA, WM for his Workshop, GM for all workshops under him ... Next time the WM opens the app
+     force him to update the SA targets of labour without which he cannot see the remaining app, that will only get to
+     him. Also ensure each holdup is updated for pending parts."
+     Server = migration 0108: hero_control_room (holdup per location, SA board, data dates, morning report text),
+     hero_sa_board (an SA's own month), hero_sa_targets_due / hero_sa_targets_set (the WM's target screen),
+     hero_daily_check (now also answers an SA, for his own estimates only). Every rupee is before GST. -->
+<style>
+.r136-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.r136-tbl th{text-align:left;font-weight:600;color:var(--steel);border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;background:#f8fafc}
+.r136-tbl td{border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;color:#0f172a}
+.r136-tbl .n{text-align:right;font-family:'Roboto Mono',monospace}
+.r136-tbl tr.tot td{font-weight:700;background:#f8fafc}
+.r136-tbl tr.go{cursor:pointer}
+.r136-tbl tr.go:hover td{background:#f1f5f9}
+.r136-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px}
+.r136-bad{color:#b91c1c;font-weight:700}.r136-ok{color:#15803d;font-weight:700}.r136-amb{color:#b45309;font-weight:700}
+.r136-meta{font-size:11.5px;color:#475569;margin:2px 0 10px;line-height:1.6}
+.r136-h4{font-size:13px;font-weight:700;margin:10px 0 6px;color:#0f172a}
+.r136-pre{white-space:pre-wrap;font:12px/1.5 'Roboto Mono',monospace;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:360px;overflow:auto;color:#0f172a}
+.r136-pills{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.r136-pill{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;color:#0f172a}
+.r136-pill.on{background:#0f766e;border-color:#0f766e;color:#fff}
+.r136-kpi{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;color:#0f172a}
+.r136-kpi b{font-family:'Roboto Mono',monospace}
+#r136-tov{position:fixed;inset:0;z-index:2147483000;background:#fff;display:none;flex-direction:column;color:#0f172a}
+#r136-tov .th{padding:14px 16px;border-bottom:1px solid var(--line)}
+#r136-tov .th b{font-size:16px}
+#r136-tov .tb{flex:1;overflow:auto;padding:10px 16px}
+#r136-tov .tf{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#r136-tov input{width:120px;padding:7px 8px;border:1px solid #94a3b8;border-radius:6px;font:inherit;text-align:right;background:#fff;color:#0f172a}
+#r136-tov input.miss{border-color:#dc2626;background:#fef2f2}
+</style>
+<div id="r136-tov" role="dialog" aria-modal="true" aria-label="SA labour targets">
+  <div class="th"><b id="r136-t-title">SA labour targets</b><div id="r136-t-sub" style="font-size:12.5px;color:#475569;margin-top:4px"></div></div>
+  <div class="tb" id="r136-t-body"></div>
+  <div class="tf">
+    <button class="btn" id="r136-t-save" style="width:auto;padding:10px 18px" onclick="r136TargetsSave()">Save targets</button>
+    <button class="navbtn" id="r136-t-close" onclick="r136TargetsClose()">Close</button>
+    <span id="r136-t-msg" style="font-size:12.5px"></span>
+  </div>
+</div>
+<script>
+(function(){
+  var DN={'23490':'Chinchwad','17057':'Premia','10307':'PDI','61299':'Chakan'};
+  var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+  function num(v){ var n=+v; return isFinite(n)?n:0; }
+  function rs(v){ return (v==null||v==='')?'—':'₹'+Math.round(num(v)).toLocaleString('en-IN'); }
+  function role(){ try{ return String((USER&&USER.role)||'').toLowerCase(); }catch(e){ return ''; } }
+  function signedIn(){ try{ return !!(USER && localStorage.getItem('sb_rt')) && typeof sbRpc==='function'; }catch(e){ return false; } }
+  function isMgr(){ var r=role(); return r==='wm'||r==='gm'||r==='ceo'||(typeof isAdmin==='function'&&isAdmin()); }
+  function monthKey(off){ var d=new Date(); d=new Date(d.getFullYear(), d.getMonth()+(off||0), 1); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+  function monName(k){ var p=String(k||'').split('-'); return (MON[(+p[1]||1)-1]||'')+' '+(p[0]||''); }
+  function ymd(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function ratio(par,lab){ par=num(par); lab=num(lab); if(lab<=0) return '—'; var r=par/lab; return '<span class="'+(r<=1.2?'r136-ok':r<=2?'r136-amb':'r136-bad')+'">'+r.toFixed(1)+' : 1</span>'; }
+  function gapCell(bill,est){ bill=num(bill); est=num(est); if(est<=0) return '—'; var g=bill-est, p=Math.round(100*g/est);
+    return '<span class="'+(Math.abs(p)<=10?'r136-ok':Math.abs(p)<=25?'r136-amb':'r136-bad')+'">'+(g>=0?'+':'−')+rs(Math.abs(g)).slice(1)+' ('+(p>=0?'+':'')+p+'%)</span>'; }
+  function pctCell(p){ if(p==null) return '<span class="r136-bad">no target</span>'; p=num(p); return '<span class="'+(p>=100?'r136-ok':p>=60?'r136-amb':'r136-bad')+'">'+p+'%</span>'; }
+
+  /* ---------------------------------------------------------------- the SA table (Control Room and the SA card) */
+  function saTable(b, withOthers){
+    var sas=(b&&b.sas)||[];
+    var h='<div class="r136-scroll"><table class="r136-tbl"><thead><tr><th>Service Advisor</th><th class="n">Labour target</th><th class="n">Labour billed</th><th class="n">Done</th><th class="n">Need / day</th>'
+      +'<th class="n">Parts billed</th><th class="n">Parts : Labour</th><th class="n">Job cards</th><th class="n">Estimates → billed</th><th class="n">Estimated (billed ones)</th><th class="n">Billed</th><th class="n">Bill vs estimate</th><th class="n">Within 10 %</th></tr></thead><tbody>';
+    var T={lt:0,l:0,p:0,j:0,e:0,eb:0,er:0,br:0,w:0};
+    sas.forEach(function(s){
+      T.lt+=num(s.labourTarget); T.l+=num(s.labour); T.p+=num(s.parts); T.j+=num(s.jcs); T.e+=num(s.estimates); T.eb+=num(s.estBilled); T.er+=num(s.estRsBilled); T.br+=num(s.billRs); T.w+=num(s.within10);
+      h+='<tr><td>'+esc(s.name)+' <span style="color:#64748b;font-size:11px">'+esc(s.ws||'')+'</span></td>'
+        +'<td class="n">'+(s.labourTarget==null?'<span class="r136-bad">not set</span>':rs(s.labourTarget))+'</td>'
+        +'<td class="n">'+rs(s.labour)+'</td><td class="n">'+pctCell(s.labourPct)+'</td><td class="n">'+(s.needPerDay==null?'—':rs(s.needPerDay))+'</td>'
+        +'<td class="n">'+rs(s.parts)+'</td><td class="n">'+ratio(s.parts,s.labour)+'</td><td class="n">'+num(s.jcs)+'</td>'
+        +'<td class="n">'+num(s.estimates)+' → '+num(s.estBilled)+'</td><td class="n">'+rs(s.estRsBilled)+'</td><td class="n">'+rs(s.billRs)+'</td>'
+        +'<td class="n">'+gapCell(s.billRs,s.estRsBilled)+'</td><td class="n">'+(num(s.estBilled)?num(s.within10)+' of '+num(s.estBilled):'—')+'</td></tr>';
+    });
+    if(withOthers && b.other && (num(b.other.labour)||num(b.other.parts))){
+      h+='<tr><td title="'+esc(b.other.who||'')+'">Not matched to an SA <span style="color:#64748b;font-size:11px">'+esc(b.other.who||'')+'</span></td><td></td><td class="n">'+rs(b.other.labour)+'</td><td></td><td></td><td class="n">'+rs(b.other.parts)+'</td><td class="n">'+ratio(b.other.parts,b.other.labour)+'</td><td class="n">'+num(b.other.jcs)+'</td><td colspan="5"></td></tr>';
+    }
+    if(withOthers && b.total){
+      h+='<tr class="tot"><td>Total</td><td class="n">'+rs(T.lt)+'</td><td class="n">'+rs(b.total.labour)+'</td><td class="n">'+(T.lt?pctCell(Math.round(100*num(b.total.labour)/T.lt)):'—')+'</td><td></td><td class="n">'+rs(b.total.parts)+'</td><td class="n">'+ratio(b.total.parts,b.total.labour)+'</td><td class="n">'+num(b.total.jcs)+'</td>'
+        +'<td class="n">'+T.e+' → '+T.eb+'</td><td class="n">'+rs(T.er)+'</td><td class="n">'+rs(T.br)+'</td><td class="n">'+gapCell(T.br,T.er)+'</td><td class="n">'+(T.eb?T.w+' of '+T.eb:'—')+'</td></tr>';
+    }
+    return h+'</tbody></table></div>';
+  }
+
+  /* ---------------------------------------------------------------- Control Room */
+  var CR={month:null, data:null};
+  function crHost(){
+    var h=document.getElementById('r136-ctl');
+    if(!h){ var v=document.getElementById('view-control'); var w=v&&v.querySelector('.wrap'); if(!w) return null;
+      h=document.createElement('div'); h.id='r136-ctl'; w.insertBefore(h, w.firstChild); }
+    return h;
+  }
+  window.r136CtlLoad=function(){
+    var h=crHost(); if(!h || !signedIn()) return;
+    if(!CR.data) h.innerHTML='<div class="card"><div class="card-b"><div class="hint">Loading the management summary…</div></div></div>';
+    sbRpc('hero_control_room',{p_month:CR.month}).then(function(d){ CR.data=d; crPaint(); })
+      .catch(function(e){ h.innerHTML='<div class="card"><div class="card-b"><div class="hint" style="color:var(--signal-d)">Management summary not loaded: '+esc(e&&e.message||e)+' <button class="navbtn" onclick="r136CtlLoad()">↻ Retry</button></div></div></div>'; });
+  };
+  window.r136CtlMonth=function(off){ CR.month=off?monthKey(off):null; CR.data=null; r136CtlLoad(); };
+  window.r136CopyMorning=function(btn){
+    var t=(CR.data&&CR.data.morning)||'';
+    try{ navigator.clipboard.writeText(t).then(function(){ btn.textContent='Copied ✓'; }); }catch(e){ btn.textContent='Copy not allowed here'; }
+  };
+  window.r136OpenCheck=function(){ try{ openModule('targets'); if(typeof tgSet_==='function') setTimeout(function(){ tgSet_('tab','check'); },300); }catch(e){} };
+  function crPaint(){
+    var h=crHost(), d=CR.data; if(!h||!d) return;
+    var b=d.board||{}, f=d.fresh||{}, cur=!CR.month;
+    var x='<div class="card"><div class="card-h">📊 Management summary — '+esc(monName(b.month))
+      +' <span class="r136-pills" style="margin-left:auto"><span class="r136-pill'+(cur?' on':'')+'" onclick="r136CtlMonth(0)">This month</span><span class="r136-pill'+(!cur?' on':'')+'" onclick="r136CtlMonth(-1)">Last month</span>'
+      +'<button class="navbtn" onclick="r136CtlLoad()">↻</button></span></div><div class="card-b">';
+    x+='<div class="r136-meta">From Hero BI, loaded every morning — bills up to <b>'+esc(f.bills||'—')+'</b> · holdup file <b>'+esc(f.holdup||'—')+'</b> · job cards <b>'+esc(f.jobcards||'—')+'</b> · last estimate <b>'+esc(f.estimates||'—')+'</b> · estimate rules re-learnt from the bills <b>'+esc(f.billTemplate||'—')+'</b></div>';
+
+    // holdup, every location this login covers
+    var H=d.holdup||[], tot={open:0,over5:0,unanswered:0,parts_no_info:0,oldest:0};
+    x+='<div class="r136-h4">🚧 Holdup — vehicles not delivered</div><div class="r136-scroll"><table class="r136-tbl"><thead><tr><th>Location</th><th class="n">Open in DMS</th><th class="n">Over 5 days</th><th class="n">No answer today</th><th class="n">Waiting for parts — no part no. / ETA</th><th class="n">Oldest (days)</th></tr></thead><tbody>';
+    H.forEach(function(r){ tot.open+=num(r.open); tot.over5+=num(r.over5); tot.unanswered+=num(r.unanswered); tot.parts_no_info+=num(r.parts_no_info); tot.oldest=Math.max(tot.oldest,num(r.oldest));
+      x+='<tr class="go" onclick="openModule(\'holdup\')"><td>'+esc(DN[r.dealer]||r.dealer)+' <span style="color:#64748b;font-size:11px">'+esc(r.dealer)+'</span></td><td class="n">'+num(r.open)+'</td><td class="n'+(num(r.over5)?' r136-amb':'')+'">'+num(r.over5)+'</td><td class="n'+(num(r.unanswered)?' r136-bad':'')+'">'+num(r.unanswered)+'</td><td class="n'+(num(r.parts_no_info)?' r136-bad':'')+'">'+num(r.parts_no_info)+'</td><td class="n">'+(r.oldest==null?'—':num(r.oldest))+'</td></tr>'; });
+    x+='<tr class="tot"><td>Total</td><td class="n">'+tot.open+'</td><td class="n">'+tot.over5+'</td><td class="n">'+tot.unanswered+'</td><td class="n">'+tot.parts_no_info+'</td><td class="n">'+tot.oldest+'</td></tr></tbody></table></div>';
+
+    // SAs
+    var tgtTxt=num(b.monthLabourTarget)?' · business labour target '+rs(b.monthLabourTarget)+' (counts Hero-paid labour too)':'';
+    x+='<div class="r136-h4">🧑‍🔧 Service Advisors — labour target, bills and estimate vs bill</div>'
+      +'<div class="r136-meta">Billed up to '+esc(b.billedUpto||'—')+' · '+num(b.daysLeft)+' days left'+tgtTxt+'</div>'
+      +saTable(b,true)
+      +'<div class="r136-meta">'+esc(b.note||'')+' “Estimated (billed ones)” = the estimates whose job card is billed, so the two columns compare like with like.</div>'
+      +'<div class="r136-pills" style="margin-bottom:12px">'
+      +(isMgr()?'<button class="navbtn" onclick="r136TargetsOpen(false)">🎯 Set SA targets</button>':'')
+      +'<button class="navbtn" onclick="r136OpenCheck()">🔍 Estimate vs bill — every vehicle, labour and parts codes</button></div>';
+
+    // morning report
+    var ml=d.morningLast||[];
+    var sent=ml.length?ml.map(function(m){ return esc(m.name)+' '+(m.windowClosed?'<span class="r136-bad">not received (WhatsApp window closed)</span>':(m.ok?'<span class="r136-ok">sent</span>':'<span class="r136-bad">failed</span>'))+' '+esc(m.at); }).join(' · '):'not sent yet today';
+    x+='<div class="r136-h4">📨 Morning report — PingMate WhatsApp to the WM, GM and CEO at 09:00</div><div class="r136-meta">Last sends: '+sent+'</div>'
+      +'<div class="r136-pre">'+esc(d.morning||'')+'</div><div style="margin-top:6px"><button class="navbtn" onclick="r136CopyMorning(this)">📋 Copy</button></div>';
+    x+='</div></div>';
+    h.innerHTML=x;
+  }
+
+  /* ---------------------------------------------------------------- SA targets screen (the WM is held on it) */
+  var TS={d:null, forced:false};
+  function tov(){ return document.getElementById('r136-tov'); }
+  window.r136TargetsOpen=function(forced){
+    TS.forced=!!forced;
+    var m=document.getElementById('r136-t-msg'); if(m){ m.textContent=''; }
+    sbRpc('hero_sa_targets_due',{}).then(function(d){
+      if(!d || !d.sas || !d.sas.length){ if(!forced) alert('No Service Advisors found under your login.'); return; }
+      TS.d=d; paintTargets(); var o=tov(); o.style.display='flex'; document.body.style.overflow='hidden';
+    }).catch(function(e){ if(!forced) alert('Targets not loaded: '+(e&&e.message||e)); });
+  };
+  window.r136TargetsClose=function(){ if(TS.forced) return; tov().style.display='none'; document.body.style.overflow=''; };
+  function paintTargets(){
+    var d=TS.d;
+    document.getElementById('r136-t-title').textContent='🎯 Labour targets for your Service Advisors — '+monName(d.month);
+    document.getElementById('r136-t-sub').innerHTML=(TS.forced?'<b class="r136-bad">Set the labour target of every SA for '+esc(monName(d.month))+' to continue.</b> ':'')
+      +'Each SA sees his own target and his bills in his app. Before GST. Type 0 for an SA who is not working this month.';
+    document.getElementById('r136-t-close').style.display=TS.forced?'none':'';
+    var h='<div class="r136-scroll"><table class="r136-tbl"><thead><tr><th>Service Advisor</th><th>Workshop</th><th class="n">Labour billed in '+esc(monName(d.lastMonth))+'</th><th class="n">Parts billed in '+esc(monName(d.lastMonth))+'</th><th class="n">Labour target ₹</th><th class="n">Parts target ₹</th></tr></thead><tbody>';
+    d.sas.forEach(function(s,i){
+      h+='<tr><td>'+esc(s.name)+'</td><td>'+esc(s.ws||'')+'</td><td class="n">'+rs(s.lastMonthLabour)+'</td><td class="n">'+rs(s.lastMonthParts)+'</td>'
+        +'<td class="n"><input inputmode="numeric" data-i="'+i+'" data-k="labour" value="'+(s.labourTarget==null?'':Math.round(num(s.labourTarget)))+'" oninput="r136TargetsSum()"></td>'
+        +'<td class="n"><input inputmode="numeric" data-i="'+i+'" data-k="parts" value="'+(s.partsTarget==null?'':Math.round(num(s.partsTarget)))+'"></td></tr>';
+    });
+    h+='</tbody></table></div><div class="r136-meta" id="r136-t-sum"></div>';
+    document.getElementById('r136-t-body').innerHTML=h;
+    r136TargetsSum();
+  }
+  window.r136TargetsSum=function(){
+    var s=0; Array.prototype.forEach.call(document.querySelectorAll('#r136-t-body input[data-k="labour"]'),function(i){ s+=num(String(i.value).replace(/[^0-9.]/g,'')); });
+    var el=document.getElementById('r136-t-sum'); if(el) el.innerHTML='Total of SA labour targets: <b>'+rs(s)+'</b> · business labour target for '+esc(monName(TS.d.month))+': <b>'+rs(TS.d.monthLabourTarget)+'</b> (that one also counts the labour Hero pays on free services and warranty).';
+  };
+  window.r136TargetsSave=function(){
+    var d=TS.d, rows=[], miss=0;
+    d.sas.forEach(function(s,i){
+      var l=document.querySelector('#r136-t-body input[data-i="'+i+'"][data-k="labour"]'), p=document.querySelector('#r136-t-body input[data-i="'+i+'"][data-k="parts"]');
+      var lv=String(l.value||'').replace(/[^0-9.]/g,''), pv=String(p.value||'').replace(/[^0-9.]/g,'');
+      l.classList.toggle('miss', lv==='');
+      if(lv===''){ miss++; return; }
+      rows.push({empNo:s.empNo, labour:lv, parts:pv||'0'});
+    });
+    var m=document.getElementById('r136-t-msg');
+    if(miss){ m.className='r136-bad'; m.textContent='Labour target missing for '+miss+' SA'+(miss>1?'s':'')+' (type 0 if not working).'; return; }
+    var b=document.getElementById('r136-t-save'); b.disabled=true; m.className=''; m.textContent='Saving…';
+    sbRpc('hero_sa_targets_set',{p_month:d.month, p_rows:rows}).then(function(r){
+      b.disabled=false; m.className='r136-ok'; m.textContent='Saved ✓ ('+((r&&r.saved)||rows.length)+' SAs)';
+      TS.forced=false; setTimeout(function(){ r136TargetsClose(); try{ if(CR.data) r136CtlLoad(); }catch(e){} }, 900);
+    }).catch(function(e){ b.disabled=false; m.className='r136-bad'; m.textContent='Not saved: '+(e&&e.message||e); });
+  };
+  // the WM is held on the screen until every SA has a target for this month; a server or network
+  // failure never locks anyone out (Ravi 24-09: locks only when proven)
+  var lastDue=0;
+  function checkDue(){
+    if(!signedIn() || role()!=='wm' || Date.now()-lastDue<10*60*1000) return;
+    if(tov() && tov().style.display==='flex') return;
+    lastDue=Date.now();
+    sbRpc('hero_sa_targets_due',{}).then(function(d){ if(d && d.due){ TS.d=null; r136TargetsOpen(true); } }).catch(function(){ lastDue=0; });
+  }
+
+  /* ---------------------------------------------------------------- the SA's own card on Home */
+  var lastSa=0;
+  function saHost(){
+    var h=document.getElementById('r136-home');
+    if(!h){ var s=document.getElementById('home-stats'); if(!s||!s.parentNode) return null;
+      h=document.createElement('div'); h.id='r136-home'; s.parentNode.insertBefore(h, s.nextSibling); }
+    return h;
+  }
+  function saCard(force){
+    if(!signedIn() || role()!=='sa') return;
+    var v=document.getElementById('view-home'); if(!v || v.style.display==='none') return;
+    if(!force && Date.now()-lastSa<10*60*1000) return;
+    lastSa=Date.now();
+    var h=saHost(); if(!h) return;
+    var now=new Date(), from=ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+    Promise.all([sbRpc('hero_sa_board',{}), sbRpc('hero_daily_check',{p_from:from, p_to:ymd(now), p_ws:null, p_adv:null}).catch(function(){ return null; })]).then(function(a){
+      var b=a[0]||{}, c=a[1]||{}, s=(b.sas||[])[0];
+      if(!s){ h.innerHTML=''; return; }
+      var x='<div class="card" style="margin:10px 0"><div class="card-h">🎯 My month — '+esc(monName(b.month))+' <button class="navbtn" style="margin-left:auto" onclick="r136SaCard()">↻</button></div><div class="card-b">';
+      x+='<div class="r136-kpi"><span>Labour target <b>'+(s.labourTarget==null?'<span class="r136-bad">not set by WM yet</span>':rs(s.labourTarget))+'</b></span>'
+        +'<span>Labour billed <b>'+rs(s.labour)+'</b> '+(s.labourTarget==null?'':pctCell(s.labourPct))+'</span>'
+        +(s.needPerDay!=null?'<span>Need per day <b>'+rs(s.needPerDay)+'</b></span>':'')
+        +'<span>Parts billed <b>'+rs(s.parts)+'</b></span><span>Parts : Labour <b>'+ratio(s.parts,s.labour)+'</b> (goal 1 : 1)</span><span>Job cards <b>'+num(s.jcs)+'</b></span></div>';
+      x+='<div class="r136-meta">Billed up to '+esc(b.billedUpto||'—')+' · '+esc(b.note||'')+'</div>';
+      var rows=((c&&c.rows)||[]).filter(function(r){ return r.status==='BILLED'; })
+        .sort(function(p,q){ return Math.abs(num(q.gap))-Math.abs(num(p.gap)); }).slice(0,15);
+      x+='<div class="r136-h4">My estimates vs the bills — '+num(s.estimates)+' estimates, '+num(s.estBilled)+' billed · estimated '+rs(s.estRsBilled)+' · billed '+rs(s.billRs)+' · '+gapCell(s.billRs,s.estRsBilled)+'</div>';
+      if(rows.length){
+        x+='<div class="r136-scroll"><table class="r136-tbl"><thead><tr><th>Day</th><th>Vehicle</th><th>Service</th><th class="n">Estimated</th><th class="n">Billed</th><th class="n">Bill vs estimate</th><th>Labour estimated, not billed</th><th>Labour billed, not estimated</th><th>Parts billed, not estimated</th></tr></thead><tbody>';
+        rows.forEach(function(r){ x+='<tr><td>'+esc(String(r.day||'').slice(0,5))+'</td><td>'+esc(r.reg||'')+' <span style="color:#64748b;font-size:11px">'+esc(r.model||'')+'</span></td><td>'+esc(r.service||'')+'</td><td class="n">'+rs(r.estimated)+'</td><td class="n">'+rs(r.billed)+'</td><td class="n">'+gapCell(r.billed,r.estimated)+'</td><td>'+esc(r.labourMissing||'')+'</td><td>'+esc(r.labourExtra||'')+'</td><td>'+esc(r.partsExtra||'')+'</td></tr>'; });
+        x+='</tbody></table></div><div class="r136-meta">The 15 billed estimates furthest from their bill this month. Make the estimate the way Hero bills it — then estimate = bill.</div>';
+      } else x+='<div class="hint">None of your estimates this month has a Hero bill yet.</div>';
+      h.innerHTML=x+'</div></div>';
+    }).catch(function(){ lastSa=0; });
+  }
+  window.r136SaCard=function(){ saCard(true); };
+
+  /* ---------------------------------------------------------------- #control link (morning report) + timers */
+  function deepLink(){
+    if(location.hash!=='#control' || !signedIn()) return;
+    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
+    try{ openModule('control'); }catch(e){}
+  }
+  function tick(){ deepLink(); checkDue(); saCard(false); }
+  function start(){ setTimeout(tick, 3000); setInterval(tick, 5000); }
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible'){ lastDue=0; tick(); } });
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
 </script>
 </body></html>
