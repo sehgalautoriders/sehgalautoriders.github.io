@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R136-2026.10.02.1';
+window.HERO_BUILD = 'R136-2026.10.02.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -29506,10 +29506,16 @@ var ES_BODY=null;
      hero_sa_board (an SA's own month), hero_sa_targets_due / hero_sa_targets_set (the WM's target screen),
      hero_daily_check (now also answers an SA, for his own estimates only). Every rupee is before GST. -->
 <style>
-.r136-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+/* the app's global rule table{table-layout:fixed;max-width:100%} squeezed every column to the same width and the
+   text ran into the next column (Ravi 02-10-2026 'Check format also') - these tables size to their content and scroll */
+.r136-tbl{width:100%;min-width:max-content;max-width:none!important;table-layout:auto!important;border-collapse:collapse;font-size:12.5px}
+.r136-tbl th,.r136-tbl td{overflow-wrap:normal;word-break:normal}
 .r136-tbl th{text-align:left;font-weight:600;color:var(--steel);border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;background:#f8fafc}
 .r136-tbl td{border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;color:#0f172a}
-.r136-tbl .n{text-align:right;font-family:'Roboto Mono',monospace}
+.r136-tbl .n{text-align:right;font-variant-numeric:tabular-nums}
+.r136-tbl td .ws{display:block;color:#64748b;font-size:11px;line-height:1.2}
+.r136-btn{background:#fff;border:1px solid #0f766e;color:#0f766e;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+.r136-btn:hover{background:#f0fdfa}
 .r136-tbl tr.tot td{font-weight:700;background:#f8fafc}
 .r136-tbl tr.go{cursor:pointer}
 .r136-tbl tr.go:hover td{background:#f1f5f9}
@@ -29522,7 +29528,7 @@ var ES_BODY=null;
 .r136-pill{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;color:#0f172a}
 .r136-pill.on{background:#0f766e;border-color:#0f766e;color:#fff}
 .r136-kpi{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;color:#0f172a}
-.r136-kpi b{font-family:'Roboto Mono',monospace}
+.r136-kpi b{font-variant-numeric:tabular-nums}
 #r136-tov{position:fixed;inset:0;z-index:2147483000;background:#fff;display:none;flex-direction:column;color:#0f172a}
 #r136-tov .th{padding:14px 16px;border-bottom:1px solid var(--line)}
 #r136-tov .th b{font-size:16px}
@@ -29536,7 +29542,7 @@ var ES_BODY=null;
   <div class="tb" id="r136-t-body"></div>
   <div class="tf">
     <button class="btn" id="r136-t-save" style="width:auto;padding:10px 18px" onclick="r136TargetsSave()">Save targets</button>
-    <button class="navbtn" id="r136-t-close" onclick="r136TargetsClose()">Close</button>
+    <button class="r136-btn" id="r136-t-close" onclick="r136TargetsClose()">Close</button>
     <span id="r136-t-msg" style="font-size:12.5px"></span>
   </div>
 </div>
@@ -29566,7 +29572,7 @@ var ES_BODY=null;
     var T={lt:0,l:0,p:0,j:0,e:0,eb:0,er:0,br:0,w:0};
     sas.forEach(function(s){
       T.lt+=num(s.labourTarget); T.l+=num(s.labour); T.p+=num(s.parts); T.j+=num(s.jcs); T.e+=num(s.estimates); T.eb+=num(s.estBilled); T.er+=num(s.estRsBilled); T.br+=num(s.billRs); T.w+=num(s.within10);
-      h+='<tr><td>'+esc(s.name)+' <span style="color:#64748b;font-size:11px">'+esc(s.ws||'')+'</span></td>'
+      h+='<tr><td>'+esc(s.name)+'<span class="ws">'+esc(s.ws||'')+'</span></td>'
         +'<td class="n">'+(s.labourTarget==null?'<span class="r136-bad">not set</span>':rs(s.labourTarget))+'</td>'
         +'<td class="n">'+rs(s.labour)+'</td><td class="n">'+pctCell(s.labourPct)+'</td><td class="n">'+(s.needPerDay==null?'—':rs(s.needPerDay))+'</td>'
         +'<td class="n">'+rs(s.parts)+'</td><td class="n">'+ratio(s.parts,s.labour)+'</td><td class="n">'+num(s.jcs)+'</td>'
@@ -29574,7 +29580,7 @@ var ES_BODY=null;
         +'<td class="n">'+gapCell(s.billRs,s.estRsBilled)+'</td><td class="n">'+(num(s.estBilled)?num(s.within10)+' of '+num(s.estBilled):'—')+'</td></tr>';
     });
     if(withOthers && b.other && (num(b.other.labour)||num(b.other.parts))){
-      h+='<tr><td title="'+esc(b.other.who||'')+'">Not matched to an SA <span style="color:#64748b;font-size:11px">'+esc(b.other.who||'')+'</span></td><td></td><td class="n">'+rs(b.other.labour)+'</td><td></td><td></td><td class="n">'+rs(b.other.parts)+'</td><td class="n">'+ratio(b.other.parts,b.other.labour)+'</td><td class="n">'+num(b.other.jcs)+'</td><td colspan="5"></td></tr>';
+      h+='<tr><td title="'+esc(b.other.who||'')+'">Not matched to an SA<span class="ws">'+esc(b.other.who||'')+'</span></td><td></td><td class="n">'+rs(b.other.labour)+'</td><td></td><td></td><td class="n">'+rs(b.other.parts)+'</td><td class="n">'+ratio(b.other.parts,b.other.labour)+'</td><td class="n">'+num(b.other.jcs)+'</td><td colspan="5"></td></tr>';
     }
     if(withOthers && b.total){
       h+='<tr class="tot"><td>Total</td><td class="n">'+rs(T.lt)+'</td><td class="n">'+rs(b.total.labour)+'</td><td class="n">'+(T.lt?pctCell(Math.round(100*num(b.total.labour)/T.lt)):'—')+'</td><td></td><td class="n">'+rs(b.total.parts)+'</td><td class="n">'+ratio(b.total.parts,b.total.labour)+'</td><td class="n">'+num(b.total.jcs)+'</td>'
@@ -29595,7 +29601,7 @@ var ES_BODY=null;
     var h=crHost(); if(!h || !signedIn()) return;
     if(!CR.data) h.innerHTML='<div class="card"><div class="card-b"><div class="hint">Loading the management summary…</div></div></div>';
     sbRpc('hero_control_room',{p_month:CR.month}).then(function(d){ CR.data=d; crPaint(); })
-      .catch(function(e){ h.innerHTML='<div class="card"><div class="card-b"><div class="hint" style="color:var(--signal-d)">Management summary not loaded: '+esc(e&&e.message||e)+' <button class="navbtn" onclick="r136CtlLoad()">↻ Retry</button></div></div></div>'; });
+      .catch(function(e){ h.innerHTML='<div class="card"><div class="card-b"><div class="hint" style="color:var(--signal-d)">Management summary not loaded: '+esc(e&&e.message||e)+' <button class="r136-btn" onclick="r136CtlLoad()">↻ Retry</button></div></div></div>'; });
   };
   window.r136CtlMonth=function(off){ CR.month=off?monthKey(off):null; CR.data=null; r136CtlLoad(); };
   window.r136CopyMorning=function(btn){
@@ -29608,14 +29614,14 @@ var ES_BODY=null;
     var b=d.board||{}, f=d.fresh||{}, cur=!CR.month;
     var x='<div class="card"><div class="card-h">📊 Management summary — '+esc(monName(b.month))
       +' <span class="r136-pills" style="margin-left:auto"><span class="r136-pill'+(cur?' on':'')+'" onclick="r136CtlMonth(0)">This month</span><span class="r136-pill'+(!cur?' on':'')+'" onclick="r136CtlMonth(-1)">Last month</span>'
-      +'<button class="navbtn" onclick="r136CtlLoad()">↻</button></span></div><div class="card-b">';
+      +'<button class="r136-btn" onclick="r136CtlLoad()">↻</button></span></div><div class="card-b">';
     x+='<div class="r136-meta">From Hero BI, loaded every morning — bills up to <b>'+esc(f.bills||'—')+'</b> · holdup file <b>'+esc(f.holdup||'—')+'</b> · job cards <b>'+esc(f.jobcards||'—')+'</b> · last estimate <b>'+esc(f.estimates||'—')+'</b> · estimate rules re-learnt from the bills <b>'+esc(f.billTemplate||'—')+'</b></div>';
 
     // holdup, every location this login covers
     var H=d.holdup||[], tot={open:0,over5:0,unanswered:0,parts_no_info:0,oldest:0};
     x+='<div class="r136-h4">🚧 Holdup — vehicles not delivered</div><div class="r136-scroll"><table class="r136-tbl"><thead><tr><th>Location</th><th class="n">Open in DMS</th><th class="n">Over 5 days</th><th class="n">No answer today</th><th class="n">Waiting for parts — no part no. / ETA</th><th class="n">Oldest (days)</th></tr></thead><tbody>';
     H.forEach(function(r){ tot.open+=num(r.open); tot.over5+=num(r.over5); tot.unanswered+=num(r.unanswered); tot.parts_no_info+=num(r.parts_no_info); tot.oldest=Math.max(tot.oldest,num(r.oldest));
-      x+='<tr class="go" onclick="openModule(\'holdup\')"><td>'+esc(DN[r.dealer]||r.dealer)+' <span style="color:#64748b;font-size:11px">'+esc(r.dealer)+'</span></td><td class="n">'+num(r.open)+'</td><td class="n'+(num(r.over5)?' r136-amb':'')+'">'+num(r.over5)+'</td><td class="n'+(num(r.unanswered)?' r136-bad':'')+'">'+num(r.unanswered)+'</td><td class="n'+(num(r.parts_no_info)?' r136-bad':'')+'">'+num(r.parts_no_info)+'</td><td class="n">'+(r.oldest==null?'—':num(r.oldest))+'</td></tr>'; });
+      x+='<tr class="go" onclick="openModule(\'holdup\')"><td>'+esc(DN[r.dealer]||r.dealer)+'<span class="ws">'+esc(r.dealer)+'</span></td><td class="n">'+num(r.open)+'</td><td class="n'+(num(r.over5)?' r136-amb':'')+'">'+num(r.over5)+'</td><td class="n'+(num(r.unanswered)?' r136-bad':'')+'">'+num(r.unanswered)+'</td><td class="n'+(num(r.parts_no_info)?' r136-bad':'')+'">'+num(r.parts_no_info)+'</td><td class="n">'+(r.oldest==null?'—':num(r.oldest))+'</td></tr>'; });
     x+='<tr class="tot"><td>Total</td><td class="n">'+tot.open+'</td><td class="n">'+tot.over5+'</td><td class="n">'+tot.unanswered+'</td><td class="n">'+tot.parts_no_info+'</td><td class="n">'+tot.oldest+'</td></tr></tbody></table></div>';
 
     // SAs
@@ -29625,14 +29631,14 @@ var ES_BODY=null;
       +saTable(b,true)
       +'<div class="r136-meta">'+esc(b.note||'')+' “Estimated (billed ones)” = the estimates whose job card is billed, so the two columns compare like with like.</div>'
       +'<div class="r136-pills" style="margin-bottom:12px">'
-      +(isMgr()?'<button class="navbtn" onclick="r136TargetsOpen(false)">🎯 Set SA targets</button>':'')
-      +'<button class="navbtn" onclick="r136OpenCheck()">🔍 Estimate vs bill — every vehicle, labour and parts codes</button></div>';
+      +(isMgr()?'<button class="r136-btn" onclick="r136TargetsOpen(false)">🎯 Set SA targets</button>':'')
+      +'<button class="r136-btn" onclick="r136OpenCheck()">🔍 Estimate vs bill — every vehicle, labour and parts codes</button></div>';
 
     // morning report
     var ml=d.morningLast||[];
     var sent=ml.length?ml.map(function(m){ return esc(m.name)+' '+(m.windowClosed?'<span class="r136-bad">not received (WhatsApp window closed)</span>':(m.ok?'<span class="r136-ok">sent</span>':'<span class="r136-bad">failed</span>'))+' '+esc(m.at); }).join(' · '):'not sent yet today';
     x+='<div class="r136-h4">📨 Morning report — PingMate WhatsApp to the WM, GM and CEO at 09:00</div><div class="r136-meta">Last sends: '+sent+'</div>'
-      +'<div class="r136-pre">'+esc(d.morning||'')+'</div><div style="margin-top:6px"><button class="navbtn" onclick="r136CopyMorning(this)">📋 Copy</button></div>';
+      +'<div class="r136-pre">'+esc(d.morning||'')+'</div><div style="margin-top:6px"><button class="r136-btn" onclick="r136CopyMorning(this)">📋 Copy</button></div>';
     x+='</div></div>';
     h.innerHTML=x;
   }
@@ -29714,7 +29720,7 @@ var ES_BODY=null;
     Promise.all([sbRpc('hero_sa_board',{}), sbRpc('hero_daily_check',{p_from:from, p_to:ymd(now), p_ws:null, p_adv:null}).catch(function(){ return null; })]).then(function(a){
       var b=a[0]||{}, c=a[1]||{}, s=(b.sas||[])[0];
       if(!s){ h.innerHTML=''; return; }
-      var x='<div class="card" style="margin:10px 0"><div class="card-h">🎯 My month — '+esc(monName(b.month))+' <button class="navbtn" style="margin-left:auto" onclick="r136SaCard()">↻</button></div><div class="card-b">';
+      var x='<div class="card" style="margin:10px 0"><div class="card-h">🎯 My month — '+esc(monName(b.month))+' <button class="r136-btn" style="margin-left:auto" onclick="r136SaCard()">↻</button></div><div class="card-b">';
       x+='<div class="r136-kpi"><span>Labour target <b>'+(s.labourTarget==null?'<span class="r136-bad">not set by WM yet</span>':rs(s.labourTarget))+'</b></span>'
         +'<span>Labour billed <b>'+rs(s.labour)+'</b> '+(s.labourTarget==null?'':pctCell(s.labourPct))+'</span>'
         +(s.needPerDay!=null?'<span>Need per day <b>'+rs(s.needPerDay)+'</b></span>':'')
@@ -29725,7 +29731,7 @@ var ES_BODY=null;
       x+='<div class="r136-h4">My estimates vs the bills — '+num(s.estimates)+' estimates, '+num(s.estBilled)+' billed · estimated '+rs(s.estRsBilled)+' · billed '+rs(s.billRs)+' · '+gapCell(s.billRs,s.estRsBilled)+'</div>';
       if(rows.length){
         x+='<div class="r136-scroll"><table class="r136-tbl"><thead><tr><th>Day</th><th>Vehicle</th><th>Service</th><th class="n">Estimated</th><th class="n">Billed</th><th class="n">Bill vs estimate</th><th>Labour estimated, not billed</th><th>Labour billed, not estimated</th><th>Parts billed, not estimated</th></tr></thead><tbody>';
-        rows.forEach(function(r){ x+='<tr><td>'+esc(String(r.day||'').slice(0,5))+'</td><td>'+esc(r.reg||'')+' <span style="color:#64748b;font-size:11px">'+esc(r.model||'')+'</span></td><td>'+esc(r.service||'')+'</td><td class="n">'+rs(r.estimated)+'</td><td class="n">'+rs(r.billed)+'</td><td class="n">'+gapCell(r.billed,r.estimated)+'</td><td>'+esc(r.labourMissing||'')+'</td><td>'+esc(r.labourExtra||'')+'</td><td>'+esc(r.partsExtra||'')+'</td></tr>'; });
+        rows.forEach(function(r){ x+='<tr><td>'+esc(String(r.day||'').slice(0,5))+'</td><td>'+esc(r.reg||'')+'<span class="ws">'+esc(r.model||'')+'</span></td><td>'+esc(r.service||'')+'</td><td class="n">'+rs(r.estimated)+'</td><td class="n">'+rs(r.billed)+'</td><td class="n">'+gapCell(r.billed,r.estimated)+'</td><td>'+esc(r.labourMissing||'')+'</td><td>'+esc(r.labourExtra||'')+'</td><td>'+esc(r.partsExtra||'')+'</td></tr>'; });
         x+='</tbody></table></div><div class="r136-meta">The 15 billed estimates furthest from their bill this month. Make the estimate the way Hero bills it — then estimate = bill.</div>';
       } else x+='<div class="hint">None of your estimates this month has a Hero bill yet.</div>';
       h.innerHTML=x+'</div></div>';
