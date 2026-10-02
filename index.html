@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R136-2026.10.02.2';
+window.HERO_BUILD = 'R136-2026.10.02.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28974,7 +28974,7 @@ function tgCheckLoad_(){
 }
 function tgCheckHtml_(d){
   var s=d.summary||{}, up=d.upto||{}, R=tgR_, N=tgN_;
-  var gap=function(b,e){ if(b==null||e==null) return '—'; var g=b-e; return '<span style="color:'+(g>=0?'#15803d':'#b91c1c')+';font-weight:700">'+(g>=0?'+':'')+R(g).replace('₹','₹')+'</span>'; };
+  var gap=function(b,e){ if(b==null||e==null) return '—'; var g=b-e; return '<span style="color:'+(g>=0?'#15803d':'#b91c1c')+';font-weight:700">'+(g>=0?'+':'−')+R(Math.abs(g))+'</span>';   /* R136: was ₹-4,190 */ };
   var h='<div class="tg-card"><div class="tg-k">Estimates '+tgEsc_(d.from)+(d.to!==d.from?' – '+tgEsc_(d.to):'')+(TG.ws?' · '+TG.ws:' · all 4 workshops')+(d.advisor?' · '+tgEsc_(d.advisor):'')+'</div>'
     +'<div class="tg-split" style="grid-template-columns:repeat(5,1fr)">'
     +'<div><span>Estimates</span><b>'+N(s.estimates)+'</b></div>'
@@ -28989,38 +28989,38 @@ function tgCheckHtml_(d){
     +'<div class="tg-note">'+tgEsc_(d.note||'')+' Data up to: job cards '+tgEsc_(up.jc||'—')+' · bills '+tgEsc_(up.bills||'—')+' · estimates '+tgEsc_(up.estimates||'—')+'.</div></div>';
   /* advisor-wise */
   var A=d.advisors||[];
-  h+='<div class="tg-card"><div class="tg-k">Advisor-wise'+(TG_CHK.adv?' · <button class="tg-pill" onclick="tgChkSet_(\'adv\',\'\')">all advisors</button>':'')+'</div><table class="tg-t"><thead><tr><th>Advisor</th><th>Estimates</th><th>Billed</th><th>Not billed</th><th>Estimated</th><th>Billed ₹</th><th>Gap</th><th>Labour est → bill</th><th>Parts est → bill</th><th>Within 10%</th></tr></thead><tbody>'
+  h+='<div class="tg-card"><div class="tg-k">Advisor-wise'+(TG_CHK.adv?' · <button class="tg-pill" onclick="tgChkSet_(\'adv\',\'\')">all advisors</button>':'')+'</div><div class="tg-box"><table class="tg-t"><thead><tr><th>Advisor</th><th>Estimates</th><th>Billed</th><th>Not billed</th><th>Estimated</th><th>Billed ₹</th><th>Gap</th><th>Labour est → bill</th><th>Parts est → bill</th><th>Within 10%</th></tr></thead><tbody>'
     +(A.length?A.map(function(a){ var nb=(a.open_jc||0)+(a.closed_no_bill||0)+(a.no_jc||0);
       return '<tr><td><a href="#" onclick="tgChkSet_(\'adv\',\''+tgEsc_(a.advisor).replace(/'/g,"\\'")+'\');return false" style="font-weight:700">'+tgEsc_(a.advisor)+'</a></td><td>'+N(a.estimates)+'</td><td style="color:#15803d;font-weight:700">'+N(a.billed)+'</td>'
         +'<td style="color:#b91c1c">'+N(nb)+'<div class="tg-sub">'+(a.open_jc?'open '+a.open_jc+' · ':'')+(a.closed_no_bill?'closed '+a.closed_no_bill+' · ':'')+(a.no_jc?'no JC '+a.no_jc:'')+'</div></td>'
         +'<td>'+R(a.est_rs)+'<div class="tg-sub">billed ones '+R(a.est_rs_billed)+'</div></td><td>'+R(a.bill_rs)+'</td><td>'+gap(a.bill_rs,a.est_rs_billed)+'</td>'
         +'<td>'+R(a.est_lab)+' → '+R(a.bill_lab)+'</td><td>'+R(a.est_par)+' → '+R(a.bill_par)+'</td><td>'+(a.within10==null?'—':a.within10+'%')+'</td></tr>'; }).join(''):'<tr><td colspan="10" class="tg-sub">No estimates in this range.</td></tr>')
-    +'</tbody></table></div>';
+    +'</tbody></table></div></div>';
   /* code gaps */
   var codes=function(title,L,isPart){
     var rows=(L||[]).filter(function(x){ return (x.est_only||0)+(x.bill_only||0)>0; });
     var hh='<div class="tg-card"><div class="tg-k">'+title+'</div><div class="tg-sub">Over the billed estimates: how many estimates carried the '+(isPart?'part':'labour code')+' and how many bills did. "Estimated only" = on the estimate, not on the bill · "Billed only" = on the bill, not on the estimate.</div>'
-      +'<table class="tg-t"><thead><tr><th>'+(isPart?'Part no.':'Code')+'</th><th>Name</th><th>Estimated</th><th>Billed</th><th>Estimated only</th><th>Billed only</th><th>Est ₹</th><th>Bill ₹</th></tr></thead><tbody>'
+      +'<div class="tg-box"><table class="tg-t"><thead><tr><th>'+(isPart?'Part no.':'Code')+'</th><th>Name</th><th>Estimated</th><th>Billed</th><th>Estimated only</th><th>Billed only</th><th>Est ₹</th><th>Bill ₹</th></tr></thead><tbody>'
       +(rows.length?rows.map(function(x){ return '<tr><td style="font-family:Roboto Mono,monospace">'+tgEsc_(x.code)+'</td><td>'+tgEsc_(String(x.name||'').slice(0,48))+'</td><td>'+N(x.est_n)+'</td><td>'+N(x.bill_n)+'</td>'
         +'<td style="color:#b91c1c;font-weight:700">'+(x.est_only||'')+'</td><td style="color:#1d4ed8;font-weight:700">'+(x.bill_only||'')+'</td><td>'+R(x.est_rs)+'</td><td>'+R(x.bill_rs)+'</td></tr>'; }).join(''):'<tr><td colspan="8" class="tg-sub">No gaps - every '+(isPart?'part':'code')+' estimated was billed and nothing extra was billed.</td></tr>')
-      +'</tbody></table></div>';
+      +'</tbody></table></div></div>';
     return hh;
   };
   h+=codes('Labour code gaps', d.labour, false)+codes('Parts code gaps', d.parts, true);
   /* billed with no estimate */
   var NE=d.noEstimate||[];
-  h+='<div class="tg-card"><div class="tg-k">Billed with no estimate · by DMS supervisor</div><div class="tg-sub">Job cards opened in the range whose vehicle had no estimate in the app around that time.</div><table class="tg-t"><thead><tr><th>Workshop</th><th>Supervisor (DMS)</th><th>Bills</th><th>Billed ₹</th><th>Vehicles</th></tr></thead><tbody>'
+  h+='<div class="tg-card"><div class="tg-k">Billed with no estimate · by DMS supervisor</div><div class="tg-sub">Job cards opened in the range whose vehicle had no estimate in the app around that time.</div><div class="tg-box"><table class="tg-t"><thead><tr><th>Workshop</th><th>Supervisor (DMS)</th><th>Bills</th><th>Billed ₹</th><th>Vehicles</th></tr></thead><tbody>'
     +(NE.length?NE.map(function(x){ return '<tr><td>'+tgEsc_(x.dealer_code)+'</td><td>'+tgEsc_(x.supervisor)+'</td><td style="font-weight:700">'+N(x.bills)+'</td><td>'+R(x.bill_rs)+'</td><td class="tg-sub">'+tgEsc_(String(x.regs||'').slice(0,160))+'</td></tr>'; }).join(''):'<tr><td colspan="5" class="tg-sub">Every bill had an estimate.</td></tr>')
-    +'</tbody></table></div>';
+    +'</tbody></table></div></div>';
   /* every estimate */
   var rows=d.rows||[], COL={'BILLED':'#15803d','JOB CARD OPEN - NOT BILLED':'#b45309','CLOSED IN DMS - NO BILL YET':'#b45309','NO JOB CARD':'#b91c1c'};
-  h+='<div class="tg-card"><div class="tg-k">Every estimate · '+rows.length+(rows.length>=600?' (first 600)':'')+'</div><div style="overflow:auto;max-height:70vh"><table class="tg-t"><thead><tr><th>Day</th><th>Advisor</th><th>Vehicle</th><th>Service</th><th>Estimate</th><th>Bill</th><th>Gap</th><th>Status</th><th>Labour: estimated only / billed only</th><th>Parts: estimated only / billed only</th></tr></thead><tbody>'
+  h+='<div class="tg-card"><div class="tg-k">Every estimate · '+rows.length+(rows.length>=600?' (first 600)':'')+'</div><div style="overflow:auto;max-height:70vh"><div class="tg-box"><table class="tg-t"><thead><tr><th>Day</th><th>Advisor</th><th>Vehicle</th><th>Service</th><th>Estimate</th><th>Bill</th><th>Gap</th><th>Status</th><th>Labour: estimated only / billed only</th><th>Parts: estimated only / billed only</th></tr></thead><tbody>'
     +rows.map(function(x){ return '<tr><td style="white-space:nowrap">'+tgEsc_(x.day)+' '+tgEsc_(x.time)+'</td><td>'+tgEsc_(x.advisor)+'</td><td><b>'+tgEsc_(x.reg)+'</b><div class="tg-sub">'+tgEsc_(x.model)+' · '+tgEsc_(x.jcNo||'no JC')+(x.supervisor?' · '+tgEsc_(x.supervisor):'')+'</div></td><td>'+tgEsc_(x.service)+'</td>'
       +'<td>'+R(x.estimated)+'<div class="tg-sub">L '+R(x.estLabour)+' · P '+R(x.estParts)+'</div></td><td>'+(x.billed==null?'—':R(x.billed)+'<div class="tg-sub">L '+R(x.billLabour)+' · P '+R(x.billParts)+' · '+tgEsc_(x.billDate||'')+'</div>')+'</td>'
       +'<td>'+(x.gap==null?'—':gap(x.billed,x.estimated)+(x.gapPct!=null?'<div class="tg-sub">'+x.gapPct+'%</div>':''))+'</td><td style="color:'+(COL[x.status]||'#171717')+';font-weight:700;white-space:nowrap">'+tgEsc_(x.status)+'</td>'
       +'<td class="tg-sub"><span style="color:#b91c1c">'+tgEsc_(x.labourMissing||'')+'</span>'+(x.labourExtra?' / <span style="color:#1d4ed8">'+tgEsc_(x.labourExtra)+'</span>':'')+'</td>'
       +'<td class="tg-sub"><span style="color:#b91c1c">'+tgEsc_(x.partsMissing||'')+'</span>'+(x.partsExtra?' / <span style="color:#1d4ed8">'+tgEsc_(x.partsExtra)+'</span>':'')+'</td></tr>'; }).join('')
-    +'</tbody></table></div></div>';
+    +'</tbody></table></div></div></div>';
   return h;
 }
 function tgRunNote_(m){ return (m===TG.cur && TG.day)?'<div class="tg-sub">1 – '+TG.day+' only</div>':''; }
@@ -29508,6 +29508,11 @@ var ES_BODY=null;
 <style>
 /* the app's global rule table{table-layout:fixed;max-width:100%} squeezed every column to the same width and the
    text ran into the next column (Ravi 02-10-2026 'Check format also') - these tables size to their content and scroll */
+/* R136 (Ravi 02-10-2026 'Check format also'): each Daily check list scrolls inside its own box with its headings
+   kept on top, instead of one page hundreds of rows long */
+.tg-box{max-height:440px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px}
+.tg-box table.tg-t{margin:0}
+.tg-box table.tg-t thead th{position:sticky;top:0;background:#f8fafc;z-index:1}
 .r136-tbl{width:100%;min-width:max-content;max-width:none!important;table-layout:auto!important;border-collapse:collapse;font-size:12.5px}
 .r136-tbl th,.r136-tbl td{overflow-wrap:normal;word-break:normal}
 .r136-tbl th{text-align:left;font-weight:600;color:var(--steel);border-bottom:1px solid var(--line);padding:5px 6px;white-space:nowrap;background:#f8fafc}
