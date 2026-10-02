@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R134-2026.10.01.1';
+window.HERO_BUILD = 'R135-2026.10.02.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -29200,7 +29200,11 @@ function r127ChaseExtra_(){
       +(short?('<span class="bad">short '+inr(short)+', needs '+inr(Math.ceil(short/left))+' a day for '+left+' day'+(left===1?'':'s')+'</span>'):'<span class="ok">target achieved</span>'));
   }).catch(function(){ lines.push('Labour|not loaded'); });
   var p3=new Promise(function(res){ try{ jgetRaw('mp_status',{},function(s){
-    var d=String((s&&s.stockDate)||''); var fresh=d && (d.indexOf(ymd)===0 || d.indexOf(ymd.split('-').reverse().join('-'))===0);
+    /* R135: hero_mp_status says "02-Oct-2026" (DD-Mon-YYYY) - that spelling was never checked, so a stock file loaded
+       this morning showed as NOT uploaded today (Ravi 02-10-2026 "Stock file is not updated today") */
+    var d=String((s&&s.stockDate)||'');
+    var dmon=('0'+today.getDate()).slice(-2)+'-'+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][today.getMonth()]+'-'+today.getFullYear();
+    var fresh=d && (d.indexOf(ymd)===0 || d.indexOf(ymd.split('-').reverse().join('-'))===0 || d.toLowerCase().indexOf(dmon.toLowerCase())===0);
     lines.push('Stock file|'+(s&&s.ok!==false?(fresh?'<span class="ok">today’s is in</span>':'<span class="bad">NOT uploaded today</span> (stock date '+tgEsc_(d||'—')+')'):'<span class="bad">none loaded</span>'));
     res(); },20000); }catch(e){ res(); } });
   var p4=new Promise(function(res){
@@ -29211,11 +29215,39 @@ function r127ChaseExtra_(){
   Promise.all([p1,p2,p3,p4]).then(function(){
     var order=['Labour','Parts in stock','Stock file','Holdup file'];
     lines.sort(function(a,b){ var f=function(x){ var k=x.split('|')[0]; for(var i=0;i<order.length;i++) if(k.indexOf(order[i])===0) return i; return 9; }; return f(a)-f(b); });
-    var wa=encodeURIComponent('AVNI chase '+ymd+':\n'+lines.map(function(l){ var p=l.split('|'); return '• '+p[0]+': '+String(p.slice(1).join('|')).replace(/<[^>]+>/g,''); }).join('\n'));
+    /* R135 (Ravi 02-10-2026 "Send this on whatsapp was to be made directly through pingmate and not manually"): the
+       button sends one chase round NOW through the server (hero_chase_send_now -> edge function holdup-chase -> PingMate)
+       to the WM, GM and Parts coordinator, with these lines under every message. GM / CEO only. */
+    window.AVASK_NOTE='*Today ('+ymd.split('-').reverse().join('-')+')*\n'+lines.map(function(l){ var p=l.split('|'); return '• '+p[0]+': '+String(p.slice(1).join('|')).replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim(); }).join('\n');
+    var canSend=false; try{ var rl=String((USER&&(USER.role||USER.Role))||'').toLowerCase(); var t=(String((USER&&USER.designation)||'')+' '+String((USER&&USER.level)||'')).toUpperCase();
+      canSend=(rl==='gm'||rl==='ceo'||/\bCEO\d*\b|SUPERADMIN|\bADMIN\b|DEALERADMIN|\bGM\d*\b|GENERAL MANAGER/.test(t)); }catch(e){}
     el.innerHTML='<table>'+lines.map(function(l){ var p=l.split('|'); return '<tr><td class="k">'+p[0]+'</td><td>'+p.slice(1).join('|')+'</td></tr>'; }).join('')+'</table>'
-      +'<div style="margin-top:4px"><a href="https://wa.me/?text='+wa+'" target="_blank" rel="noopener" style="color:#15803d;font-weight:700">🟢 Send this on WhatsApp</a></div>';
+      +(canSend?'<div style="margin-top:4px"><button type="button" id="avask-send" onclick="avaskSendNow()" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">🟢 Send this on WhatsApp now</button> <span id="avask-send-r" style="font-size:12px;color:#6B6B6B">to the WM, GM and Parts coordinator through PingMate</span></div>':'');
   });
 }
+window.avaskSendNow=async function(){
+  var b=document.getElementById('avask-send'), r=document.getElementById('avask-send-r'); if(!b) return;
+  b.disabled=true; b.textContent='Sending…'; r.textContent='';
+  try{
+    var d=await sbRpc('hero_chase_send_now',{p_note:String(window.AVASK_NOTE||'')});
+    if(!d||d.ok===false) throw new Error((d&&d.error)||'not sent');
+    r.innerHTML='Sent to the server'+(d.live?'':' <span class="bad">(TEST mode - goes to the test number only)</span>')+' - waiting for WhatsApp…';
+    var round=d.round, tries=0;
+    var poll=async function(){
+      tries++;
+      var x=null; try{ x=await sbRpc('hero_chase_round_result',{p_round:round}); }catch(e){}
+      var sent=(x&&x.sent)||[];
+      if(sent.length){
+        r.innerHTML=sent.map(function(s){ var who=tgEsc_(s.name)+' ('+tgEsc_(String(s.role||'').toUpperCase())+', '+s.vehicles+' vehicle'+(s.vehicles===1?'':'s')+')';
+          return s.ok&&!s.window_closed?'<span class="ok">✓ '+who+'</span>':s.window_closed?'<span class="bad">✗ '+who+' - WhatsApp window closed, they must message us first</span>':'<span class="bad">✗ '+who+' - not sent</span>'; }).join(' · ');
+        b.textContent='Sent ✓';
+        return;
+      }
+      if(tries<12){ setTimeout(poll,2500); } else { r.innerHTML='<span class="bad">no result in 30 s - see Holdup › AVNI asks board</span>'; b.disabled=false; b.textContent='🟢 Send this on WhatsApp now'; }
+    };
+    setTimeout(poll,3000);
+  }catch(e){ r.innerHTML='<span class="bad">'+tgEsc_(String(e&&e.message||e))+'</span>'; b.disabled=false; b.textContent='🟢 Send this on WhatsApp now'; }
+};
 /* ---------------------------------------------------- bodyshop flag
    Ravi 29-09-2026: "From the images we have to find out whether the vehicle is due
    for bodyshop repairs also and if it can be done... Flag all such vehicles. You
