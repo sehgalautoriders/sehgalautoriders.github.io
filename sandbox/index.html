@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R136-2026.10.02.3';
+window.HERO_BUILD = 'R137-2026.10.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2697,6 +2697,7 @@ const I5_VIEWS=[
   {id:'week',     lbl:'2–7 days',    src:'day',   k:'week'},
   {id:'fortnight',lbl:'8–15 days',   src:'day',   k:'fortnight'},
   {id:'queue',    lbl:'My 150',      src:'day',   k:'remaining'},
+  {id:'lapsed',   lbl:'Expired ≤30 days', src:'day', k:'lapsed'},
   {sep:true},
   {id:'callback', lbl:'Call-backs due', src:'month', k:'month_callbacks', fire:true},
   {id:'open',     lbl:'Month · still open', src:'month', k:'month_open'},
@@ -2704,6 +2705,7 @@ const I5_VIEWS=[
   {id:'won',      lbl:'Renewed',     src:'month', k:'month_won'},
   {id:'all',      lbl:'Everyone I spoke to', src:'month', k:'month_worked'},
   {sep:true},
+  {id:'renewed',  lbl:'Renewed customers', src:'renewed', k:'renewed_month'},
   {id:'book',     lbl:'Search all customers', src:'book'}
 ];
 function i5View(id){ for(var i=0;i<I5_VIEWS.length;i++){ if(I5_VIEWS[i].id===id) return I5_VIEWS[i]; } return I5_VIEWS[0]; }
@@ -2869,7 +2871,7 @@ function i5WorkDate(){ return i5IstPlus(0); }  /* IST, the day the server alloca
 function i5DayKey(){ return 'day|'+i5Me()+'|'+i5WorkDate(); }
 function i5CacheKey(){ return i5Me()+'|'+INS5.view+'|'+(INS5.q.trim().toUpperCase())+'|'+i5WorkDate(); }
 function i5Cap(){ return i5View(INS5.view).src==='day'?I5_CAP_DAY:I5_CAP_MONTH; }
-const I5_BUCKET={today:1,tomorrow:2,week:3,fortnight:4};
+const I5_BUCKET={today:1,tomorrow:2,week:3,fortnight:4,lapsed:5};
 function i5DaySlice(view,q){
   var b=I5_BUCKET[view]||0, out=INS5.day.rows||[];
   if(b) out=out.filter(function(r){ return Number(r.bucket)===b; });
@@ -3041,6 +3043,8 @@ function i5PaintHint(){
   var v=i5View(INS5.view), h='';
   if(v.id==='today')      h='⚡ Same-day expiry converts the most — clear this list first. Every row here loses cover tonight.';
   else if(v.id==='callback') h='⏰ She promised to call these back. A kept call-back is the cheapest renewal there is.';
+  else if(v.id==='lapsed') h='⌛ Cover already ended, up to 30 days ago, and no renewal has reached us yet. Still worth a call.';
+  else if(v.src==='renewed') h='✅ Renewed this month — from Hero policy data and from your own “Renewed”. They are off the pending list; “called by us” shows who handled them.';
   else if(v.src==='month') h='📅 Everyone you have spoken to since '+i5Date((INS5.counts||{}).month_from)+'. They stay here, and stay convertible, all month.';
   else if(v.id==='book')  h='🔎 The whole customer book. Type at least 3 letters of a name, registration, mobile or chassis.';
   if(!h){ el.style.display='none'; return; }
@@ -3126,6 +3130,9 @@ function i5PaintCachedThenLoad(){
 function i5Fetch(v,q){
   if(v.src==='day')   return sbRpc('insurance_my_queue',{p_scope:(q?'search':v.id), p_q:q});
   if(v.src==='month') return sbRpc('insurance_my_month',{p_scope:(q?'search':v.id), p_q:q});
+  /* R137: renewed customers live apart from the pending calls - Hero policy
+     data and the SMRE's own "Renewed", with who handled each one. */
+  if(v.src==='renewed') return sbRpc('insurance_renewed_list',{p_scope:(q?'search':'month'), p_q:q});
   return q?sbRpc('insurance_search_all',{p_q:q}):Promise.resolve([]);
 }
 function i5Load(){
@@ -3359,6 +3366,12 @@ function i5OverviewTab(r,mob){
    +'<div class="i5-h">This renewal</div>'
    +'<div class="i5-kv"><div>Expires</div><div><b>'+i5Date(r.expiry)+'</b> '
      +(r.days_left==null?'':('('+(r.days_left<0?(Math.abs(r.days_left)+' days ago'):(r.days_left===0?'today':r.days_left+' days'))+')'))+'</div></div>'
+   +(d.expiry_basis&&d.expiry_basis.label?kv('Date comes from',d.expiry_basis.label
+       +(d.expiry_basis.from_date?(' · '+i5Date(d.expiry_basis.from_date)):'')):'')
+   +(d.renewal?('<div class="i5-kv"><div>Renewed</div><div><b>'+i5Date(d.renewal.renewed_at)+'</b>'
+       +(d.renewal.policy_no?(' · '+i5Esc(d.renewal.policy_no)):'')
+       +(d.renewal.new_expiry?(' · new expiry '+i5Date(d.renewal.new_expiry)):' · new expiry awaited')+'</div></div>'):'')
+   +(r.why?kv('Why on this list',r.why):'')
    +kv('Registration',r.reg_no,true)
    +kv('Model',r.model)
    +kv('Chassis',r.chassis,true)
@@ -3373,8 +3386,8 @@ function i5OverviewTab(r,mob){
    +kv('Loyalty',b.loyalty)
    +kv('Bought on',b.date_of_sale?i5Date(b.date_of_sale):'')
    +'<div class="i5-h">Where this stands</div>'
-   +'<div class="i5-kv"><div>Calls so far</div><div>'+(r.calls||0)
-     +(r.owner_name?(' · '+i5Esc(r.owner_name)):'')+'</div></div>'
+   +'<div class="i5-kv"><div>Calls so far</div><div>'+(r.calls||0)+'</div></div>'
+   +kv('Handled by',r.owner_name||(r.calls?'':'nobody yet'))
    +'<div class="i5-kv"><div>Last outcome</div><div>'+i5Stage(r).t
      +(r.last_call?(' · '+i5DateTime(r.last_call)):'')+'</div></div>'
    +'<div class="i5-kv"><div>Premium quoted</div><div>'+i5Rs(r.premium_quoted)+'</div></div>'
