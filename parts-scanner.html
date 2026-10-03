@@ -743,8 +743,12 @@ async function refreshLog() {
   const { data } = await q.order('scanned_at', { ascending: false }).limit(200)
   const rows = data || []
   const live = rows.filter((r) => !r.removed_at)
-  $('nToday').textContent = live.reduce((s, r) => s + (r.qty || 1), 0)
-  $('vToday').textContent = Math.round(live.reduce((s, r) => s + (Number(r.mrp) || 0) * (r.qty || 1), 0)).toLocaleString('en-IN')
+  // The list holds the latest 200 only, so the day's total comes from the
+  // server (0114 ps_today_sb) — adding up the list stood still past 200 scans.
+  let tot = null
+  try { const t = await sb.rpc('ps_today_sb'); if (t.data && isFinite(Number(t.data.pcs))) tot = t.data } catch (e) {}
+  $('nToday').textContent = tot ? Number(tot.pcs) : live.reduce((s, r) => s + (r.qty || 1), 0)
+  $('vToday').textContent = Math.round(tot ? Number(tot.value) || 0 : live.reduce((s, r) => s + (Number(r.mrp) || 0) * (r.qty || 1), 0)).toLocaleString('en-IN')
   $('log').innerHTML = '<table>' + rows.map((r) => {
     const gone = !!r.removed_at
     const label = (r.part_no || r.description || r.ai_name || 'this scan').replace(/"/g, '')

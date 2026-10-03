@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R138-2026.10.03.1';
+window.HERO_BUILD = 'R138-2026.10.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -20250,8 +20250,14 @@ function psLoadRecent(){
     const MON_=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const now_=new Date(), todayKey_=('0'+now_.getDate()).slice(-2)+'-'+MON_[now_.getMonth()]+'-'+now_.getFullYear();
     const todayRows_=rows.filter(function(r){ return String(r['Timestamp']||'').indexOf(todayKey_)===0 && String(r['Removed']||'')!=='Y'; });
-    const todayN_=todayRows_.reduce(function(s,r){ return s+(Number(r['Qty'])||1); },0);
-    const todayV_=todayRows_.reduce(function(s,r){ return s+(Number(r['MRP'])||0)*(Number(r['Qty'])||1); },0);
+    /* R138.2 (03-10-2026, Ravi: "Parts scanner not increasing nos now above 800"):
+       adding up the rows on screen stops growing once the day passes the list
+       limit (300 scans) — every new scan pushes an old one out. The server now
+       sends the whole day's total (migration 0114, res.today); the rows on
+       screen are only the fallback. */
+    const sv_=(!PS_SHOW_REMOVED&&res.today&&isFinite(Number(res.today.pcs)))?res.today:null;
+    const todayN_=sv_?Number(sv_.pcs):todayRows_.reduce(function(s,r){ return s+(Number(r['Qty'])||1); },0);
+    const todayV_=sv_?(Number(sv_.value)||0):todayRows_.reduce(function(s,r){ return s+(Number(r['MRP'])||0)*(Number(r['Qty'])||1); },0);
     if(count){ count.textContent=todayN_+' today'; count.style.display=rows.length?'inline-flex':'none'; }
     const summary_=rows.length?('<div class="ps2-recent-state" style="text-align:left;font-weight:700">Today: '+todayN_+' part'+(todayN_===1?'':'s')+' saved'
       +(todayV_?' · ₹'+Math.round(todayV_).toLocaleString('en-IN'):'')+' · latest '+rows.length+' shown'+(rows.length>=PS_RECENT_LIMIT?' (older ones are in Excel)':'')+'</div>'):'';
