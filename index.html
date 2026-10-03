@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R137-2026.10.03.1';
+window.HERO_BUILD = 'R137-2026.10.03.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -2319,7 +2319,8 @@ details.es-chk summary{font-size:11.5px;font-weight:700;color:#334155;cursor:poi
                  parts master. The verdict stays hidden until it has a result. -->
             <div id="ps-verify" style="display:none;border-radius:8px;padding:9px 10px;margin:0 0 10px;font-size:12.5px"></div>
             <div class="fld full"><label for="ps-desc">Description</label><input id="ps-desc" autocomplete="off"></div>
-            <div class="fld"><label for="ps-mrp">MRP / Price (₹)</label><input id="ps-mrp" inputmode="decimal" autocomplete="off"></div>
+            <div class="fld"><label for="ps-mrp">MRP / Price (₹)</label><input id="ps-mrp" inputmode="decimal" autocomplete="off" oninput="psQtyNote()"></div>
+            <div class="fld"><label for="ps-qty">Quantity (pcs)</label><div style="display:flex;gap:6px;align-items:center"><button type="button" onclick="psQtyStep(-1)" aria-label="One less" style="flex:0 0 42px;height:42px;font-size:22px;font-weight:800;border:1px solid #cbd5e1;border-radius:8px;background:#fff">−</button><input id="ps-qty" type="number" inputmode="numeric" min="1" max="9999" value="1" oninput="psQtyNote()" style="text-align:center;font-weight:800;font-size:17px;min-width:0"><button type="button" onclick="psQtyStep(1)" aria-label="One more" style="flex:0 0 42px;height:42px;font-size:22px;font-weight:800;border:1px solid #cbd5e1;border-radius:8px;background:#fff">+</button></div><div id="ps-qty-note" style="font-size:12px;color:#0f766e;font-weight:700;margin-top:4px"></div></div>
             <div class="fld"><label for="ps-remarks">Remarks</label><input id="ps-remarks" placeholder="Rack, condition or anything useful"></div>
             <div id="ps-extra-wrap"></div>
             <div id="ps-guess-wrap" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px;margin:0 0 10px;font-size:12.5px"></div>
@@ -19051,6 +19052,17 @@ function psSetSaving(on){
   b.disabled=!!on;
   b.innerHTML=on?'<span aria-hidden="true">↻</span><span>Saving scan…</span>':'<span aria-hidden="true">✓</span><span>Save verified scan</span>';
 }
+/* R137.2 (03-10-2026, workshop complaint via Ravi: "If 10 Quantity is put then also it does not calculate as per 10"):
+   the scanner had no quantity box and saved qty 1 on every scan. Now the count is typed here,
+   saved to scanned_parts.qty, and Today's pieces / rupees use it. It goes back to 1 for every new part. */
+function psQtyVal_(){ const el=document.getElementById('ps-qty'); const n=parseInt(el&&el.value,10); return (n>0&&n<10000)?n:1; }
+function psQtyStep(d){ const el=document.getElementById('ps-qty'); if(!el) return; el.value=Math.max(1,psQtyVal_()+d); psQtyNote(); }
+function psQtyReset_(){ const el=document.getElementById('ps-qty'); if(el) el.value=1; psQtyNote(); }
+function psQtyNote(){
+  const el=document.getElementById('ps-qty-note'); if(!el) return;
+  const q=psQtyVal_(), m=Number(String((document.getElementById('ps-mrp')||{}).value||'').replace(/[₹,\s]/g,''));
+  el.textContent=(q>1&&m>0)?(q+' × ₹'+m.toLocaleString('en-IN')+' = ₹'+Math.round(q*m).toLocaleString('en-IN')):'';
+}
 function psClearScan(){
   if(PS_LAST.previewUrl){ try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){} }
   PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''}; PS_VERIFY=null; PS_VSEQ++;
@@ -19061,6 +19073,7 @@ function psClearScan(){
   const img=document.getElementById('ps-img'); if(img) img.removeAttribute('src');
   const extra=document.getElementById('ps-extra-wrap'); if(extra) extra.innerHTML='';
   const guess=document.getElementById('ps-guess-wrap'); if(guess){ guess.style.display='none'; guess.innerHTML=''; }
+  psQtyReset_();
   psVerifyBox(''); if(typeof psCorrectHide==='function') psCorrectHide();
   if(typeof psDrillHide==='function') psDrillHide();
 }
@@ -19265,6 +19278,7 @@ function psDecodeFromText(){
     const v=String(val==null?'':val);
     if(v||!el.value) el.value=v;
   };
+  psQtyReset_();
   psPut('ps-partno',g.part_no||'');
   psPut('ps-desc',g.description||g.part_guess||'');
   psPut('ps-mrp',String(g.mrp||'').replace(/[₹,\s]/g,''));
@@ -19321,6 +19335,7 @@ function psApplyIdentified_(j,barcode){
   PS_LAST.ambiguous=nums.length>1?nums:[];
   PS_LAST.aux={barcode:g.barcode};
   const rawEl=document.getElementById('ps-raw'); if(rawEl) rawEl.value=raw;
+  psQtyReset_();
   document.getElementById('ps-partno').value=g.part_no;
   document.getElementById('ps-desc').value=g.description;
   document.getElementById('ps-mrp').value=g.mrp;
@@ -20115,7 +20130,7 @@ function psSaveScan(){
     barcode:document.getElementById('ps-barcode').value||'',
     guess:String(g.part_guess||''), guessModels:Array.isArray(g.probable_models)?g.probable_models.join(', '):'',
     confidence:String(Math.round(Number(g.confidence_percent)||0)||''),
-    remarks:document.getElementById('ps-remarks').value||'', extra:JSON.stringify(extra)};
+    remarks:document.getElementById('ps-remarks').value||'', qty:psQtyVal_(), extra:JSON.stringify(extra)};
   if(!payload.partNo && !payload.desc){ psStatus('Nothing to save — need at least a part no or a description.','err'); return; }
   psSetSaving(true); psStatus('Saving the verified part…');
   if(SB_ON){
@@ -20140,14 +20155,14 @@ function psSaveScan(){
       ocr_text: String((PS_LAST&&PS_LAST.fullText)||'').slice(0,4000)||null,
       provider: (PS_LAST&&PS_LAST.provider)||'unknown',
       photo_path: (PS_LAST&&PS_LAST.photoPath)||null,
-      qty: 1,
+      qty: payload.qty,
       notes: payload.remarks||null,
       extra: extra
     };
     const doInsert=function(){
       sbInsert('scanned_parts', row).then(function(){
         psSetSaving(false);
-        psStatus('✔ Scan saved. It will appear in Recent scans in a moment.','ok');
+        psStatus('✔ Scan saved'+(row.qty>1?(' — '+row.qty+' pcs'):'')+'. It will appear in Recent scans in a moment.','ok'); psQtyReset_();
         document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none';
         if(PS_LAST.previewUrl) try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){}
         PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''}; setTimeout(psLoadRecent,800);
@@ -20174,7 +20189,7 @@ function psSaveScan(){
   jpost(payload).then(function(res){
     psSetSaving(false);
     if(!res||res.ok!==false){
-      psStatus('✔ Scan saved. It will appear in Recent scans in a moment.','ok');
+      psStatus('✔ Scan saved'+(payload.qty>1?(' — '+payload.qty+' pcs'):'')+'. It will appear in Recent scans in a moment.','ok'); psQtyReset_();
       document.getElementById('ps-result').style.display='none'; document.getElementById('ps-preview').style.display='none';
       if(PS_LAST.previewUrl) try{ URL.revokeObjectURL(PS_LAST.previewUrl); }catch(e){}
       PS_LAST={photo:'',photoBlob:null,previewUrl:'',extra:{},guess:null,provider:''}; setTimeout(psLoadRecent,1500);
@@ -20250,7 +20265,9 @@ function psLoadRecent(){
       const part=r['Part No']||r['AI Guess']||'Unnumbered part';
       const desc=r['Description']||r['Remarks']||'No description saved';
       const meta=[];
-      if(r['MRP']) meta.push('₹'+r['MRP']);
+      const q_=Number(r['Qty'])||1;
+      if(q_>1) meta.push(q_+' pcs');
+      if(r['MRP']) meta.push('₹'+r['MRP']+(q_>1&&Number(r['MRP'])?(' each = ₹'+Math.round(q_*Number(r['MRP'])).toLocaleString('en-IN')):''));
       if(r['Scanned By']) meta.push(r['Scanned By']);
       if(r['Timestamp']) meta.push(r['Timestamp']);
       const rawConf=String(r['Confidence %']||'').replace(/%/g,'').trim();
@@ -20364,7 +20381,7 @@ function psExportExcel(){
         if(PS_HIDE_IF_EMPTY[c] && !rows.some(function(r){ return String(r[c]==null?'':r[c]).trim()!==''; })) cols.splice(i,1);
       }
 
-      const NUMERIC={'MRP':1,'Confidence %':1};
+      const NUMERIC={'MRP':1,'Qty':1,'Confidence %':1};
       const aoa=[cols];
       rows.forEach(function(r){
         aoa.push(cols.map(function(c){
