@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R138-2026.10.03.2';
+window.HERO_BUILD = 'R139-2026.10.03.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5637,7 +5637,8 @@ function canUseModule(m){
   const parts=(typeof isPartsPerson==='function')&&isPartsPerson();
 
   if(cm==='HoldupMonitor' && sa) return true;              // SA: read-only view of own holdup
-  if(cm==='Targets'   && (sa||top)) return true;
+  if(cm==='Targets'   && (sa||top||parts)) return true;   // R139: the parts person reads targets and the reports too (Ravi 03-10-2026)
+  if(cm==='ControlRoom' && parts) return true;             // R139: reports (management summary, daily check, morning report)
   if(cm==='Documents' && (sa||top)) return true;
   if((cm==='HoldupMonitor'||cm==='PartsDesk') && parts) return true;   // parts exec needs the parts-pending vehicles
   if(cm==='BillingComparison'){
@@ -13762,7 +13763,7 @@ function showEstimatePreview(est, reg, name, mob){
       {key:'Estimate',id:'esthistory',ic:'📅',tt:'My Estimates — Month & Date wise',dd:'Your estimates of every day. Month → date → estimate → PDF/WhatsApp.',c:'#16a34a',bg:'#ecfdf5',live:true,force:isSA},
       {key:'Estimate',id:'estimate',ic:'📋',tt:isSA?'Estimate Preparation / My Estimates':'Estimate Preparation',dd:isSA?'Prepare estimates and resend PDF/WhatsApp any time today.':'Prepare, review & send estimates quickly.',c:'#16a34a',bg:'#ecfdf5',live:true},
       {key:'HoldupMonitor',id:'holdup',ic:'⛔',tt:isSA?'My Holdup Cases':'Holdup Monitor',dd:isSA?'Read-only status, ETA, history and customer update for your vehicles.':'Track holdup cases, reasons, ETA & status in real time.',c:'#dc2626',bg:'#fef2f2',live:true,force:isSA},
-      {key:'Targets',id:'targets',ic:'🎯',tt:isSA?'My Targets':'Targets',dd:'Target vs achievement — labour, parts and ratio, month by month, without GST.',c:'#0f766e',bg:'#f0fdfa',live:true,force:isSA||isTopMgmtUser()},
+      {key:'Targets',id:'targets',ic:'🎯',tt:isSA?'My Targets':'Targets',dd:'Target vs achievement — labour, parts and ratio, month by month, without GST.',c:'#0f766e',bg:'#f0fdfa',live:true,force:isSA||isTopMgmtUser()||isPartsPerson()},   /* R139: parts person too */
       {key:'BillingComparison',id:'billing',ic:'₹',tt:isSA?'My Estimates & Billing':'Estimates & Billing',dd:isSA?'All your estimates, actual billing done and your deviation %.':'All estimates of all dates + actual DMS billing comparison & deviation %.',c:'#7c3aed',bg:'#f5f3ff',live:true,force:isSA||isTopMgmtUser()},
       {key:'PartFinder',id:'partfinder',ic:'🔎',tt:'All-India Part Finder',dd:'Find any part across all Hero dealers. Nearest-first — tell the customer with confidence.',c:'#0891b2',bg:'#ecfeff',live:true,force:true},
       {key:'PartsDesk',id:'partsdesk',ic:'📦',tt:'Parts Desk',dd:'Parts-pending vehicles from Holdup — status, ETA & requisition photos.',c:'#0891b2',bg:'#ecfeff',live:true,force:isPartsPerson()},
@@ -13773,7 +13774,8 @@ function showEstimatePreview(est, reg, name, mob){
          'me'), which is the same screen she already asked for. */
       {key:'InsuranceCRM',id:'insboard',ic:'📊',tt:'Insurance Board — CEO / GM / WM',dd:'Who called today, who picked up, how many policies sold, and how many due customers are still un-called.',c:'#c81e2c',bg:'#fff5f5',live:true,force:isTopMgmtUser()||isInsuranceUser()},
       {key:'CRM',id:'crm',ic:'👥',tt:'Customer Actions',dd:'WhatsApp, email and follow-ups for assigned customers.',c:'#334155',bg:'#f1f5f9',live:false,force:isSA},
-      {key:'ControlRoom',id:'control',ic:'📡',tt:'Top Management Control Room',dd:"Today's gate entries, estimates, billing and exceptions.",c:'#0f766e',bg:'#f0fdfa',live:true},
+      /* R139 (Ravi 03-10-2026): the parts person gets the reports too — same screen, named for what he reads from it */
+      {key:'ControlRoom',id:'control',ic:'📡',tt:isPartsPerson()?'Reports — Control Room':'Top Management Control Room',dd:isPartsPerson()?"Holdup per location, parts waiting for part no. / ETA, today's estimates and billing, morning report.":"Today's gate entries, estimates, billing and exceptions.",c:'#0f766e',bg:'#f0fdfa',live:true,force:isPartsPerson()},
       {key:'MasterData',id:'master',ic:'🗂️',tt:'Master Data',dd:'Users, designations, levels, modules, models and dropdown masters.',c:'#475569',bg:'#f8fafc',live:true}
     ];
     if(isGuard){
@@ -13803,6 +13805,8 @@ function showEstimatePreview(est, reg, name, mob){
       actions=[
         {ok:true,ic:'📦',t:'Parts Desk',fn:"openModule('partsdesk')"},
         {ok:true,ic:'🧾',t:"Today's Estimates — Parts",fn:"raviOpenPartsEstimates()"},
+        {ok:true,ic:'🎯',t:'Targets',fn:"openModule('targets')"},          /* R139 */
+        {ok:true,ic:'📡',t:'Reports',fn:"openModule('control')"},          /* R139 */
         {ok:true,ic:'↻',t:'Sync Now',fn:"globalSyncNow()"}
       ];
     } else if(isSAUser()){
