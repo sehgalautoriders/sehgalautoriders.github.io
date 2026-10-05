@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R139-2026.10.03.1';
+window.HERO_RELEASE = 101;
+window.HERO_BUILD = 'R140-2026.10.05.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28743,6 +28743,37 @@ window.heroChangeMobile=function(){
 #avask-loc button.on .c{color:#d4d4d4}
 #avask-loc button.zero{opacity:.5}
 @media (max-width:480px){ #avask-loc{grid-template-columns:repeat(2,1fr)} }
+/* R140 (Ravi 05-10-2026: "the screen is going down too much - UI is not good"). Before this, a phone showed
+   header + summary + a 4-line checks table + four 64px buttons in a 2x2 grid before the FIRST vehicle, and every
+   vehicle then took ~240px because its answer form was always open under it. Now: the checks fold to one line,
+   the four locations sit in one slim row, and each vehicle is ONE row - tap it and its answer form opens under it
+   (one at a time). Tables, not decks (rule 8). */
+#avask-ov .ah{padding:8px 12px}
+#avask-ov .ah b{font-size:14px}
+#avask-ov .as{padding:4px 12px;line-height:1.35}
+#avask-loc{grid-template-columns:repeat(4,1fr);gap:6px;padding:6px 12px}
+#avask-loc button{flex-direction:row;gap:5px;min-height:0;padding:6px 2px;border-width:1px;border-radius:8px;font-size:12.5px}
+#avask-loc button .n{font-size:15px}
+#avask-loc button .c{display:none}
+@media (max-width:480px){ #avask-loc{grid-template-columns:repeat(4,1fr)} #avask-loc button{flex-direction:column;gap:0;font-size:11.5px} }
+#avask-extra .av-xt{display:block;width:100%;text-align:left;border:0;background:none;padding:2px 0;font:inherit;font-size:12px;color:#171717;cursor:pointer}
+#avask-extra .av-xb{display:none}
+#avask-extra.av-open .av-xb{display:block}
+#avask-ov th{padding:4px 6px}
+#avask-ov tr.av-q-row{cursor:pointer}
+#avask-ov tr.av-q-row td{padding:6px 6px;border-bottom:1px solid #E5E5E5}
+#avask-ov tr.av-q-row:hover td{background:#fafafa}
+#avask-ov tr.av-q-row.av-open td{background:#FEF2F2;border-bottom:0}
+#avask-ov tr.av-q-row .q{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#avask-ov .av-ask{font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#avask-ov tr.av-open .av-ask{display:block;-webkit-line-clamp:unset}
+#avask-ov .av-go{float:right;margin-left:6px;font-size:11px;font-weight:700;color:#D71920;white-space:nowrap}
+#avask-ov tr.av-open .av-go{color:#6B6B6B}
+#avask-ov tr.av-a-row{display:none}
+#avask-ov tr.av-a-row.av-open{display:table-row}
+#avask-ov tr.av-a-row.av-open td{background:#FEF2F2;padding:4px 6px 8px;border-bottom:2px solid #E5E5E5}
+#avask-ov tr.av-q-row.done td{opacity:.45}
+#avask-ov tr.av-q-row.done .av-go{color:#15803d}
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="Why pending">
@@ -28752,7 +28783,7 @@ window.heroChangeMobile=function(){
   <div class="as" id="avask-sum"></div>
   <div class="as" id="avask-extra" style="display:none"></div>
   <div id="avask-loc"></div>
-  <div class="ab"><table><thead><tr><th style="width:38%">Vehicle</th><th>Our question</th></tr></thead>
+  <div class="ab"><table><thead><tr><th style="width:34%">Vehicle</th><th>Our question · tap to answer</th></tr></thead>
     <tbody id="avask-tb"></tbody></table></div>
 </div>
 <script>
@@ -28763,6 +28794,17 @@ window.heroChangeMobile=function(){
   var DEALER={'23490':'Chinchwad','17057':'Premia','10307':'PDI','61299':'Chakan'};
   var LOCS=['23490','17057','10307','61299'], LOC='';
   window.avaskLoc=function(c){ LOC=(LOC===c)?'':c; paint(LAST_D); var ab=document.querySelector('#avask-ov .ab'); if(ab) ab.scrollTop=0; };
+  /* R140: tap a vehicle row = its answer form opens under it and every other one closes; tap again = closes.
+     Classes are switched in place (no repaint) so nothing already typed is lost. */
+  var OPEN=-1;
+  window.avaskTog=function(i){
+    OPEN=(OPEN===i)?-1:i;
+    document.querySelectorAll('#avask-tb tr.av-open').forEach(function(tr){ tr.classList.remove('av-open'); var g=tr.querySelector('.av-go'); if(g&&!tr.classList.contains('done')) g.textContent='Answer ▾'; });
+    if(OPEN<0) return;
+    var q=document.querySelector('#avask-tb tr[data-q="'+i+'"]'), a=document.querySelector('#avask-tb tr[data-i="'+i+'"]');
+    if(q){ q.classList.add('av-open'); var g=q.querySelector('.av-go'); if(g&&!q.classList.contains('done')) g.textContent='Close ▴'; }
+    if(a){ a.classList.add('av-open'); try{ a.scrollIntoView({block:'nearest'}); }catch(e){} var s=a.querySelector('[data-f="st"]'); if(s) try{ s.focus({preventScroll:true}); }catch(e){} }
+  };
   var LAST_D=null;
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   /* R127: USER.role was never saved at login (fixed in finishLogin_), so for
@@ -28813,11 +28855,13 @@ window.heroChangeMobile=function(){
       var parts=it.q_role==='parts';
       /* R128 (Ravi 29-09-2026: "the formatting is very bad"): two columns a phone can
          read, and the answer on its own full-width line under the vehicle. */
-      h+='<tr class="av-q-row"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
-        +'<div class="q">'+esc(it.model)+' · '+esc(it.jc_type)+' · '+esc(DEALER[it.dealer_code]||it.dealer_code)+'</div>'
-        +'<div class="q"><span class="av-days">'+esc(it.days_open)+' days</span>'+(it.asked_total?(' · asked '+esc(it.asked_total)+'×'):'')+'</div></td>'
-        +'<td><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
-        +'<tr data-i="'+i+'" class="av-a-row"><td colspan="2"><div class="av-f">'
+      /* R140 (Ravi 05-10-2026 "the screen is going down too much"): one line per vehicle; the answer
+         form opens under the row that is tapped, one at a time (avaskTog). */
+      var op=(i===OPEN)?' av-open':'';
+      h+='<tr class="av-q-row'+op+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+        +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div></td>'
+        +'<td><span class="av-go">'+(op?'Close ▴':'Answer ▾')+'</span><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
+        +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2"><div class="av-f">'
         +'<label>Status<select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></label>'
         +'<label>Why<input data-f="rs" placeholder="why not delivered" value="'+esc(it.reason)+'"></label>'
         +'<label>Promise<select data-f="eta">'+opts(etas(), it.eta)+'</select></label>'
@@ -28869,7 +28913,10 @@ window.heroChangeMobile=function(){
         holdupStatus:st, holdupReason:rs, partsEta:eta, remarks:rm,
         updatedBy:(USER&&(USER.personName||USER.empno))||''}});
       if(r&&r.ok===false) throw new Error(r.error||'not saved');
-      tr.className='done'; btn.textContent='Saved ✓';
+      tr.className='done av-a-row av-open'; btn.textContent='Saved ✓';
+      /* R140: the vehicle's own line shows it too, and the open index is dropped before the reload re-numbers ITEMS */
+      var q=document.querySelector('#avask-tb tr[data-q="'+i+'"]'); if(q){ q.classList.add('done'); var g=q.querySelector('.av-go'); if(g) g.textContent='Saved ✓'; }
+      OPEN=-1;
       setTimeout(function(){ load(false); }, 1500);
     }catch(e){ btn.disabled=false; btn.textContent='Retry'; }
   };
@@ -29376,8 +29423,13 @@ function r127ChaseExtra_(){
     window.AVASK_NOTE='*Today ('+ymd.split('-').reverse().join('-')+')*\n'+lines.map(function(l){ var p=l.split('|'); return '• '+p[0]+': '+String(p.slice(1).join('|')).replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim(); }).join('\n');
     var canSend=false; try{ var rl=String((USER&&(USER.role||USER.Role))||'').toLowerCase(); var t=(String((USER&&USER.designation)||'')+' '+String((USER&&USER.level)||'')).toUpperCase();
       canSend=(rl==='gm'||rl==='ceo'||/\bCEO\d*\b|SUPERADMIN|\bADMIN\b|DEALERADMIN|\bGM\d*\b|GENERAL MANAGER/.test(t)); }catch(e){}
-    el.innerHTML='<table>'+lines.map(function(l){ var p=l.split('|'); return '<tr><td class="k">'+p[0]+'</td><td>'+p.slice(1).join('|')+'</td></tr>'; }).join('')+'</table>'
-      +(canSend?'<div style="margin-top:4px"><button type="button" id="avask-send" onclick="avaskSendNow()" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">🟢 Send this on WhatsApp now</button> <span id="avask-send-r" style="font-size:12px;color:#6B6B6B">to the WM, GM and Parts coordinator through PingMate</span></div>':'');
+    /* R140 (Ravi 05-10-2026 "the screen is going down too much"): the checks fold to ONE line that says how many are
+       red; tap it to see the table and the WhatsApp button. The vehicles get the screen. */
+    var nBad=lines.filter(function(l){ return l.indexOf('class="bad"')>-1; }).length;
+    el.innerHTML='<button type="button" class="av-xt" onclick="this.parentNode.classList.toggle(\'av-open\');this.lastChild.textContent=this.parentNode.classList.contains(\'av-open\')?\' ▴\':\' ▾\'">Today’s checks: '
+      +(nBad?'<span class="bad">'+nBad+' of '+lines.length+' red</span>':'<span class="ok">all '+lines.length+' fine</span>')+' · labour, parts in stock, stock + holdup files<span>'+(el.classList.contains('av-open')?' ▴':' ▾')+'</span></button>'
+      +'<div class="av-xb"><table>'+lines.map(function(l){ var p=l.split('|'); return '<tr><td class="k">'+p[0]+'</td><td>'+p.slice(1).join('|')+'</td></tr>'; }).join('')+'</table>'
+      +(canSend?'<div style="margin-top:4px"><button type="button" id="avask-send" onclick="avaskSendNow()" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">🟢 Send this on WhatsApp now</button> <span id="avask-send-r" style="font-size:12px;color:#6B6B6B">to the WM, GM and Parts coordinator through PingMate</span></div>':'')+'</div>';
   });
 }
 window.avaskSendNow=async function(){
