@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 102;
-window.HERO_BUILD = 'R141-2026.10.07.1';
+window.HERO_RELEASE = 103;
+window.HERO_BUILD = 'R142-2026.10.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -29962,7 +29962,8 @@ var ES_BODY=null;
       row('Last pick',esc(CT.bt||'-'))+'</table>',
       bt?'<button class="btn ghost sm" style="margin-top:6px" onclick="ctBluetooth()">🔵 Pick a nearby device</button>':'');
     var sigs=CT.sigs.slice().reverse();
-    html+=card('Record this phone now', '<div class="hint">One row = who, which device, where, on what network, when. Kept on this phone only (last 50). This is the "software match" of the drive chat: the login binds the name to the phone.</div>',
+    var q=(window.heroTelState&&heroTelState())||{};
+    html+=card('Record this phone now', '<div class="hint">One row = who, which device, where, on what network, when. Kept on this phone (last 50) and sent to our server (R142): '+esc(q.sent||0)+' sent, '+esc(q.queued||0)+' waiting'+(q.last?', last '+esc(q.last):'')+(q.error?' - <span style="color:#b91c1c">'+esc(q.error)+'</span>':'')+'. This is the "software match" of the drive chat: the login binds the name to the phone.</div>',
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
       '<button class="btn sm" onclick="ctRecord()">💾 Record now</button>'+
       '<button class="btn ghost sm" onclick="ctCopy()">📋 Copy all</button>'+
@@ -29989,6 +29990,7 @@ var ES_BODY=null;
            ua:navigator.userAgent, online:n.online, net_type:n.type, net_effective:n.effective, lat:loc?loc.lat:null, lng:loc?loc.lng:null, acc:loc?loc.acc:null,
            build:window.HERO_BUILD||''};
     CT.sigs.push(r); saveSigs(); paint();
+    try{ if(window.heroTelQueue) heroTelQueue('record', {lat:r.lat, lng:r.lng, acc:r.acc, payload:{ua:r.ua}}); }catch(e){}
   };
   function text(){
     return CT.sigs.map(function(r){ return [r.at,r.empno,r.name,r.role,r.device_id,r.shell,r.net_type||r.net_effective||'',(r.lat!=null?r.lat+','+r.lng+' ±'+Math.round(r.acc)+'m':''),r.build].join(' | '); }).join('\n');
@@ -30033,6 +30035,83 @@ var ES_BODY=null;
     if(id==='ceotest'){ if(!isCEO()){ alert('Only the CEO login sees this.'); return; } ensureView(); loadSigs(); paint(); showView('ceotest'); return; }
     return origOpen.apply(this, arguments);
   };
+})();
+</script>
+<script>
+/* ================= R142 (Ravi 07-10-2026 21:3x "Do it"): THE PHONE REPORTS. =================
+   Every signed-in login: a registration ping when the app opens ('open') and a heartbeat every 5 minutes while the app is
+   on screen ('beat') - who (the login; the server stamps the employee from the profile), which phone (the device id of
+   R141, kept on the phone), the build, the shell, online, network class. NO location in these two (location only when a
+   person presses Record now on the Testing screen, 'record'). Rows wait in localStorage and go to the server function
+   hero_telemetry_record in one call (every 60 s, on open, on Record now); a dead zone or a refused call keeps them waiting,
+   nothing is lost, nothing is sent twice. The sandbox does not report (window.HERO_SANDBOX). Migration 0117 (hero-app). */
+(function(){
+  'use strict';
+  if(window.HERO_SANDBOX) return;
+  var KEY_Q='hero_tel_queue', KEY_ID='hero_ct_device_id', KEY_ST='hero_tel_state', BEAT_MS=5*60*1000, FLUSH_MS=60*1000, MAX_Q=300;
+  var st={sent:0, queued:0, last:'', error:''};
+  try{ var raw=localStorage.getItem(KEY_ST); if(raw){ var o=JSON.parse(raw); st.sent=o.sent||0; st.last=o.last||''; } }catch(e){}
+  function U(){ try{ return (typeof USER!=='undefined' && USER) || {}; }catch(e){ return {}; } }
+  function signed(){ try{ return !!(U().empno && localStorage.getItem('sb_rt')); }catch(e){ return false; } }
+  function uuid(){
+    try{ if(crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+    var a=new Uint8Array(16); try{ crypto.getRandomValues(a); }catch(e){ for(var i=0;i<16;i++) a[i]=Math.random()*256|0; }
+    a[6]=(a[6]&15)|64; a[8]=(a[8]&63)|128;
+    var h=Array.prototype.map.call(a,function(b){ return ('0'+b.toString(16)).slice(-2); }).join('');
+    return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+  }
+  function deviceId(){
+    var v=null;
+    try{ var raw=localStorage.getItem(KEY_ID); if(raw){ v=JSON.parse(raw).id; } }catch(e){}
+    if(!v){ v=uuid(); try{ localStorage.setItem(KEY_ID, JSON.stringify({id:v,since:new Date().toISOString()})); }catch(e){} }
+    return v;
+  }
+  function shell(){
+    if(window.HERO_SHELL==='android') return 'Android app';
+    if(/SehgalHero/i.test(navigator.userAgent)) return 'Windows app';
+    if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return 'Installed web app';
+    return 'Browser';
+  }
+  function net(){ var c=navigator.connection||null; return {online:navigator.onLine, type:c&&c.type||null, effective:c&&c.effectiveType||null}; }
+  function loadQ(){ try{ return JSON.parse(localStorage.getItem(KEY_Q)||'[]')||[]; }catch(e){ return []; } }
+  function saveQ(q){ try{ localStorage.setItem(KEY_Q, JSON.stringify(q.slice(-MAX_Q))); }catch(e){} st.queued=q.length; }
+  function saveSt(){ try{ localStorage.setItem(KEY_ST, JSON.stringify({sent:st.sent,last:st.last})); }catch(e){} }
+  window.heroTelState=function(){ st.queued=loadQ().length; return {sent:st.sent, queued:st.queued, last:st.last, error:st.error}; };
+  window.heroTelQueue=function(kind, extra){
+    if(!signed()) return;
+    var n=net(), r={kind:kind, at:new Date().toISOString(), device_uuid:deviceId(), build:window.HERO_BUILD||'', shell:shell(),
+                    online:n.online, net_type:n.type, net_effective:n.effective, payload:(extra&&extra.payload)||{}};
+    if(extra && extra.lat!=null){ r.lat=extra.lat; r.lng=extra.lng; r.acc=extra.acc; }
+    var q=loadQ(); q.push(r); saveQ(q);
+    if(kind!=='beat') flush();
+  };
+  var busy=false;
+  function flush(){
+    if(busy || !signed() || !navigator.onLine || typeof sbRpc!=='function') return;
+    var q=loadQ(); if(!q.length) return;
+    busy=true;
+    var batch=q.slice(0,200);
+    sbRpc('hero_telemetry_record', {p_rows:batch}).then(function(n){
+      var rest=loadQ().slice(batch.length); saveQ(rest);
+      st.sent+=Number(n)||0; st.last=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); st.error=''; saveSt();
+    }).catch(function(e){
+      st.error=String(e&&e.message||e).slice(0,120);           /* the rows stay in the queue; the next flush tries again */
+    }).then(function(){ busy=false; try{ if(document.getElementById('ct-out') && typeof ctBoot==='function' && document.getElementById('view-ceotest').style.display!=='none') ctBoot(); }catch(e){} });
+  }
+  var lastBeat=0;
+  function beat(){ if(document.visibilityState!=='visible' || !signed()) return; var now=Date.now(); if(now-lastBeat<BEAT_MS-5000) return; lastBeat=now; heroTelQueue('beat'); }
+  function start(){
+    try{ if(signed()) heroTelQueue('open'); }catch(e){}
+    lastBeat=Date.now();
+    setInterval(beat, BEAT_MS);
+    setInterval(flush, FLUSH_MS);
+    document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible'){ try{ beat(); flush(); }catch(e){} } });
+    window.addEventListener('online', function(){ try{ flush(); }catch(e){} });
+  }
+  /* after a fresh login the app saves the user and shows Home: send the open ping then too */
+  var origSave=window.saveUser;
+  if(typeof origSave==='function'){ window.saveUser=function(u){ var r=origSave.apply(this, arguments); try{ setTimeout(function(){ heroTelQueue('open'); }, 1500); }catch(e){} return r; }; }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 4000); }); else setTimeout(start, 4000);
 })();
 </script>
 </body></html>
