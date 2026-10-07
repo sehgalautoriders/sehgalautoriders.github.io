@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 100;
-window.HERO_BUILD = 'R139-2026.10.03.1';
+window.HERO_RELEASE = 102;
+window.HERO_BUILD = 'R141-2026.10.07.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5854,7 +5854,7 @@ function showView(name){
       if(_y>0) INS3._scroll=_y;
     }
   }catch(e){}
-  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard','targets'].forEach(v=>{
+  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard','targets','ceotest']   /* R141: the CEO's Testing screen */.forEach(v=>{
     const el = document.getElementById('view-'+v);
     if(el) el.style.display = (v===name) ? 'block' : 'none';
   });
@@ -28743,6 +28743,37 @@ window.heroChangeMobile=function(){
 #avask-loc button.on .c{color:#d4d4d4}
 #avask-loc button.zero{opacity:.5}
 @media (max-width:480px){ #avask-loc{grid-template-columns:repeat(2,1fr)} }
+/* R140 (Ravi 05-10-2026: "the screen is going down too much - UI is not good"). Before this, a phone showed
+   header + summary + a 4-line checks table + four 64px buttons in a 2x2 grid before the FIRST vehicle, and every
+   vehicle then took ~240px because its answer form was always open under it. Now: the checks fold to one line,
+   the four locations sit in one slim row, and each vehicle is ONE row - tap it and its answer form opens under it
+   (one at a time). Tables, not decks (rule 8). */
+#avask-ov .ah{padding:8px 12px}
+#avask-ov .ah b{font-size:14px}
+#avask-ov .as{padding:4px 12px;line-height:1.35}
+#avask-loc{grid-template-columns:repeat(4,1fr);gap:6px;padding:6px 12px}
+#avask-loc button{flex-direction:row;gap:5px;min-height:0;padding:6px 2px;border-width:1px;border-radius:8px;font-size:12.5px}
+#avask-loc button .n{font-size:15px}
+#avask-loc button .c{display:none}
+@media (max-width:480px){ #avask-loc{grid-template-columns:repeat(4,1fr)} #avask-loc button{flex-direction:column;gap:0;font-size:11.5px} }
+#avask-extra .av-xt{display:block;width:100%;text-align:left;border:0;background:none;padding:2px 0;font:inherit;font-size:12px;color:#171717;cursor:pointer}
+#avask-extra .av-xb{display:none}
+#avask-extra.av-open .av-xb{display:block}
+#avask-ov th{padding:4px 6px}
+#avask-ov tr.av-q-row{cursor:pointer}
+#avask-ov tr.av-q-row td{padding:6px 6px;border-bottom:1px solid #E5E5E5}
+#avask-ov tr.av-q-row:hover td{background:#fafafa}
+#avask-ov tr.av-q-row.av-open td{background:#FEF2F2;border-bottom:0}
+#avask-ov tr.av-q-row .q{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#avask-ov .av-ask{font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#avask-ov tr.av-open .av-ask{display:block;-webkit-line-clamp:unset}
+#avask-ov .av-go{float:right;margin-left:6px;font-size:11px;font-weight:700;color:#D71920;white-space:nowrap}
+#avask-ov tr.av-open .av-go{color:#6B6B6B}
+#avask-ov tr.av-a-row{display:none}
+#avask-ov tr.av-a-row.av-open{display:table-row}
+#avask-ov tr.av-a-row.av-open td{background:#FEF2F2;padding:4px 6px 8px;border-bottom:2px solid #E5E5E5}
+#avask-ov tr.av-q-row.done td{opacity:.45}
+#avask-ov tr.av-q-row.done .av-go{color:#15803d}
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="Why pending">
@@ -28752,7 +28783,7 @@ window.heroChangeMobile=function(){
   <div class="as" id="avask-sum"></div>
   <div class="as" id="avask-extra" style="display:none"></div>
   <div id="avask-loc"></div>
-  <div class="ab"><table><thead><tr><th style="width:38%">Vehicle</th><th>Our question</th></tr></thead>
+  <div class="ab"><table><thead><tr><th style="width:34%">Vehicle</th><th>Our question · tap to answer</th></tr></thead>
     <tbody id="avask-tb"></tbody></table></div>
 </div>
 <script>
@@ -28763,6 +28794,17 @@ window.heroChangeMobile=function(){
   var DEALER={'23490':'Chinchwad','17057':'Premia','10307':'PDI','61299':'Chakan'};
   var LOCS=['23490','17057','10307','61299'], LOC='';
   window.avaskLoc=function(c){ LOC=(LOC===c)?'':c; paint(LAST_D); var ab=document.querySelector('#avask-ov .ab'); if(ab) ab.scrollTop=0; };
+  /* R140: tap a vehicle row = its answer form opens under it and every other one closes; tap again = closes.
+     Classes are switched in place (no repaint) so nothing already typed is lost. */
+  var OPEN=-1;
+  window.avaskTog=function(i){
+    OPEN=(OPEN===i)?-1:i;
+    document.querySelectorAll('#avask-tb tr.av-open').forEach(function(tr){ tr.classList.remove('av-open'); var g=tr.querySelector('.av-go'); if(g&&!tr.classList.contains('done')) g.textContent='Answer ▾'; });
+    if(OPEN<0) return;
+    var q=document.querySelector('#avask-tb tr[data-q="'+i+'"]'), a=document.querySelector('#avask-tb tr[data-i="'+i+'"]');
+    if(q){ q.classList.add('av-open'); var g=q.querySelector('.av-go'); if(g&&!q.classList.contains('done')) g.textContent='Close ▴'; }
+    if(a){ a.classList.add('av-open'); try{ a.scrollIntoView({block:'nearest'}); }catch(e){} var s=a.querySelector('[data-f="st"]'); if(s) try{ s.focus({preventScroll:true}); }catch(e){} }
+  };
   var LAST_D=null;
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   /* R127: USER.role was never saved at login (fixed in finishLogin_), so for
@@ -28813,11 +28855,13 @@ window.heroChangeMobile=function(){
       var parts=it.q_role==='parts';
       /* R128 (Ravi 29-09-2026: "the formatting is very bad"): two columns a phone can
          read, and the answer on its own full-width line under the vehicle. */
-      h+='<tr class="av-q-row"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
-        +'<div class="q">'+esc(it.model)+' · '+esc(it.jc_type)+' · '+esc(DEALER[it.dealer_code]||it.dealer_code)+'</div>'
-        +'<div class="q"><span class="av-days">'+esc(it.days_open)+' days</span>'+(it.asked_total?(' · asked '+esc(it.asked_total)+'×'):'')+'</div></td>'
-        +'<td><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
-        +'<tr data-i="'+i+'" class="av-a-row"><td colspan="2"><div class="av-f">'
+      /* R140 (Ravi 05-10-2026 "the screen is going down too much"): one line per vehicle; the answer
+         form opens under the row that is tapped, one at a time (avaskTog). */
+      var op=(i===OPEN)?' av-open':'';
+      h+='<tr class="av-q-row'+op+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+        +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div></td>'
+        +'<td><span class="av-go">'+(op?'Close ▴':'Answer ▾')+'</span><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
+        +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2"><div class="av-f">'
         +'<label>Status<select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></label>'
         +'<label>Why<input data-f="rs" placeholder="why not delivered" value="'+esc(it.reason)+'"></label>'
         +'<label>Promise<select data-f="eta">'+opts(etas(), it.eta)+'</select></label>'
@@ -28869,7 +28913,10 @@ window.heroChangeMobile=function(){
         holdupStatus:st, holdupReason:rs, partsEta:eta, remarks:rm,
         updatedBy:(USER&&(USER.personName||USER.empno))||''}});
       if(r&&r.ok===false) throw new Error(r.error||'not saved');
-      tr.className='done'; btn.textContent='Saved ✓';
+      tr.className='done av-a-row av-open'; btn.textContent='Saved ✓';
+      /* R140: the vehicle's own line shows it too, and the open index is dropped before the reload re-numbers ITEMS */
+      var q=document.querySelector('#avask-tb tr[data-q="'+i+'"]'); if(q){ q.classList.add('done'); var g=q.querySelector('.av-go'); if(g) g.textContent='Saved ✓'; }
+      OPEN=-1;
       setTimeout(function(){ load(false); }, 1500);
     }catch(e){ btn.disabled=false; btn.textContent='Retry'; }
   };
@@ -29376,8 +29423,13 @@ function r127ChaseExtra_(){
     window.AVASK_NOTE='*Today ('+ymd.split('-').reverse().join('-')+')*\n'+lines.map(function(l){ var p=l.split('|'); return '• '+p[0]+': '+String(p.slice(1).join('|')).replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim(); }).join('\n');
     var canSend=false; try{ var rl=String((USER&&(USER.role||USER.Role))||'').toLowerCase(); var t=(String((USER&&USER.designation)||'')+' '+String((USER&&USER.level)||'')).toUpperCase();
       canSend=(rl==='gm'||rl==='ceo'||/\bCEO\d*\b|SUPERADMIN|\bADMIN\b|DEALERADMIN|\bGM\d*\b|GENERAL MANAGER/.test(t)); }catch(e){}
-    el.innerHTML='<table>'+lines.map(function(l){ var p=l.split('|'); return '<tr><td class="k">'+p[0]+'</td><td>'+p.slice(1).join('|')+'</td></tr>'; }).join('')+'</table>'
-      +(canSend?'<div style="margin-top:4px"><button type="button" id="avask-send" onclick="avaskSendNow()" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">🟢 Send this on WhatsApp now</button> <span id="avask-send-r" style="font-size:12px;color:#6B6B6B">to the WM, GM and Parts coordinator through PingMate</span></div>':'');
+    /* R140 (Ravi 05-10-2026 "the screen is going down too much"): the checks fold to ONE line that says how many are
+       red; tap it to see the table and the WhatsApp button. The vehicles get the screen. */
+    var nBad=lines.filter(function(l){ return l.indexOf('class="bad"')>-1; }).length;
+    el.innerHTML='<button type="button" class="av-xt" onclick="this.parentNode.classList.toggle(\'av-open\');this.lastChild.textContent=this.parentNode.classList.contains(\'av-open\')?\' ▴\':\' ▾\'">Today’s checks: '
+      +(nBad?'<span class="bad">'+nBad+' of '+lines.length+' red</span>':'<span class="ok">all '+lines.length+' fine</span>')+' · labour, parts in stock, stock + holdup files<span>'+(el.classList.contains('av-open')?' ▴':' ▾')+'</span></button>'
+      +'<div class="av-xb"><table>'+lines.map(function(l){ var p=l.split('|'); return '<tr><td class="k">'+p[0]+'</td><td>'+p.slice(1).join('|')+'</td></tr>'; }).join('')+'</table>'
+      +(canSend?'<div style="margin-top:4px"><button type="button" id="avask-send" onclick="avaskSendNow()" style="background:#15803d;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">🟢 Send this on WhatsApp now</button> <span id="avask-send-r" style="font-size:12px;color:#6B6B6B">to the WM, GM and Parts coordinator through PingMate</span></div>':'')+'</div>';
   });
 }
 window.avaskSendNow=async function(){
@@ -29828,6 +29880,159 @@ var ES_BODY=null;
   function start(){ setTimeout(tick, 3000); setInterval(tick, 5000); }
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible'){ lastDue=0; tick(); } });
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+</script>
+<script>
+/* ================= R141 (Ravi 07-10-2026 18:3x: "Make a separate testing section visible only in CEO login. Make in the main
+   app only - not in the sandbox"). =================
+   A Testing screen for the CEO login alone, for the camera + phone method of the drive conversation of 06-10-2026
+   (an employee's phone is known by habit; the nearest phone is the one attending; the Hero app's login binds the name
+   to the phone). What this first step does: shows what THIS phone can tell about itself (login, a device id this app
+   keeps, shell, network, location, Bluetooth), and records a signature of the phone on demand, kept on the phone
+   (last 50) with Copy / Share. Nothing goes to the server yet - the next step after Ravi has seen the readings.
+   Hidden on every other login and in the sandbox (window.HERO_SANDBOX). Additive: wraps renderHomeTiles / openModule. */
+(function(){
+  'use strict';
+  if(window.HERO_SANDBOX) return;                      /* main app only */
+  var KEY_ID='hero_ct_device_id', KEY_SIG='hero_ct_signatures', PIN={lat:18.647853,lng:73.805557,name:'Chinchwad'};
+  /* USER is a script-level let, not a window property */
+  function U(){ try{ return (typeof USER!=='undefined' && USER) || {}; }catch(e){ return {}; } }
+  function isCEO(){
+    try{ var u=U(); return String(u.role||'').toLowerCase()==='ceo'; }catch(e){ return false; }
+  }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function uuid(){
+    try{ if(crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+    var a=new Uint8Array(16); try{ crypto.getRandomValues(a); }catch(e){ for(var i=0;i<16;i++) a[i]=Math.random()*256|0; }
+    a[6]=(a[6]&15)|64; a[8]=(a[8]&63)|128;
+    var h=Array.prototype.map.call(a,function(b){ return ('0'+b.toString(16)).slice(-2); }).join('');
+    return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+  }
+  function deviceId(){
+    var v=null, since=null;
+    try{ var raw=localStorage.getItem(KEY_ID); if(raw){ var o=JSON.parse(raw); v=o.id; since=o.since; } }catch(e){}
+    if(!v){ v=uuid(); since=new Date().toISOString(); try{ localStorage.setItem(KEY_ID, JSON.stringify({id:v,since:since})); }catch(e){} }
+    return {id:v, since:since};
+  }
+  function shell(){
+    if(window.HERO_SHELL==='android') return 'Android app (Sehgal Hero)';
+    if(/SehgalHero/i.test(navigator.userAgent)) return 'Windows app (Sehgal Hero)';
+    if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return 'Installed web app (home screen)';
+    return 'Browser';
+  }
+  function net(){
+    var c=navigator.connection||navigator.mozConnection||navigator.webkitConnection||null;
+    return {online:navigator.onLine, type:c&&c.type||'', effective:c&&c.effectiveType||'', downlink:c&&c.downlink||'', rtt:c&&c.rtt||''};
+  }
+  function dist(a,b){
+    var R=6371000, dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180;
+    var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
+  }
+  var CT={loc:null, sigs:[]};
+  function loadSigs(){ try{ CT.sigs=JSON.parse(localStorage.getItem(KEY_SIG)||'[]')||[]; }catch(e){ CT.sigs=[]; } }
+  function saveSigs(){ try{ localStorage.setItem(KEY_SIG, JSON.stringify(CT.sigs.slice(-50))); }catch(e){} }
+  function row(k,v){ return '<tr><td style="color:var(--steel);padding:4px 8px 4px 0;white-space:nowrap">'+esc(k)+'</td><td style="padding:4px 0;word-break:break-all">'+v+'</td></tr>'; }
+  function card(title,body,extra){ return '<div class="ops-panel" style="margin:10px 0;padding:12px"><div style="font-weight:700;margin-bottom:6px">'+esc(title)+'</div>'+body+(extra||'')+'</div>'; }
+
+  function paint(){
+    var out=document.getElementById('ct-out'); if(!out) return;
+    var u=U(), d=deviceId(), n=net(), tz='';
+    try{ tz=Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(e){}
+    var ua=navigator.userAgent;
+    var html='';
+    html+=card('This login', '<table style="font-size:13px">'+
+      row('Name',esc(u.personName||u.name||''))+row('Employee no',esc(u.empno||''))+row('Login code',esc(u.code||''))+row('Role',esc(u.role||''))+
+      row('App build',esc(window.HERO_BUILD||''))+row('Shell',esc(shell()))+'</table>');
+    html+=card("This phone's signature", '<table style="font-size:13px">'+
+      row('Device id (ours)','<b>'+esc(d.id)+'</b>')+row('Given on this phone',esc(d.since?new Date(d.since).toLocaleString('en-IN'):''))+
+      row('Screen',esc(screen.width+' x '+screen.height+' @'+(window.devicePixelRatio||1)))+row('Language / zone',esc((navigator.language||'')+' / '+tz))+
+      row('Platform',esc(navigator.platform||''))+row('User agent','<span style="font-size:11px">'+esc(ua)+'</span>')+'</table>',
+      '<div class="hint" style="margin-top:6px">A phone\'s MAC address cannot be read by an app: Android answers 02:00:00:00:00:00 and the address a phone sends in Wi-Fi probes changes. So the name binds to this device id and the login; the camera time-match and the Wi-Fi side are what tie it to the radio address.</div>');
+    html+=card('Network now', '<table style="font-size:13px">'+
+      row('Online',n.online?'yes':'no')+row('Type',esc(n.type||'(the phone does not say)'))+row('Speed class',esc(n.effective||''))+
+      row('Downlink / RTT',esc((n.downlink?n.downlink+' Mb/s':'')+(n.rtt?' / '+n.rtt+' ms':'')))+'</table>');
+    var loc=CT.loc;
+    html+=card('Location now', (loc?('<table style="font-size:13px">'+row('Lat, Lng',esc(loc.lat.toFixed(6)+', '+loc.lng.toFixed(6)))+row('Accuracy',esc(Math.round(loc.acc)+' m'))+
+      row('From '+PIN.name+' pin',esc(dist(loc,PIN)+' m'))+row('Read at',esc(new Date(loc.at).toLocaleTimeString('en-IN')))+'</table>'):'<div class="hint">Not read yet.</div>')+
+      (loc&&loc.err?'<div class="hint" style="color:#b91c1c">'+esc(loc.err)+'</div>':''),
+      '<button class="btn ghost sm" style="margin-top:6px" onclick="ctReadLocation()">📍 Read location</button>');
+    var bt=!!navigator.bluetooth;
+    html+=card('Bluetooth', '<table style="font-size:13px">'+row('Web Bluetooth',bt?'available (asks you, one device at a time)':'not available in this shell')+
+      row('Last pick',esc(CT.bt||'-'))+'</table>',
+      bt?'<button class="btn ghost sm" style="margin-top:6px" onclick="ctBluetooth()">🔵 Pick a nearby device</button>':'');
+    var sigs=CT.sigs.slice().reverse();
+    html+=card('Record this phone now', '<div class="hint">One row = who, which device, where, on what network, when. Kept on this phone only (last 50). This is the "software match" of the drive chat: the login binds the name to the phone.</div>',
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+      '<button class="btn sm" onclick="ctRecord()">💾 Record now</button>'+
+      '<button class="btn ghost sm" onclick="ctCopy()">📋 Copy all</button>'+
+      '<button class="btn ghost sm" onclick="ctShare()">📤 Share</button>'+
+      '<button class="btn ghost sm" style="color:#b91c1c" onclick="ctClear()">🗑 Clear</button></div>'+
+      (sigs.length?('<table style="font-size:12px;margin-top:8px;width:100%"><tr><th style="text-align:left">When</th><th style="text-align:left">Who</th><th style="text-align:left">Shell</th><th style="text-align:left">Net</th><th style="text-align:left">Where</th></tr>'+
+        sigs.map(function(r){ return '<tr><td>'+esc(new Date(r.at).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</td><td>'+esc(r.empno+' '+(r.name||''))+'</td><td>'+esc(r.shell)+'</td><td>'+esc(r.net_type||r.net_effective||'')+'</td><td>'+esc(r.lat?(r.lat.toFixed(4)+','+r.lng.toFixed(4)+' ±'+Math.round(r.acc)+'m'):'-')+'</td></tr>'; }).join('')+'</table>'):'<div class="hint" style="margin-top:6px">Nothing recorded yet.</div>'));
+    out.innerHTML=html;
+  }
+  window.ctReadLocation=function(){
+    if(!navigator.geolocation){ CT.loc={err:'This device has no location.',lat:0,lng:0,acc:0,at:Date.now()}; paint(); return; }
+    navigator.geolocation.getCurrentPosition(function(p){
+      CT.loc={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy||0,at:Date.now()}; paint();
+    },function(e){ CT.loc={err:'Location refused or not available ('+(e&&e.message||e&&e.code||'?')+').',lat:0,lng:0,acc:0,at:Date.now()}; paint(); },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+  };
+  window.ctBluetooth=function(){
+    if(!navigator.bluetooth) return;
+    navigator.bluetooth.requestDevice({acceptAllDevices:true}).then(function(dev){ CT.bt=(dev.name||'(no name)')+' '+(dev.id||''); paint(); })
+      .catch(function(e){ CT.bt='no pick ('+(e&&e.message||'cancelled')+')'; paint(); });
+  };
+  window.ctRecord=function(){
+    var u=U(), d=deviceId(), n=net(), loc=CT.loc&&!CT.loc.err?CT.loc:null;
+    var r={at:new Date().toISOString(), empno:u.empno||'', name:u.personName||u.name||'', code:u.code||'', role:u.role||'', device_id:d.id, shell:shell(),
+           ua:navigator.userAgent, online:n.online, net_type:n.type, net_effective:n.effective, lat:loc?loc.lat:null, lng:loc?loc.lng:null, acc:loc?loc.acc:null,
+           build:window.HERO_BUILD||''};
+    CT.sigs.push(r); saveSigs(); paint();
+  };
+  function text(){
+    return CT.sigs.map(function(r){ return [r.at,r.empno,r.name,r.role,r.device_id,r.shell,r.net_type||r.net_effective||'',(r.lat!=null?r.lat+','+r.lng+' ±'+Math.round(r.acc)+'m':''),r.build].join(' | '); }).join('\n');
+  }
+  window.ctCopy=function(){ var t=text()||'(nothing recorded)'; try{ navigator.clipboard.writeText(t).then(function(){ alert('Copied '+CT.sigs.length+' rows.'); }); }catch(e){ prompt('Copy:',t); } };
+  window.ctShare=function(){ var t=text()||'(nothing recorded)'; if(navigator.share){ navigator.share({title:'Hero phone signatures',text:t}).catch(function(){}); } else { window.ctCopy(); } };
+  window.ctClear=function(){ if(!confirm('Clear the recorded rows on this phone?')) return; CT.sigs=[]; saveSigs(); paint(); };
+
+  function ensureView(){
+    if(document.getElementById('view-ceotest')) return;
+    var ref=document.getElementById('view-targets'); if(!ref) return;
+    var v=document.createElement('div'); v.id='view-ceotest'; v.style.display='none';
+    v.innerHTML='<div class="wrap"><div class="hu-topbar"><h2>🧪 Testing (CEO only)</h2><div class="hu-actions">'+
+      '<button class="hu-actbtn" style="background:#475569" onclick="ctBoot()">↻ Refresh</button>'+
+      '<button class="hu-actbtn" style="background:#0f766e" onclick="showView(\'home\')">← Home</button></div></div>'+
+      '<div class="hint" style="margin:4px 0 8px">Seen only by the CEO login, in the main app. The sandbox does not carry it. Step 1 of the camera + phone method: what this phone tells about itself.</div>'+
+      '<div id="ct-out"></div></div>';
+    ref.parentNode.insertBefore(v, ref.nextSibling);
+  }
+  window.ctBoot=function(){ if(!isCEO()){ alert('Only the CEO login sees this.'); return; } ensureView(); loadSigs(); paint(); };
+
+  /* the tile on Home, after the app has drawn its own */
+  var origTiles=window.renderHomeTiles;
+  window.renderHomeTiles=function(){
+    var r=origTiles.apply(this, arguments);
+    try{
+      if(isCEO()){
+        var box=document.getElementById('home-tiles');
+        if(box && !box.querySelector('[data-ct]')){
+          var t=document.createElement('div'); t.className='mod-tile ops'; t.setAttribute('data-ct','1');
+          t.style.cssText='--tile-c:#7c2d12;--tile-bg:#fff7ed';
+          t.setAttribute('onclick',"openModule('ceotest')");
+          t.innerHTML='<div class="mt-ic">🧪</div><div><div class="mt-tt">Testing (CEO only)</div><div class="mt-dd">What this phone tells about itself: device id, shell, network, location, Bluetooth. Record and share.</div></div><div class="mt-arrow">›</div>';
+          box.appendChild(t);
+        }
+      }
+    }catch(e){}
+    return r;
+  };
+  var origOpen=window.openModule;
+  window.openModule=function(id){
+    if(id==='ceotest'){ if(!isCEO()){ alert('Only the CEO login sees this.'); return; } ensureView(); loadSigs(); paint(); showView('ceotest'); return; }
+    return origOpen.apply(this, arguments);
+  };
 })();
 </script>
 </body></html>
