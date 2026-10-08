@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 103;
-window.HERO_BUILD = 'R142-2026.10.07.1';
+window.HERO_RELEASE = 104;
+window.HERO_BUILD = 'R143-2026.10.09.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -13148,13 +13148,67 @@ function heroPhotoCachePut(id,dataUrl){
     localStorage.setItem(HERO_PHOTO_CACHE_PREFIX+id,dataUrl);
   }catch(e){}
 }
+/* ===== THE PHOTO ZOOMS, NOT THE PAGE (Ravi 03-10-2026: "The photo does not zoom, the screen behind it zooms so
+   much.. Each and every app this is happening ... In Hero app also this issue was there.") =====================
+   Pinch (two fingers), mouse wheel / touch-pad pinch, double-tap / double-click and the + - 0 keys scale the PHOTO
+   around the finger or pointer; one finger drags it when it is zoomed in. While the viewer is open the page itself
+   never zooms (touch-action:none on the frame, wheel / Ctrl+wheel stopped). Closing and opening resets it. */
+function heroZoomAttach(box, img){
+  if(!box||!img) return;
+  let s=1, x=0, y=0, lastTap=0;
+  const pts=new Map(); let pinch=null, drag=null;
+  const apply=()=>{ img.style.transform='translate('+x+'px,'+y+'px) scale('+s+')'; img.style.cursor=s>1?'grab':'zoom-in'; };
+  const zoomAt=(ns,cx,cy)=>{
+    ns=Math.max(1,Math.min(8,ns));
+    const r=img.getBoundingClientRect(), bx=r.left-x, by=r.top-y;      // where the photo sits before any move
+    x=(cx-bx)-(cx-bx-x)*ns/s; y=(cy-by)-(cy-by-y)*ns/s; s=ns;
+    if(s<=1.001){ s=1; x=0; y=0; }
+    clamp(); apply();
+  };
+  const clamp=()=>{                                                       // never lose the photo out of its frame
+    const b=box.getBoundingClientRect(), w=img.offsetWidth*s, h=img.offsetHeight*s;
+    const r0x=img.offsetLeft, r0y=img.offsetTop;
+    const minX=Math.min(0,b.width-w-r0x), maxX=Math.max(0,-r0x), minY=Math.min(0,b.height-h-r0y), maxY=Math.max(0,-r0y);
+    if(s>1){ x=Math.max(minX-b.width*0.25,Math.min(maxX+b.width*0.25,x)); y=Math.max(minY-b.height*0.25,Math.min(maxY+b.height*0.25,y)); }
+  };
+  apply();
+  box.onwheel=function(ev){ ev.preventDefault(); ev.stopPropagation(); zoomAt(s*Math.exp(-ev.deltaY*(ev.ctrlKey?0.004:0.0015)), ev.clientX, ev.clientY); };
+  box.ondblclick=function(ev){ ev.preventDefault(); zoomAt(s>1?1:2.5, ev.clientX, ev.clientY); };
+  box.onpointerdown=function(ev){
+    if(ev.target!==img) return;
+    box.setPointerCapture&&box.setPointerCapture(ev.pointerId);
+    pts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(pts.size===2){ const a=[...pts.values()]; pinch={d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1, s:s}; drag=null; }
+    else if(pts.size===1){ drag={x:ev.clientX-x, y:ev.clientY-y};
+      const now=Date.now(); if(ev.pointerType!=='mouse' && now-lastTap<300){ zoomAt(s>1?1:2.5, ev.clientX, ev.clientY); lastTap=0; } else lastTap=now; }
+  };
+  box.onpointermove=function(ev){
+    if(!pts.has(ev.pointerId)) return;
+    pts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(pinch && pts.size>=2){ const a=[...pts.values()]; const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1;
+      zoomAt(pinch.s*d/pinch.d, (a[0].x+a[1].x)/2, (a[0].y+a[1].y)/2); }
+    else if(drag && s>1){ x=ev.clientX-drag.x; y=ev.clientY-drag.y; clamp(); apply(); }
+  };
+  const up=function(ev){ pts.delete(ev.pointerId); if(pts.size<2) pinch=null; if(pts.size===0) drag=null;
+    else if(pts.size===1){ const a=[...pts.values()][0]; drag={x:a.x-x, y:a.y-y}; } };
+  box.onpointerup=up; box.onpointercancel=up;
+  if(!window.__heroZoomKeys){ window.__heroZoomKeys=true;
+    window.addEventListener('wheel',function(ev){ const ov=document.getElementById('hero-photo-ov'); if(ov&&ov.style.display!=='none'&&ev.ctrlKey) ev.preventDefault(); },{passive:false});
+    window.addEventListener('keydown',function(ev){ const ov=document.getElementById('hero-photo-ov'); const im=document.querySelector('#hero-photo-box img');
+      if(!ov||ov.style.display==='none'||!im||!im.__heroZoom) return;
+      if(ev.key==='Escape'){ ov.style.display='none'; return; }
+      if(ev.key==='+'||ev.key==='='||ev.key==='-'||ev.key==='0'){ ev.preventDefault(); im.__heroZoom(ev.key); } });
+  }
+  img.__heroZoom=function(k){ const r=box.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
+    zoomAt(k==='0'?1:(k==='-'?s/1.25:s*1.25), cx, cy); };
+}
 function heroPhotoView(url,label){
   let ov=document.getElementById('hero-photo-ov');
   if(!ov){
     ov=document.createElement('div'); ov.id='hero-photo-ov'; ov.className='hero-ovl';
     ov.style.cssText='position:fixed;inset:0;background:rgba(10,12,16,.96);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px';
     ov.innerHTML='<div id="hero-photo-cap" style="color:#cbd5e1;font-size:13px;font-weight:700;margin-bottom:8px"></div>'
-      +'<div id="hero-photo-box" style="flex:1;width:100%;display:flex;align-items:center;justify-content:center;overflow:auto"></div>'
+      +'<div id="hero-photo-box" style="flex:1;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none"></div>'
       +'<button style="margin-top:10px;padding:10px 26px;border-radius:10px;border:1px solid #475569;background:#1e293b;color:#e2e8f0;font-weight:800" onclick="document.getElementById(\'hero-photo-ov\').style.display=\'none\'">✕ Close</button>';
     ov.addEventListener('click',function(ev){ if(ev.target===ov) ov.style.display='none'; });
     document.body.appendChild(ov);
@@ -13164,7 +13218,7 @@ function heroPhotoView(url,label){
   const box=document.getElementById('hero-photo-box');
   box.innerHTML='<div style="color:#94a3b8;font-size:13px">Loading photo…</div>';
   const id=heroPhotoId(url);
-  const show=(src)=>{ box.innerHTML='<img src="'+src+'" style="max-width:100%;max-height:100%;border-radius:10px" alt="">'; };
+  const show=(src)=>{ box.innerHTML='<img src="'+src+'" draggable="false" style="max-width:100%;max-height:100%;border-radius:10px;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-select:none;-webkit-user-drag:none;cursor:zoom-in" alt="">'; heroZoomAttach(box, box.firstChild); };
   const cached=id?heroPhotoCacheGet(id):null;
   if(cached){ show(cached); return; }
   // Try the direct public thumbnail; if Drive refuses (old un-shared file), fall
