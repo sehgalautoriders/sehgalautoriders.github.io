@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 104;
-window.HERO_BUILD = 'R144-2026.10.12.1';
+window.HERO_RELEASE = 105;
+window.HERO_BUILD = 'R145-2026.10.12.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -5854,7 +5854,7 @@ function showView(name){
       if(_y>0) INS3._scroll=_y;
     }
   }catch(e){}
-  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard','targets','ceotest']   /* R141: the CEO's Testing screen */.forEach(v=>{
+  ['login','home','gate','estimate','master','control','holdup','billing','gateout','partfinder','partscan','insurance','insboard','targets','ceotest','vehicles','wiring']   /* R141: the CEO's Testing screen */.forEach(v=>{
     const el = document.getElementById('view-'+v);
     if(el) el.style.display = (v===name) ? 'block' : 'none';
   });
@@ -14027,6 +14027,8 @@ function heroKpiFromCache(boxId){
       if(isSAUser()) huRows=huRows.filter(raviAssignedToMe);
       const hu=huRows.length, appr=huRows.filter(r=>huIsApprovalStatus(huStatusText(r))).length;
       const billing = estTotal>=100000 ? (Math.round(estTotal/10000)/10)+' L' : inr(estTotal);
+      const gCx=gates.filter(g=>String(g.status||'').toUpperCase()==='CANCELLED').length;   /* R145 */
+      const gDone=gates.filter(g=>g.estimateDone && String(g.status||'').toUpperCase()!=='CANCELLED').length;
       let cards;
       if(typeof isPartsPerson==='function' && isPartsPerson() && !isTopMgmtUser()){
         // Parts login: only what a parts executive acts on. No gate/estimate-value/
@@ -14049,9 +14051,14 @@ function heroKpiFromCache(boxId){
         ];
       } else {
         cards=[
-          {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:'Tap to view — Live from Gate Entry',color:'#2563eb',click:"raviOpenGateToday()"},
+          /* R145 (Ravi 12-10-2026 "Why Gate entry today - Estimates prepared is not matching estimates pending. This has
+             happened many times before"): Prepared counted estimate ROWS - a vehicle estimated twice, or a vehicle of an
+             earlier day's gate estimated today, added 1 - while Pending counts today's gate vehicles. Now Prepared counts
+             today's gate vehicles that have an estimate, so Gate = Prepared + Pending (+ cancelled), and the extra estimate
+             rows are named under it. */
+          {ic:'🚗',n:gates.length,t:'Gate Entries Today',sub:gDone+' estimated + '+pending.length+' pending'+(gCx?' + '+gCx+' cancelled':'')+' · tap',color:'#2563eb',click:"raviOpenGateToday()"},
           {ic:'📋',n:pending.length,t:'Estimates Pending',sub:'Gate done, estimate pending · tap',color:'#16a34a',click:"openModule('control')"},
-          {ic:'🧾',n:est.length,t:'Estimates Prepared',sub:'Tap to view — Saved today',color:'#f59e0b',click:"raviOpenEstToday()"},
+          {ic:'🧾',n:gDone,t:'Estimates Prepared',sub:(est.length>gDone?'Vehicles of today’s gate · +'+(est.length-gDone)+' more estimate'+(est.length-gDone>1?'s':'')+' (repeat / earlier gate)':'Vehicles of today’s gate · tap'),color:'#f59e0b',click:"raviOpenEstToday()"},
           {ic:'₹',n:billing,t:'Estimate Value Today',sub:'Tap to view — value till now',color:'#7c3aed',click:"raviOpenEstToday()"},
           {ic:'⛔',n:hu,t:'Holdup Cases',sub:'Tap to view — Active DMS holdup',color:'#dc2626',click:"openModule('holdup')"},
           {ic:'☑',n:appr,t:'Pending Approvals',sub:'Warranty / insurance / customer · tap',color:'#0891b2',click:"openModule('holdup')"}
@@ -30168,4 +30175,494 @@ var ES_BODY=null;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 4000); }); else setTimeout(start, 4000);
 })();
 </script>
+<script>
+/* ================= R145 (Ravi 12-10-2026): VEHICLE HISTORY + DATA FRESHNESS + WIRING (live). =================
+   "Make a Vehicle History Bar where the history of all the vehicle along with current status will be visible
+    properly. Bottleneck will be visible properly in one page ... previous history in short - Last visit1 - Free
+    service 1 - date - Parts changed, Labour when pressed not on first seen ... gate entry date - JC date -
+    Requisition date - Parts order date etc etc - That option to add Requisition give there also. That will
+    become the master to track each and every vehicle in the workshop. Holdup tab leave as it is."
+   "parts stock not updated daily ... Holdup is not updated daily ... All india parts finder was also not
+    working, but there is no alert. Have you prepared the electricity diagram for this app also?"
+
+   1. Vehicle History (new tile, own screen 'vehicles'): the in-workshop list = the SAME holdup rows the Holdup
+      tab counts (huActiveFromStore) + today's gate vehicles not yet in the holdup file, each with the stage it is
+      waiting at and for how long, longest first; bottleneck chips on top filter the list. Tap a vehicle (or
+      type a number) -> hero_vehicle_story (migration 0119): customer line, previous visits one line each (tap
+      a visit = its parts and labour), the current visit as a stage table (gate, estimate, job card,
+      requisition, parts ordered, parts received, work done, ready, delivered) with the time each took and the
+      bottleneck in red. + Requisition (hero_requisition_save, same table the slip reader fills), + Parts
+      ordered / received / Work done / Ready / Delivered / Note (hero_vehicle_stage_add). Every requisition
+      part has 'Where nearby' -> the All-India Part Finder.
+   2. Data freshness: hero_data_dates -> a strip on Vehicle History and the Wiring screen, and a red line on
+      Home when a daily feed is late (holdup, stock, Per1, Per2, Part Finder office PC) - never silent again.
+   3. Wiring (top management): the app's electricity diagram, live - every feed from Hero Power BI and the
+      staff through the office PC and Supabase into the screens, each wire with its light.
+   Additive: wraps renderHomeTiles / openModule like R141. */
+(function(){
+  'use strict';
+  function U(){ try{ return (typeof USER!=='undefined' && USER) || {}; }catch(e){ return {}; } }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function regn(x){ return String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function isGuard(){ try{ return typeof isGuardUser==='function' && isGuardUser(); }catch(e){ return false; } }
+  function isSA(){ try{ return typeof isSAUser==='function' && isSAUser(); }catch(e){ return false; } }
+  function isTop(){ try{ return typeof isTopMgmtUser==='function' && isTopMgmtUser(); }catch(e){ return false; } }
+  function rpc(n,a){ if(typeof window.sbRpc!=='function') return Promise.reject(new Error('sign in again')); return window.sbRpc(n,a||{}); }
+  /* dates: ISO strings, Date, or the holdup's 'dd-mm-yyyy hh:mm' */
+  function D(v){
+    if(!v) return null; if(v instanceof Date) return isNaN(v)?null:v;
+    var s=String(v).trim(), m=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:[ T](\d{1,2}):(\d{2}))?/);
+    if(m) return new Date(+m[3], +m[2]-1, +m[1], +(m[4]||0), +(m[5]||0));
+    m=s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);
+    if(m){ var t=new Date(m[1]+' '+m[2]+' '+m[3]); return isNaN(t)?null:t; }
+    var d=new Date(s); return isNaN(d)?null:d;
+  }
+  function ist(d,o){ try{ return d.toLocaleString('en-GB',Object.assign({timeZone:'Asia/Kolkata'},o)); }catch(e){ return d.toISOString(); } }
+  function fD(v){ var d=D(v); return d? ist(d,{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-') : ''; }
+  function fDT(v){ var d=D(v); return d? ist(d,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-').replace(',','') : ''; }
+  function istDay(d){ return d? ist(d,{year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-') : ''; }
+  function gap(a,b){ var x=D(a), y=D(b)||new Date(); if(!x) return null; return Math.max(0,(y-x)/3600000); }
+  function hrs(h){ if(h==null) return ''; if(h<1) return Math.round(h*60)+' min'; if(h<48) return Math.round(h)+' h'; return Math.round(h/24)+' days'; }
+  function rs(n){ n=Number(n||0); return n? '₹'+n.toLocaleString('en-IN',{maximumFractionDigits:0}) : ''; }
+
+  var VH={list:[], filter:'', story:null, reg:'', dd:null, ddAt:0};
+  window.HERO_VH=VH;
+
+  /* ---------------------------------------------------------------- data freshness */
+  function ddLoad(force){
+    if(!force && VH.dd && Date.now()-VH.ddAt<5*60000) return Promise.resolve(VH.dd);
+    return rpc('hero_data_dates',{}).then(function(d){ VH.dd=d; VH.ddAt=Date.now(); return d; });
+  }
+  /* one light per feed: ok / late, and why. 'Morning' feeds are due by 09:30 IST. */
+  function ddLights(d){
+    var now=new Date(), today=istDay(now), hh=+ist(now,{hour:'2-digit',hour12:false});
+    var due=hh>=10, out=[];
+    function day(v){ var x=D(v); return x? istDay(x) : ''; }
+    function L(key,name,when,ok,why,fix){ out.push({key:key,name:name,when:when,ok:ok,why:why,fix:fix}); }
+    var h=day(d.holdup);
+    L('holdup','Holdup (Hero BI, 08:00)', fDT(d.holdup), !due || h===today, h===today?'':'last file '+(fD(d.holdup)||'never'),
+      'Office PC > AVNI Work > Hero BI pulls it at 08:00; Research Lab loads it.');
+    var s=d.stock||'', y=new Date(now.getTime()-86400000), sOk=s && (s>=istDay(y));
+    L('stock','Parts stock (Hero BI, daily)', fD(s), !due || !!sOk, sOk?'':'stock date '+(fD(s)||'never'),
+      'Research Lab hero_stock_load, every morning before the same-day step.');
+    var p1=day(d.per1);
+    L('per1','Per1 - invoice lines (07:30)', fDT(d.per1), !due || p1===today, p1===today?'':'last load '+(fD(d.per1)||'never'), 'AVNI Work 07:30 pull + Research Lab loader.');
+    var p2=day(d.per2);
+    L('per2','Per2 - job cards (07:45)', fDT(d.per2), !due || p2===today, p2===today?'':'last load '+(fD(d.per2)||'never'), 'AVNI Work 07:45 pull + Research Lab loader.');
+    var pf=gap(d.partFinder), pfl=d.partFinderLast||null, pfBad=pfl && String(pfl.status||'')!=='done' && gap(pfl.at)!=null && gap(pfl.at)<24 && String(pfl.status||'')!=='queued';
+    L('pf','All-India Part Finder (office PC)', d.partFinder? fDT(d.partFinder) : 'never', pf!=null && pf<0.25 && !pfBad,
+      pf==null?'office PC never answered': (pf>=0.25? 'office PC silent for '+hrs(pf) : (pfBad? 'last search '+String(pfl.status)+': '+String(pfl.msg||'') : '')),
+      'AVNI Work on the office PC must be running (it answers the Supabase queue).');
+    return out;
+  }
+  function ddStrip(d){
+    var L=ddLights(d), bad=L.filter(function(x){return !x.ok;});
+    return '<div class="vh-dd">'+L.map(function(x){
+      return '<span class="vh-dd-i '+(x.ok?'ok':'bad')+'" title="'+esc(x.fix)+'">'+(x.ok?'●':'▲')+' '+esc(x.name.split(' (')[0])+' <b>'+esc(x.when||'—')+'</b>'+(x.ok?'':' · '+esc(x.why))+'</span>';
+    }).join('')+(bad.length?'':'')+'</div>';
+  }
+  /* the red line on Home */
+  function homeAlert(){
+    if(isGuard()) return;
+    ddLoad(false).then(function(d){
+      var bad=ddLights(d).filter(function(x){return !x.ok;});
+      var host=document.getElementById('home-tiles'); if(!host) return;
+      var el=document.getElementById('vh-home-alert');
+      if(!bad.length){ if(el) el.remove(); return; }
+      if(!el){ el=document.createElement('div'); el.id='vh-home-alert'; host.parentNode.insertBefore(el, host); }
+      el.className='vh-alert';
+      el.innerHTML='▲ Data not fresh: '+bad.map(function(x){ return '<b>'+esc(x.name.split(' (')[0])+'</b> ('+esc(x.why)+')'; }).join(' · ')
+        +(isTop()? ' <button type="button" onclick="openModule(\'wiring\')">See wiring</button>':'');
+    }).catch(function(){});
+  }
+
+  /* ---------------------------------------------------------------- views */
+  function ensureView(id, html){
+    if(document.getElementById('view-'+id)) return document.getElementById('view-'+id);
+    var ref=document.getElementById('view-targets')||document.getElementById('view-holdup'); if(!ref) return null;
+    var v=document.createElement('div'); v.id='view-'+id; v.style.display='none'; v.innerHTML=html;
+    ref.parentNode.insertBefore(v, ref.nextSibling); return v;
+  }
+  function vhView(){
+    return ensureView('vehicles','<div class="wrap vh"><div class="hu-topbar"><h2>🚗 Vehicle History</h2><div class="hu-actions">'+
+      '<button class="hu-actbtn" style="background:#475569" onclick="vhBoot(true)">↻ Refresh</button>'+
+      '<button class="hu-actbtn" style="background:#0f766e" onclick="showView(\'home\')">← Home</button></div></div>'+
+      '<div class="vh-search"><input id="vh-q" placeholder="Vehicle number, e.g. MH12HH0170" autocomplete="off" '+
+      'onkeydown="if(event.key===\'Enter\')vhOpen(this.value)"><button type="button" onclick="vhOpen(document.getElementById(\'vh-q\').value)">Show history</button></div>'+
+      '<div id="vh-dd"></div><div id="vh-body"><div class="hint">Loading…</div></div></div>');
+  }
+
+  /* ---------------------------------------------------------------- the in-workshop list */
+  function stageOf(r){
+    var t=(typeof huStatusText==='function'? huStatusText(r) : String(r['Holdup Status']||'')+' '+String(r['Holdup Reason']||'')).toLowerCase();
+    if(!t.trim()) return {k:'none',l:'No status typed'};
+    if(typeof huIsPartStatus==='function' && huIsPartStatus(t)) return {k:'parts',l:'Waiting for parts'};
+    if(/approval|warranty|insurance|claim/.test(t)) return {k:'approval',l:'Waiting for approval'};
+    if(/not picked|not pickup|customer not|ready/.test(t)) return {k:'ready',l:'Ready - customer to collect'};
+    if(/customer/.test(t)) return {k:'customer',l:'Waiting for customer'};
+    return {k:'work',l:'In work'};
+  }
+  var CHIP={estimate:['Estimate pending','#b45309'],parts:['Waiting for parts','#dc2626'],approval:['Approval','#7c3aed'],
+            work:['In work','#2563eb'],ready:['Ready - not collected','#0f766e'],customer:['Customer','#0891b2'],
+            none:['No status typed','#64748b'],nojc:['Estimated today (JC in tomorrow's DMS file)','#a16207']};
+  function buildList(today){
+    var rows=[], seen={};
+    var hu=[]; try{ hu=(typeof huActiveFromStore==='function')? huActiveFromStore() : []; }catch(e){ hu=[]; }
+    if(isSA() && typeof window.raviAssignedToMe==='function') hu=hu.filter(window.raviAssignedToMe);
+    var C=window.HU_COLS||(typeof HU_COLS!=='undefined'?HU_COLS:{reg:'Vehicle Registration Number',model:'Model',jcNo:'Job Card Number',date:'JC Date',code:'Code'});
+    hu.forEach(function(r){
+      var reg=regn(r[C.reg]||r['Reg No']); if(!reg||seen[reg]) return; seen[reg]=1;
+      var st=stageOf(r), since=D(r[C.date]);
+      rows.push({reg:reg, model:r[C.model]||r['Model']||'', jc:String(r[C.jcNo]||'').trim(), dealer:String(r[C.code]||'').trim(),
+        since:since, stage:st.k, label:st.l, status:String(r['Holdup Status']||''), reason:String(r['Holdup Reason']||''),
+        eta:String(r['Parts ETA']||''), by:String(r['Parts Updated By']||''), upd:String(r['Parts Updated At']||''), src:'holdup'});
+    });
+    (today&&today.gateEntries||[]).forEach(function(g){
+      var reg=regn(g.reg); if(!reg||seen[reg]) return;
+      if(String(g.status||'').toUpperCase()==='CANCELLED' || String(g.status||'').toUpperCase()==='OUT' || g.gateOutTime) return;
+      seen[reg]=1;
+      var k=g.estimateDone?'nojc':'estimate';
+      rows.push({reg:reg, model:g.model||'', jc:'', dealer:'', since:D(g.time), stage:k, label:CHIP[k][0], status:'', reason:g.purpose||'',
+                 eta:'', by:g.empname||'', upd:'', src:'gate', name:g.name||''});
+    });
+    rows.forEach(function(r){ r.h=gap(r.since); });
+    rows.sort(function(a,b){ return (b.h||0)-(a.h||0); });
+    return rows;
+  }
+  function paintList(){
+    var b=document.getElementById('vh-body'); if(!b) return;
+    var all=VH.list, by={};
+    all.forEach(function(r){ by[r.stage]=(by[r.stage]||0)+1; });
+    var chips='<div class="vh-chips"><button type="button" class="'+(VH.filter?'':'on')+'" onclick="vhFilter(\'\')">All in workshop <b>'+all.length+'</b></button>'+
+      Object.keys(CHIP).filter(function(k){return by[k];}).sort(function(a,b){return by[b]-by[a];}).map(function(k){
+        return '<button type="button" class="'+(VH.filter===k?'on':'')+'" style="--c:'+CHIP[k][1]+'" onclick="vhFilter(\''+k+'\')">'+esc(CHIP[k][0])+' <b>'+by[k]+'</b></button>';
+      }).join('')+'</div>';
+    var rows=all.filter(function(r){ return !VH.filter || r.stage===VH.filter; });
+    var t='<table class="vh-t"><thead><tr><th>#</th><th>Vehicle</th><th>Model</th><th>In since</th><th>Waiting</th><th>Waiting for</th><th>Last word</th></tr></thead><tbody>'+
+      rows.map(function(r,i){
+        var c=(CHIP[r.stage]||CHIP.none)[1];
+        return '<tr onclick="vhOpen(\''+r.reg+'\')"><td>'+(i+1)+'</td><td><b>'+esc(r.reg)+'</b>'+(r.jc?'<div class="vh-s">'+esc(r.jc)+'</div>':'')+'</td><td>'+esc(r.model)+'</td>'+
+          '<td>'+esc(fD(r.since))+'</td><td class="'+((r.h||0)>48?'vh-red':'')+'">'+esc(hrs(r.h))+'</td>'+
+          '<td><span class="vh-tag" style="--c:'+c+'">'+esc(r.label)+'</span></td>'+
+          '<td class="vh-s">'+esc([r.status,r.reason].filter(Boolean).join(' · '))+(r.eta?' · ETA '+esc(r.eta):'')+(r.by?' · '+esc(r.by)+(r.upd?' '+esc(r.upd):''):'')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+    b.innerHTML='<div class="vh-h3">In the workshop now <span class="vh-s">same vehicles as the Holdup tab + today\'s gate · longest waiting first · tap a vehicle</span></div>'+chips+
+      (rows.length? t : '<div class="hint">Nothing here.</div>');
+  }
+  window.vhFilter=function(k){ VH.filter=k; paintList(); };
+
+  window.vhBoot=function(force){
+    vhView(); VH.story=null; VH.reg='';
+    var b=document.getElementById('vh-body'); if(b && !VH.list.length) b.innerHTML='<div class="hint">Loading…</div>';
+    ddLoad(!!force).then(function(d){ var s=document.getElementById('vh-dd'); if(s) s.innerHTML=ddStrip(d); }).catch(function(e){
+      var s=document.getElementById('vh-dd'); if(s) s.innerHTML='<div class="vh-alert">▲ Could not read how fresh the data is: '+esc(e&&e.message||e)+'</div>'; });
+    var paint=function(today){ VH.list=buildList(today); paintList(); };
+    rpc('hero_report_today',{}).then(paint).catch(function(){ paint(null); });
+  };
+
+  /* ---------------------------------------------------------------- one vehicle */
+  function fscOf(j){
+    var L=(j&&j.labour)||[];
+    for(var i=0;i<L.length;i++){ var m=String(L[i].d||'').match(/FSC\s*(IV|V|I{1,3}|\d)\b/i); if(m) return 'Free service '+({I:1,II:2,III:3,IV:4,V:5}[m[1].toUpperCase()]||m[1]); }
+    return '';
+  }
+  function visitsOf(s){
+    var V=[];
+    (s.gates||[]).forEach(function(g){ V.push({start:D(g.at), gate:g, ests:[], jc:null}); });
+    function near(t, maxDays){
+      var best=null; V.forEach(function(v){ if(!v.start||!t) return; var dh=(t-v.start)/3600000;
+        if(dh>=-12 && dh<=maxDays*24 && (!best || v.start>best.start)) best=v; }); return best;
+    }
+    (s.jobcards||[]).forEach(function(j){
+      var t=D(j.openAt), v=near(t,10);
+      if(v && !v.jc) v.jc=j; else V.push({start:t, gate:null, ests:[], jc:j});
+    });
+    (s.estimates||[]).forEach(function(e){
+      var v=null;
+      if(e.gateId) V.forEach(function(x){ if(x.gate && x.gate.entryId===e.gateId) v=x; });
+      if(!v && e.jc) V.forEach(function(x){ if(x.jc && x.jc.jc===e.jc) v=x; });
+      if(!v) v=near(D(e.at),3);
+      if(v) v.ests.push(e); else V.push({start:D(e.at), gate:null, ests:[e], jc:null});
+    });
+    V.forEach(function(v){
+      var j=v.jc, g=v.gate, e=v.ests[v.ests.length-1];
+      v.type=(j&&(fscOf(j)||j.nature))||(g&&g.purpose)||(e&&e.service)||'Visit';
+      v.km=(j&&j.km)||(g&&g.km)||(e&&e.km)||'';
+      v.bill=j? (Number(j.value||0)||(Number(j.billedParts||0)+Number(j.billedLabour||0))) : 0;
+      v.est=e? Number(e.total||0) : 0;
+    });
+    V.sort(function(a,b){ return (b.start||0)-(a.start||0); });
+    return V;
+  }
+  function currentOf(s, V){
+    var hu=(s.holdup||[]).filter(function(h){ return !String(h.delivered_at||'').trim(); })[0]||null;
+    var inList=VH.list.filter(function(r){ return r.reg===s.reg; })[0]||null;
+    var v=V[0]||null;
+    if(hu && hu.jc_number){ V.forEach(function(x){ if(x.jc && x.jc.jc===hu.jc_number) v=x; }); }
+    var open = !!inList || !!hu || (v && v.jc && !v.jc.closeAt && gap(v.start)<24*20) || (v && v.gate && !v.jc && !v.gate.outAt && gap(v.start)<72);
+    return open && v ? {v:v, hu:hu, row:inList} : null;
+  }
+  var STAGES=[['gate','Gate entry'],['estimate','Estimate made'],['jc','Job card opened (DMS)'],['requisition','Requisition'],
+              ['parts_ordered','Parts ordered'],['parts_received','Parts received'],['work_started','Work started'],
+              ['work_done','Work done (DMS)'],['ready','Ready'],['delivered','Delivered / gate out']];
+  function stagesOf(s, cur){
+    var v=cur.v, j=v.jc, start=v.start||new Date(0), at={}, who={};
+    if(v.gate){ at.gate=D(v.gate.at); who.gate=v.gate.guard||''; }
+    if(v.ests.length){ at.estimate=D(v.ests[0].at); who.estimate=v.ests[0].sa||''; }
+    if(j&&j.openAt){ at.jc=D(j.openAt); who.jc=j.supervisor||''; }
+    if(!at.jc && cur.hu && cur.hu.jc_date){ at.jc=D(cur.hu.jc_date); who.jc=cur.hu.supervisor_id||''; }
+    (s.requisitions||[]).forEach(function(r){ var t=D(r.at); if(t && t>=start-12*3600000 && !at.requisition){ at.requisition=t; who.requisition=(r.by||'')+' · '+(r.summary||''); } });
+    (s.stages||[]).forEach(function(x){ var t=D(x.at); if(!t || t<start-12*3600000) return;
+      if(x.stage==='other'||x.stage==='customer_wait') return; at[x.stage]=t; who[x.stage]=(x.by||'')+(x.note?' · '+x.note:''); });
+    if(j&&j.doneAt && !at.work_done){ at.work_done=D(j.doneAt); }
+    if(j&&j.closeAt && !at.delivered){ at.delivered=D(j.closeAt); who.delivered='DMS closed'; }
+    if(v.gate&&v.gate.outAt && !at.delivered){ at.delivered=D(v.gate.outAt); who.delivered='Gate out'; }
+    var list=STAGES.map(function(x){ return {k:x[0], l:x[1], at:at[x[0]]||null, who:who[x[0]]||''}; });
+    var prev=null, last=-1;
+    list.forEach(function(x,i){ if(x.at){ x.took=prev? gap(prev,x.at) : null; prev=x.at; last=i; } });
+    var waitIdx=-1; for(var i=last+1;i<list.length;i++){ if(list[i].k!=='requisition' && list[i].k!=='work_started' && list[i].k!=='parts_ordered' && list[i].k!=='parts_received'){ waitIdx=i; break; } }
+    var partsCase=cur.hu && typeof huIsPartStatus==='function' && huIsPartStatus(String(cur.hu.holdup_status||'')+' '+String(cur.hu.holdup_reason||''));
+    if(partsCase){ for(var k=0;k<list.length;k++){ if(['requisition','parts_ordered','parts_received'].indexOf(list[k].k)>=0 && !list[k].at){ waitIdx=k; break; } } }
+    if(waitIdx>=0 && prev) list[waitIdx].waiting=gap(prev);
+    var big=null; list.forEach(function(x){ var h=x.waiting!=null?x.waiting:x.took; if(h!=null && (!big || h>(big.waiting!=null?big.waiting:big.took))) big=x; });
+    if(big) big.bottleneck=true;
+    return list;
+  }
+  function header(s, V){
+    var c=s.customer||{}, g=(s.gates||[]).slice(-1)[0]||{}, e=(s.estimates||[]).slice(-1)[0]||{};
+    var name=c.customer_name||g.name||'', mob=c.mobile||g.mobile||'', model=c.model||g.model||((s.jobcards||[]).slice(-1)[0]||{}).model||'';
+    var fs=V.filter(function(v){ return /^Free service/.test(v.type); }).map(function(v){ return v.type.replace('Free service ','FS'); });
+    function cell(k,v){ return v? '<td><div class="vh-k">'+esc(k)+'</div><div>'+v+'</div></td>' : ''; }
+    return '<table class="vh-head"><tr>'+
+      cell('Vehicle','<b style="font-size:17px">'+esc(s.reg)+'</b>')+cell('Model',esc(model))+cell('Customer',esc(name))+
+      cell('Mobile', mob? '<a href="tel:'+esc(String(mob).replace(/\D/g,'').slice(-10))+'">'+esc(mob)+'</a>':'')+
+      cell('Sold on',esc(fD(c.date_of_sale||c.purchase_date)))+cell('Visits here',String(V.length))+
+      cell('Last service',esc(fD(c.last_service_date)))+cell('Free services',esc(fs.reverse().join(', ')||c.free_services_used||''))+
+      cell('Last km',esc(c.last_km||''))+cell('Insurance till',esc(fD(c.insurance_expiry_date||c.insurance_expiry)))+cell('City',esc(c.city||''))+
+      '</tr></table>';
+  }
+  function visitRows(V, cur){
+    if(!V.length) return '<div class="hint">No earlier visit found for this number (gate entries since July, DMS job cards since 30-08-2026).</div>';
+    return '<table class="vh-t"><thead><tr><th>#</th><th>Date</th><th>Visit</th><th>Km</th><th>Job card</th><th>Bill</th><th>Parts</th><th>Labour</th><th></th></tr></thead><tbody>'+
+      V.map(function(v,i){
+        var j=v.jc, np=j?(j.parts||[]).length:0, nl=j?(j.labour||[]).length:0, isCur=cur && cur.v===v;
+        return '<tr class="vh-vis'+(isCur?' vh-cur':'')+'" onclick="vhVisit('+i+')"><td>'+(V.length-i)+'</td><td>'+esc(fD(v.start))+'</td><td><b>'+esc(v.type)+'</b>'+(isCur?' <span class="vh-tag" style="--c:#dc2626">now in workshop</span>':'')+'</td>'+
+          '<td>'+esc(v.km)+'</td><td class="vh-s">'+esc(j?j.jc:'')+'</td><td>'+esc(rs(v.bill)||(v.est?'est. '+rs(v.est):''))+'</td><td>'+(np||'')+'</td><td>'+(nl||'')+'</td><td>▸</td></tr>'+
+          '<tr class="vh-det" id="vh-det-'+i+'" style="display:none"><td colspan="9"></td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+  window.vhVisit=function(i){
+    var tr=document.getElementById('vh-det-'+i); if(!tr||!VH.story) return;
+    if(tr.style.display!=='none'){ tr.style.display='none'; return; }
+    var v=VH.visits[i], j=v.jc, h='';
+    if(j){
+      h+='<div class="vh-k">Parts fitted (billed, before GST)</div>'+((j.parts||[]).length? '<table class="vh-t vh-in"><tr><th>Part no</th><th>Part</th><th>Qty</th><th>₹</th></tr>'+
+        j.parts.map(function(p){ return '<tr><td>'+esc(p.pn)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.qty)+'</td><td>'+esc(rs(p.rs))+'</td></tr>'; }).join('')+'</table>' : '<div class="hint">No parts billed on this job card.</div>');
+      h+='<div class="vh-k">Labour (job codes)</div>'+((j.labour||[]).length? '<table class="vh-t vh-in"><tr><th>Code</th><th>Labour</th><th>₹</th></tr>'+
+        j.labour.map(function(l){ return '<tr><td>'+esc(l.c)+'</td><td>'+esc(l.d)+'</td><td>'+esc(rs(l.v))+'</td></tr>'; }).join('')+'</table>' : '<div class="hint">No labour codes.</div>');
+      h+='<div class="vh-s">Job card '+esc(j.jc)+' · '+esc(j.nature)+' · opened '+esc(fDT(j.openAt))+(j.closeAt?' · closed '+esc(fDT(j.closeAt)):'')+(j.supervisor?' · '+esc(j.supervisor):'')+'</div>';
+    }
+    v.ests.forEach(function(e){
+      var items=[]; try{ items=JSON.parse(e.items||'[]')||[]; }catch(x){}
+      h+='<div class="vh-k">Our estimate '+esc(e.no)+' · '+esc(fDT(e.at))+' · '+esc(e.sa)+' · '+esc(rs(e.total))+'</div>'+
+        (items.length? '<div class="vh-s">'+items.slice(0,30).map(function(it){ return esc(it.name||it.desc||it.d||it.pn||''); }).filter(Boolean).join(' · ')+'</div>':'');
+    });
+    if(!j && !v.ests.length) h+='<div class="hint">Only a gate entry for this visit.</div>';
+    tr.firstChild.innerHTML=h; tr.style.display='';
+  };
+  function currentBlock(s, cur){
+    if(!cur) return '<div class="hint">Not in the workshop now.</div>';
+    var L=stagesOf(s,cur), hu=cur.hu, v=cur.v, jc=(v.jc&&v.jc.jc)||(hu&&hu.jc_number)||'';
+    VH.cur={jc:jc, dealer:(v.jc&&v.jc.dealer)||(hu&&hu.dealer_code)||''};
+    var t='<table class="vh-t vh-stages"><thead><tr><th>Stage</th><th>When</th><th>Took</th><th>By / note</th></tr></thead><tbody>'+
+      L.map(function(x){
+        var h=x.waiting!=null? '<b>waiting '+esc(hrs(x.waiting))+'</b>' : esc(hrs(x.took));
+        return '<tr class="'+(x.bottleneck?'vh-bn':'')+(x.at?'':' vh-no')+'"><td>'+(x.at?'✓ ':(x.waiting!=null?'⏳ ':'· '))+esc(x.l)+(x.bottleneck?' <span class="vh-tag" style="--c:#dc2626">bottleneck</span>':'')+'</td>'+
+          '<td>'+esc(x.at? fDT(x.at) : '')+'</td><td>'+h+'</td><td class="vh-s">'+esc(x.who)+'</td></tr>';
+      }).join('')+'</tbody></table>';
+    var huLine=hu? '<div class="vh-s">Holdup: <b>'+esc(hu.holdup_status||'no status typed')+'</b>'+(hu.holdup_reason?' · '+esc(hu.holdup_reason):'')+
+      (hu.parts_eta?' · ETA '+esc(hu.parts_eta):'')+(hu.parts_updated_by?' · '+esc(hu.parts_updated_by)+' '+esc(hu.parts_updated_at||''):'')+(jc?' · JC '+esc(jc):'')+'</div>' : '';
+    var reqs=(s.requisitions||[]).filter(function(r){ var t=D(r.at); return t && v.start && t>=v.start-12*3600000; });
+    var rq=reqs.length? '<div class="vh-k">Requisition parts</div><table class="vh-t vh-in"><tr><th>Part no</th><th>Part</th><th>Qty</th><th>Our stock</th><th></th></tr>'+
+      reqs.map(function(r){ return (r.lines||[]).map(function(l){ var st=l.match&&l.match.stock_qty_our_outlets;
+        return '<tr><td>'+esc(l.partNo)+'</td><td>'+esc(l.desc)+'</td><td>'+esc(l.qty)+'</td><td>'+(st==null?'':esc(st))+'</td><td>'+
+          (l.partNo?'<button type="button" class="vh-mini" onclick="event.stopPropagation();pfQuickCheck(\''+esc(String(l.partNo).replace(/'/g,''))+'\')">Where nearby</button>':'')+'</td></tr>'; }).join(''); }).join('')+'</table>' : '';
+    var btn=function(k,l){ return '<button type="button" onclick="vhStageForm(\''+k+'\')">'+l+'</button>'; };
+    return t+huLine+rq+'<div class="vh-btns"><button type="button" class="vh-pri" onclick="vhReqForm()">+ Requisition</button>'+
+      btn('parts_ordered','+ Parts ordered')+btn('parts_received','+ Parts received')+btn('work_started','+ Work started')+btn('work_done','+ Work done')+
+      btn('ready','+ Ready')+btn('delivered','+ Delivered')+btn('other','+ Note')+'</div><div id="vh-form"></div>';
+  }
+  function paintStory(){
+    var b=document.getElementById('vh-body'), s=VH.story; if(!b||!s) return;
+    var V=visitsOf(s), cur=currentOf(s,V); VH.visits=V;
+    b.innerHTML='<div class="vh-back"><button type="button" onclick="vhBoot()">← All vehicles in the workshop</button></div>'+header(s,V)+
+      '<div class="vh-h3">Now in the workshop</div>'+currentBlock(s,cur)+
+      '<div class="vh-h3">Previous visits <span class="vh-s">tap a visit for its parts and labour</span></div>'+visitRows(V,cur);
+  }
+  window.vhOpen=function(reg){
+    reg=regn(reg); if(reg.length<4){ alert('Type the vehicle number (at least 4 letters / digits).'); return; }
+    vhView(); if(document.getElementById('view-vehicles').style.display==='none') showView('vehicles');
+    var q=document.getElementById('vh-q'); if(q) q.value=reg;
+    var b=document.getElementById('vh-body'); if(b) b.innerHTML='<div class="hint">Reading everything we hold on '+esc(reg)+'…</div>';
+    VH.reg=reg;
+    rpc('hero_vehicle_story',{p_reg:reg}).then(function(s){
+      if(VH.reg!==reg) return;
+      if(!s||s.ok===false){ b.innerHTML='<div class="vh-alert">▲ '+esc(s&&s.error||'Could not read this vehicle.')+'</div>'; return; }
+      VH.story=s; if(s.dataDates){ VH.dd=s.dataDates; VH.ddAt=Date.now(); var st=document.getElementById('vh-dd'); if(st) st.innerHTML=ddStrip(s.dataDates); }
+      paintStory();
+    }).catch(function(e){ if(b) b.innerHTML='<div class="vh-alert">▲ Could not read this vehicle: '+esc(e&&e.message||e)+'</div>'; });
+  };
+
+  /* ---------------------------------------------------------------- forms */
+  function nowLocal(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+  var SL={parts_ordered:'Parts ordered',parts_received:'Parts received',work_started:'Work started',work_done:'Work done',ready:'Ready',delivered:'Delivered',other:'Note'};
+  window.vhStageForm=function(k){
+    var f=document.getElementById('vh-form'); if(!f) return;
+    f.innerHTML='<div class="vh-form"><b>'+esc(SL[k]||k)+'</b> for '+esc(VH.reg)+(VH.cur&&VH.cur.jc?' · JC '+esc(VH.cur.jc):'')+
+      '<div><label>When <input type="datetime-local" id="vh-at" value="'+nowLocal()+'"></label></div>'+
+      '<div><label>Note <input id="vh-note" maxlength="300" placeholder="'+(k==='parts_ordered'?'order no / supplier / ETA':'optional')+'"></label></div>'+
+      '<div class="vh-btns"><button type="button" class="vh-pri" id="vh-save" onclick="vhStageSave(\''+k+'\')">Save</button><button type="button" onclick="document.getElementById(\'vh-form\').innerHTML=\'\'">Cancel</button></div><div id="vh-msg" class="vh-s"></div></div>';
+    f.scrollIntoView({block:'nearest'});
+  };
+  window.vhStageSave=function(k){
+    var at=document.getElementById('vh-at').value, note=document.getElementById('vh-note').value, btn=document.getElementById('vh-save'), msg=document.getElementById('vh-msg');
+    if(k==='other' && !note.trim()){ msg.textContent='Type the note first.'; return; }
+    btn.disabled=true; msg.textContent='Saving…';
+    rpc('hero_vehicle_stage_add',{p_reg:VH.reg, p_jc:(VH.cur&&VH.cur.jc)||'', p_stage:k, p_at:at? new Date(at).toISOString() : null, p_note:note}).then(function(r){
+      if(!r||r.ok===false){ btn.disabled=false; msg.textContent='Not saved: '+(r&&r.error||'unknown'); return; }
+      msg.textContent='✓ Saved'; vhOpen(VH.reg);
+    }).catch(function(e){ btn.disabled=false; msg.textContent='Not saved: '+(e&&e.message||e); });
+  };
+  window.vhReqForm=function(){
+    var f=document.getElementById('vh-form'); if(!f) return;
+    f.innerHTML='<div class="vh-form"><b>Requisition</b> for '+esc(VH.reg)+(VH.cur&&VH.cur.jc?' · JC '+esc(VH.cur.jc):'')+
+      '<table class="vh-t vh-in" id="vh-rq"><tr><th>Part no</th><th>Part name</th><th>Qty</th><th></th></tr></table>'+
+      '<div class="vh-btns"><button type="button" onclick="vhReqRow()">+ Add a part</button><button type="button" class="vh-pri" id="vh-save" onclick="vhReqSave()">Save requisition</button>'+
+      '<button type="button" onclick="document.getElementById(\'vh-form\').innerHTML=\'\'">Cancel</button></div>'+
+      '<div class="vh-s">A slip photo can still be read from the Holdup tab (📷 Req punching); both land in the same list.</div><div id="vh-msg" class="vh-s"></div></div>';
+    vhReqRow(); vhReqRow(); f.scrollIntoView({block:'nearest'});
+  };
+  window.vhReqRow=function(){
+    var t=document.getElementById('vh-rq'); if(!t) return;
+    var tr=t.insertRow(-1);
+    tr.innerHTML='<td><input class="vh-pn" maxlength="30" placeholder="e.g. 11290KWB600"></td><td><input class="vh-pd" maxlength="120" placeholder="name if no number"></td>'+
+      '<td><input class="vh-pq" type="number" min="1" max="999" value="1" style="width:60px"></td><td><button type="button" class="vh-mini" onclick="this.closest(\'tr\').remove()">✕</button></td>';
+  };
+  window.vhReqSave=function(){
+    var lines=[]; document.querySelectorAll('#vh-rq tr').forEach(function(tr){
+      var pn=tr.querySelector('.vh-pn'), pd=tr.querySelector('.vh-pd'), q=tr.querySelector('.vh-pq'); if(!pn) return;
+      var a=pn.value.trim(), b=pd.value.trim(); if(a||b) lines.push({partNo:a, desc:b, qty:q.value||'1'});
+    });
+    var msg=document.getElementById('vh-msg'), btn=document.getElementById('vh-save');
+    if(!lines.length){ msg.textContent='Add at least one part.'; return; }
+    btn.disabled=true; msg.textContent='Saving…';
+    rpc('hero_requisition_save',{p_jc:(VH.cur&&VH.cur.jc)||'', p_dealer:(VH.cur&&VH.cur.dealer)||'', p_reg:VH.reg, p_photo_url:'', p_ocr_text:'', p_provider:'vehicle-history', p_lines:lines}).then(function(r){
+      if(!r||r.ok===false){ btn.disabled=false; msg.textContent='Not saved: '+(r&&r.error||'unknown'); return; }
+      msg.textContent='✓ Saved: '+(r.summary||''); vhOpen(VH.reg);
+    }).catch(function(e){ btn.disabled=false; msg.textContent='Not saved: '+(e&&e.message||e); });
+  };
+
+  /* ---------------------------------------------------------------- wiring (the app's electricity diagram) */
+  function wiringView(){
+    return ensureView('wiring','<div class="wrap vh"><div class="hu-topbar"><h2>⚡ Wiring - how our Hero app is fed</h2><div class="hu-actions">'+
+      '<button class="hu-actbtn" style="background:#475569" onclick="wrBoot(true)">↻ Refresh</button>'+
+      '<button class="hu-actbtn" style="background:#0f766e" onclick="showView(\'home\')">← Home</button></div></div><div id="wr-body"><div class="hint">Loading…</div></div></div>');
+  }
+  window.wrBoot=function(force){
+    wiringView();
+    ddLoad(!!force).then(function(d){
+      var L={}; ddLights(d).forEach(function(x){ L[x.key]=x; });
+      function lamp(k){ var x=L[k]; if(!x) return '<span class="wr-l on">●</span>'; return '<span class="wr-l '+(x.ok?'on':'off')+'" title="'+esc(x.why||'ok')+'">'+(x.ok?'●':'▲')+'</span>'; }
+      function box(t,sub,k){ return '<div class="wr-b">'+(k?lamp(k)+' ':'')+'<b>'+esc(t)+'</b><div class="vh-s">'+sub+'</div></div>'; }
+      var col=function(h,items){ return '<div class="wr-c"><div class="vh-k">'+esc(h)+'</div>'+items.join('')+'</div>'; };
+      var html='<div class="wr-g">'+
+        col('1 · Where it comes from',[
+          box('Hero Power BI - 4 logins','PDI 10307 · Premia 17057 · SSP 23490 · Chakan 61299'),
+          box('Gate guards','gate entry + photos, live'),
+          box('Service advisors','estimates, OTP, WhatsApp, live'),
+          box('WM / parts','holdup status, ETA, requisition, stages, live')])+
+        col('2 · Office PC (AVNI Work + Research Lab)',[
+          box('07:30 Per1 invoice lines', esc(L.per1.when||''), 'per1'),
+          box('07:45 Per2 job cards', esc(L.per2.when||''), 'per2'),
+          box('08:00 Holdup (pending vehicles)', esc(L.holdup.when||''), 'holdup'),
+          box('Parts stock (after holdup)', esc(L.stock.when||''), 'stock'),
+          box('Same-day % + Vlead + Per3', 'own hidden helper, after the round'),
+          box('Part Finder answerer', 'answers the app\'s queue from Hero BI · seen '+esc(L.pf.when||''), 'pf')])+
+        col('3 · Supabase (our database)',[
+          box('sheet_holdup','holdup rows + status history','holdup'),
+          box('part_stock','our stock, every outlet','stock'),
+          box('hero_bi_lines / hero_bi_jc','bills and job cards','per1'),
+          box('gate entries · estimates','typed in the app, live'),
+          box('hero_requisition · hero_vehicle_stage','requisitions and stage dates, live'),
+          box('hero_part_finder_requests','the Part Finder queue','pf')])+
+        col('4 · Screens in this app',[
+          box('Home tiles + priorities','gate, estimates, holdup'),
+          box('Holdup Monitor / Parts Desk','sheet_holdup','holdup'),
+          box('Vehicle History','everything on one vehicle'),
+          box('Targets / Daily check','Per1 + Per2','per1'),
+          box('All-India Part Finder','our stock first, then all dealers','pf'),
+          box('Estimates & Billing','estimate vs DMS bill','per1')])+
+        '</div>';
+      var bad=ddLights(d).filter(function(x){return !x.ok;});
+      html+=bad.length? '<div class="vh-alert">▲ '+bad.map(function(x){ return '<b>'+esc(x.name)+'</b>: '+esc(x.why)+' - '+esc(x.fix); }).join('<br>▲ ')+'</div>'
+                      : '<div class="vh-ok">● Every wire is live today.</div>';
+      html+='<div class="vh-s" style="margin-top:6px">A red light means that feed did not arrive today; the screens fed by it show the last good data and say so. Lights read at '+esc(fDT(d.now))+'.</div>';
+      document.getElementById('wr-body').innerHTML=html;
+    }).catch(function(e){ var b=document.getElementById('wr-body'); if(b) b.innerHTML='<div class="vh-alert">▲ '+esc(e&&e.message||e)+'</div>'; });
+  };
+
+  /* ---------------------------------------------------------------- tiles + routing */
+  var origTiles=window.renderHomeTiles;
+  window.renderHomeTiles=function(){
+    var r=origTiles.apply(this, arguments);
+    try{
+      var box=document.getElementById('home-tiles');
+      if(box && !isGuard() && !box.querySelector('[data-vh]')){
+        var t=document.createElement('div'); t.className='mod-tile ops'; t.setAttribute('data-vh','1');
+        t.style.cssText='--tile-c:#b91c1c;--tile-bg:#fef2f2'; t.setAttribute('onclick',"openModule('vehicles')");
+        t.innerHTML='<div class="mt-ic">🚗</div><div><div class="mt-tt">Vehicle History</div><div class="mt-dd">Every vehicle in the workshop with the stage it waits at. One vehicle: all visits, parts, labour, requisition, bottleneck.</div></div><div class="mt-arrow">›</div>';
+        box.insertBefore(t, box.firstChild);
+      }
+      if(box && isTop() && !box.querySelector('[data-wr]')){
+        var w=document.createElement('div'); w.className='mod-tile ops'; w.setAttribute('data-wr','1');
+        w.style.cssText='--tile-c:#a16207;--tile-bg:#fefce8'; w.setAttribute('onclick',"openModule('wiring')");
+        w.innerHTML='<div class="mt-ic">⚡</div><div><div class="mt-tt">Wiring (live)</div><div class="mt-dd">How the app is fed: Hero BI, office PC, database, screens. A red light = a feed missed today.</div></div><div class="mt-arrow">›</div>';
+        box.appendChild(w);
+      }
+      homeAlert();
+    }catch(e){}
+    return r;
+  };
+  var origOpen=window.openModule;
+  window.openModule=function(id){
+    if(id==='vehicles'){ if(isGuard()){ alert('Not for the gate login.'); return; } vhView(); showView('vehicles'); vhBoot(); return; }
+    if(id==='wiring'){ wiringView(); showView('wiring'); wrBoot(); return; }
+    return origOpen.apply(this, arguments);
+  };
+
+  var css=document.createElement('style'); css.id='r145-style';
+  css.textContent=
+    '.vh .vh-search{display:flex;gap:6px;margin:6px 0}.vh .vh-search input{flex:1;font-size:16px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;text-transform:uppercase}'+
+    '.vh button{cursor:pointer}.vh .vh-search button,.vh-btns button,.vh-back button,.vh-chips button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 10px;font-weight:700;font-size:13px}'+
+    '.vh-btns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.vh-btns .vh-pri,.vh .vh-search button{background:#b91c1c;color:#fff;border-color:#b91c1c}'+
+    '.vh-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.vh-chips button{border-left:4px solid var(--c,#334155)}.vh-chips button.on{background:#1f2937;color:#fff}'+
+    '.vh-t{width:100%;border-collapse:collapse;font-size:13px}.vh-t th{text-align:left;color:#475569;font-size:11.5px;border-bottom:2px solid #e5e7eb;padding:5px 6px;white-space:nowrap}'+
+    '.vh-t td{border-bottom:1px solid #eef0f3;padding:5px 6px;vertical-align:top}.vh-t tbody tr{cursor:pointer}.vh-t tbody tr:hover{background:#f8fafc}'+
+    '.vh-in{margin:4px 0 8px;font-size:12.5px}.vh-in tr{cursor:default}.vh-s{color:#64748b;font-size:12px}.vh-k{color:#475569;font-size:11.5px;font-weight:800;margin-top:6px}'+
+    '.vh-tag{display:inline-block;border:1px solid var(--c);color:var(--c);border-radius:6px;padding:0 6px;font-size:11.5px;font-weight:800;white-space:nowrap}'+
+    '.vh-red{color:#dc2626;font-weight:800}.vh-h3{font-weight:800;margin:14px 0 4px;font-size:15px}.vh-cur td{background:#fef2f2}'+
+    '.vh-head{width:100%;border-collapse:collapse;margin:6px 0;font-size:13.5px}.vh-head td{border:1px solid #e5e7eb;padding:5px 8px;vertical-align:top}'+
+    '.vh-stages tr{cursor:default}.vh-stages .vh-no td{color:#94a3b8}.vh-stages .vh-bn td{background:#fee2e2;color:#7f1d1d}'+
+    '.vh-form{border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin:6px 0;background:#f8fafc}.vh-form input{padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px}.vh-form label{display:block;margin:4px 0}'+
+    '.vh-mini{border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:2px 6px;font-size:12px;cursor:pointer}'+
+    '.vh-dd{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}.vh-dd-i{font-size:12px;border-radius:6px;padding:2px 7px;border:1px solid #e5e7eb}.vh-dd-i.ok{color:#166534}.vh-dd-i.bad{color:#b91c1c;border-color:#fca5a5;background:#fef2f2}'+
+    '.vh-alert{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:7px 10px;margin:6px 0;font-size:13px}.vh-alert button{margin-left:6px;border:1px solid #991b1b;background:#fff;color:#991b1b;border-radius:6px;padding:1px 7px;font-weight:700;cursor:pointer}'+
+    '.vh-ok{background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:8px;padding:7px 10px;margin:6px 0}'+
+    '.wr-g{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative}.wr-c{position:relative}.wr-c:not(:last-child):after{content:"➜";position:absolute;right:-12px;top:40%;color:#94a3b8;font-size:18px}'+
+    '.wr-b{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin:6px 0;background:#fff;font-size:13px}.wr-l{font-size:13px}.wr-l.on{color:#16a34a}.wr-l.off{color:#dc2626}'+
+    '@media(max-width:760px){.wr-g{grid-template-columns:1fr}.wr-c:not(:last-child):after{content:"⬇";right:auto;left:45%;top:auto;bottom:-14px}.vh-t .vh-s{font-size:11px}.vh-head td{display:inline-block;border:none;padding:3px 8px}}';
+  document.head.appendChild(css);
+})();
+</script>
+
 </body></html>
