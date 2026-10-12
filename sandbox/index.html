@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 105;
-window.HERO_BUILD = 'R145-2026.10.12.1';
+window.HERO_RELEASE = 106;
+window.HERO_BUILD = 'R146-2026.10.12.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -30304,7 +30304,7 @@ var ES_BODY=null;
   }
   var CHIP={estimate:['Estimate pending','#b45309'],parts:['Waiting for parts','#dc2626'],approval:['Approval','#7c3aed'],
             work:['In work','#2563eb'],ready:['Ready - not collected','#0f766e'],customer:['Customer','#0891b2'],
-            none:['No status typed','#64748b'],nojc:['Estimated today (JC in tomorrow's DMS file)','#a16207']};
+            none:['No status typed','#64748b'],nojc:['Estimated today (JC in tomorrow’s DMS file)','#a16207']};
   function buildList(today){
     var rows=[], seen={};
     var hu=[]; try{ hu=(typeof huActiveFromStore==='function')? huActiveFromStore() : []; }catch(e){ hu=[]; }
@@ -30612,12 +30612,13 @@ var ES_BODY=null;
   };
 
   /* ---------------------------------------------------------------- tiles + routing */
-  var origTiles=window.renderHomeTiles;
-  window.renderHomeTiles=function(){
-    var r=origTiles.apply(this, arguments);
+  /* R146 (Ravi 12-10-2026 19:1x, Windows app on R145: tile text new, Vehicle History tile missing): on a cold start the
+     Home tiles can be painted before this block has loaded, so wrapping renderHomeTiles alone misses that first paint.
+     addTiles() now also runs at once, after a pause, and whenever the tile box is redrawn. */
+  function addTiles(){
     try{
-      var box=document.getElementById('home-tiles');
-      if(box && !isGuard() && !box.querySelector('[data-vh]')){
+      var box=document.getElementById('home-tiles'); if(!box) return;
+      if(!isGuard() && !box.querySelector('[data-vh]')){
         var t=document.createElement('div'); t.className='mod-tile ops'; t.setAttribute('data-vh','1');
         t.style.cssText='--tile-c:#b91c1c;--tile-bg:#fef2f2'; t.setAttribute('onclick',"openModule('vehicles')");
         t.innerHTML='<div class="mt-ic">🚗</div><div><div class="mt-tt">Vehicle History</div><div class="mt-dd">Every vehicle in the workshop with the stage it waits at. One vehicle: all visits, parts, labour, requisition, bottleneck.</div></div><div class="mt-arrow">›</div>';
@@ -30631,8 +30632,14 @@ var ES_BODY=null;
       }
       homeAlert();
     }catch(e){}
-    return r;
-  };
+  }
+  var origTiles=window.renderHomeTiles;
+  window.renderHomeTiles=function(){ var r=origTiles.apply(this, arguments); addTiles(); return r; };
+  addTiles(); setTimeout(addTiles,1500); setTimeout(addTiles,5000);
+  try{
+    var tb=document.getElementById('home-tiles'), tmr=null;
+    if(tb && window.MutationObserver) new MutationObserver(function(){ if(tmr) return; tmr=setTimeout(function(){ tmr=null; addTiles(); },200); }).observe(tb,{childList:true});
+  }catch(e){}
   var origOpen=window.openModule;
   window.openModule=function(id){
     if(id==='vehicles'){ if(isGuard()){ alert('Not for the gate login.'); return; } vhView(); showView('vehicles'); vhBoot(); return; }
