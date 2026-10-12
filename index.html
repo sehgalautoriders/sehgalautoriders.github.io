@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 104;
-window.HERO_BUILD = 'R143-2026.10.09.1';
+window.HERO_BUILD = 'R144-2026.10.12.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3932,9 +3932,9 @@ window.addEventListener('offline',function(){ INS5.online=false; i5Head(); });
          shut inside a details element that no longer calls itself a fallback
          for something being "not enabled yet". -->
     <div id="pf-live-wrap" style="margin-bottom:12px;border:1px solid var(--line);background:var(--card,#fff);border-radius:8px;padding:10px">
-      <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:3px">Stock at other Hero dealers <span style="font-weight:600;color:var(--steel);font-size:11px">— optional, and slow</span></div>
-      <div class="hint" style="margin:0 0 8px">Everything above is our own four workshops, answered instantly. This asks Hero's Power BI for the rest of India — about <b>5,000 dealers</b>. Measured 07-Aug-2026: it takes <b>around six minutes</b>, which is the most the server is allowed, so some attempts finish and some are cut off. <b>If it is cut off there is nothing wrong with the login and nothing to re-authorise</b> — just tap it again.</div>
-      <button class="btn ghost" style="border-color:#0e7490;color:#0e7490" onclick="pfLiveAuto()">Try other dealers (about six minutes)</button>
+      <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:3px">Stock at other Hero dealers <span style="font-weight:600;color:var(--steel);font-size:11px">— live from Hero BI</span></div>
+      <div class="hint" style="margin:0 0 8px">Everything above is our own four workshops. This asks Hero's Power BI for the rest of India — about <b>5,000 dealers</b> — through our office PC, which keeps the Hero BI logins. Measured 12-10-2026: <b>about 10 to 30 seconds</b>. The same part asked again within 6 hours answers at once.</div>
+      <button class="btn ghost" style="border-color:#0e7490;color:#0e7490" onclick="pfLiveAuto()">Try other dealers (all India, live)</button>
       <details style="margin-top:8px">
         <summary style="cursor:pointer;font-size:11px;color:var(--steel)">Advanced: fetch with a Power BI token you paste yourself</summary>
         <div class="hint" style="margin-top:6px">Only useful if you already have a Power BI session open in this browser. Paste the "Copy as fetch" of the export/xlsx request; the token inside it expires in about two hours.</div>
@@ -15616,67 +15616,67 @@ function pfIdentify(pn){
   },20000);
 }
 
-/* ---- Live Power BI via server-side auto-login (v11.3) ---- */
+/* ---- Live all-India stock: Supabase queue -> the office PC -> Hero BI (R144) ----
+   R144, 12-10-2026. Ravi: "Why all India Part Finder has not being diverted from
+   google appscript to supabase. Still it is pending?" It was: R104 retired Apps
+   Script and find_part_live never got a Supabase route, so this button answered
+   "apps-script-retired" from 22-09 to 12-10.
+   Now: hero_part_finder_ask(pn) files a request (migration 0118); AVNI Work on the
+   office PC (it holds the four Hero BI logins - they never leave that PC) picks it
+   up within 5 s, runs Hero's "All India Part Finder" export for that one part and
+   files the dealer rows; hero_part_finder_result(id) is polled every 3 s.
+   Measured 12-10-2026: 06435AABA00S = 6,766 rows, 5,270 dealers, 12 s.
+   The same part asked again within 6 hours gets the same answer, no new export. */
+var PF_LIVE_RUN=0;
 function pfLiveAuto(){
   const pn=pfVal('pf-partno').trim().toUpperCase();
   if(!pn){ pfInfo('Enter a part number first.','warn'); return; }
   PF_PART=pn;
-  /* MEASURED 07-Aug-2026 against the live endpoint: this call returns 6,415
-     rows across 5,072 dealers — 2.25 MB of JSONP — and takes 344 SECONDS. The
-     old "10–20 seconds" line was written when the parts master was a fraction
-     of that. Saying 10–20 seconds and then failing at 45 is what makes a slow
-     answer look like a broken one. */
-  document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">⚡ Logging in to Hero BI and fetching all-India stock for '+pn+'…<div style="font-size:12px;margin-top:6px">This is the whole country — about <b>5,000 dealers</b>. It takes <b>up to six minutes</b>. Leave this screen open.<br>For our own four outlets, <b>Find Stock</b> above answers instantly.</div></div>';
-  pfInfo('⚡ Auto-login + live fetch for '+pn+' — up to six minutes.','warn');
-  jgetRaw('find_part_live',{pn:pn},function(res){
-    if(!res){ pfInfo('No response — check connection and retry.','error'); return; }
-    if(res.ok===false){
-      let msg='Live fetch failed: '+(res.error||'unknown');
-      /* R24: the heading used to say "Live auto-login not available yet" for
-         EVERY failure, which sent the reader after a login problem when the
-         login had in fact worked and the workbook parse had failed. Heading and
-         icon now follow the actual stage that failed. */
-      let head='Live auto-login not available yet', ic='🔐';
-      /* R31.5, 07-Aug-2026. Ravi: "why it is asking for authorization again and
-         again". It was not an authorization problem at all — pbi_login_test
-         answers SUCCESS. The request was simply timing out, and a timeout fell
-         through to the padlock heading above, so a slow fetch was reported as a
-         login that needed authorising. A timeout now says so. */
-      if(res.error==='network' || res.error==='timeout' || /timeout/i.test(String(res.error||''))){
-        head='Still fetching — it did not finish in time'; ic='⏳';
-        msg='The all-India fetch is about 5,000 dealers and takes up to six minutes; this attempt ran out of time. '
-           +'The Hero BI login itself is fine — nothing needs authorising. '
-           +'Tap it again and leave the screen open, or use Find Stock above for our own four outlets, which is instant.';
-        pfInfo(msg,'warn');
-        document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:36px;color:var(--steel)"><div style="font-size:30px">'+ic+'</div><div style="font-weight:700;margin-top:6px">'+head+'</div><div style="font-size:12px;margin-top:4px;max-width:460px;margin-left:auto;margin-right:auto">'+raviEsc(msg)+'</div></div>';
-        pfIdentify(pn);
+  const run=++PF_LIVE_RUN, t0=Date.now();
+  const wrap=document.getElementById('pf-table-wrap');
+  function box(ic, head, msg){
+    wrap.innerHTML='<div style="text-align:center;padding:36px;color:var(--steel)"><div style="font-size:30px">'+ic+'</div><div style="font-weight:700;margin-top:6px">'+raviEsc(head)+'</div><div style="font-size:12px;margin-top:4px;max-width:460px;margin-left:auto;margin-right:auto">'+raviEsc(msg)+'</div></div>';
+  }
+  function fail(head, msg){ if(run!==PF_LIVE_RUN) return; pfInfo(msg,'error'); box('⚠️', head, msg); pfIdentify(pn); }
+  box('⚡','Asking Hero BI for all-India stock of '+pn+'…','About 5,000 dealers. Usually 10 to 30 seconds. Leave this screen open.');
+  pfInfo('⚡ Live all-India fetch for '+pn+' — usually under 30 seconds.','warn');
+  sbRpc('hero_part_finder_ask',{p_pn:pn}).then(function(a){
+    if(!a||a.ok===false){ fail('Could not ask for '+pn, (a&&a.error)||'No answer from the server.'); return; }
+    poll(a.id);
+  }).catch(function(e){ fail('Could not reach the server', String(e&&e.message||e)); });
+  function poll(id){
+    if(run!==PF_LIVE_RUN) return;   /* a newer search took over this screen */
+    sbRpc('hero_part_finder_result',{p_id:id}).then(function(res){
+      if(run!==PF_LIVE_RUN) return;
+      if(!res){ fail('No answer', 'The server gave an empty reply. Tap the button again.'); return; }
+      if(res.status==='failed'){ fail('Hero BI did not answer for '+pn, res.error||'The fetch failed.'); return; }
+      if(res.status!=='done'){
+        const secs=Math.round((Date.now()-t0)/1000);
+        if(res.pcSeenSecs>90){
+          box('🖥️','The office PC is not answering', 'All-India stock is fetched by our office PC (it keeps the Hero BI logins). It last checked in '
+            +(res.pcSeenSecs>86400?'more than a day':Math.round(res.pcSeenSecs/60)+' minutes')+' ago. Your request is kept and will be answered as soon as it is back - or try again later.');
+          pfInfo('Waiting for the office PC to come back…','warn');
+        } else {
+          box('⚡','Fetching all-India stock of '+pn+'… '+secs+' s', res.status==='running'
+            ? 'Hero BI is preparing the list of dealers. Usually 10 to 30 seconds.'
+            : 'Waiting for the office PC to pick it up'+(res.ahead?' ('+res.ahead+' search'+(res.ahead>1?'es':'')+' ahead)':'')+'.');
+        }
+        if(Date.now()-t0>10*60*1000){ fail('Still not answered after 10 minutes', 'Your request is still in the queue. Tap the button again later - the answer will be ready.'); return; }
+        setTimeout(function(){ poll(id); }, 3000);
         return;
       }
-      if(res.error==='LOGIN_FAILED') msg='Auto-login not enabled/allowed yet. Run pbiLoginTest() in Apps Script once to see why, or use the manual fallback below.';
-      else if(res.error==='TOKEN_REJECTED') msg='Power BI rejected the login token. Re-run pbiLoginTest() in Apps Script.';
-      else if(String(res.error).indexOf('SETUP')>-1) msg=res.error;
-      else if(res.error==='XLSX_PARSE_FAILED'){ head='Logged in, but the stock file could not be read'; ic='📄';
-        msg='Power BI answered and the login worked — the workbook it returned could not be parsed. '+(res.detail||''); }
-      else if(String(res.error).indexOf('EXPORT_')===0){ head='Power BI refused the export'; ic='📉';
-        msg='Login worked; the export request came back '+res.error.replace('EXPORT_','HTTP ')+'. '+(res.detail||''); }
-      else if(res.detail) msg+=' — '+res.detail;
-      pfInfo(msg,'error');
-      document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:36px;color:var(--steel)"><div style="font-size:30px">'+ic+'</div><div style="font-weight:700;margin-top:6px">'+head+'</div><div style="font-size:12px;margin-top:4px;max-width:460px;margin-left:auto;margin-right:auto">'+raviEsc(msg)+'</div></div>';
-      /* the part may still be identifiable even when live stock is unreachable */
-      pfIdentify(pn);
-      return;
-    }
-    PF_RESULT=res;
-    if(!res.rows.length) pfInfo('Live: no stock anywhere in India for '+pn+' right now.','warn');
-    else pfInfo('✓ LIVE all-India stock for '+pn+(res.summary.desc?' — '+res.summary.desc:'')+' · '+res.summary.dealers+' dealers · fetched just now.','ok');
-    pfBuildFilters(); pfRender();
-  /* 45,000 was the old value and it was never enough: MEASURED 07-Aug-2026, this
-     route takes 344 SECONDS to return 6,415 rows over 5,072 dealers. Every
-     single live fetch therefore timed out, and the timeout was reported as an
-     authorisation problem. 400 s clears the measured time and still sits inside
-     the Apps Script six-minute ceiling, so a genuine server failure is still
-     reported rather than waited on forever. */
-  },400000);
+      PF_RESULT=res;
+      if(!res.rows.length) pfInfo('Live: no stock anywhere in India for '+pn+' right now (Hero stock of '+(res.stockDate||'yesterday')+').','warn');
+      else pfInfo('✓ LIVE all-India stock for '+pn+(res.summary.desc?' — '+res.summary.desc:'')+' · '+res.summary.totalQty+' pc at '+res.summary.dealers
+        +' dealers · Hero stock of '+(res.stockDate||'—')+' · fetched '+(res.fetchedAt||'just now'),'ok');
+      pfBuildFilters(); pfRender();
+      if(!res.rows.length){ box('📭','No stock anywhere in India','No Hero dealer is holding '+pn+' in the Hero stock of '+(res.stockDate||'yesterday')+'.'); pfIdentify(pn); }
+    }).catch(function(e){
+      if(run!==PF_LIVE_RUN) return;
+      if(Date.now()-t0>10*60*1000){ fail('Could not reach the server', String(e&&e.message||e)); return; }
+      setTimeout(function(){ poll(id); }, 5000);   /* a network blip: keep trying */
+    });
+  }
 }
 /* ---- Live Power BI via manual paste (fallback) ---- */
 function pfParseFetch(text){
