@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script charset="utf-8" src="sandbox.js?v=26fc7c7eb9"></script>
+<head><script charset="utf-8" src="sandbox.js?v=b09673619a"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SANDBOX · Sehgal Hero</title>
@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 106;
-window.HERO_BUILD = 'R146-2026.10.12.1';
+window.HERO_RELEASE = 107;
+window.HERO_BUILD = 'R147-2026.10.13.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3906,8 +3906,8 @@ window.addEventListener('offline',function(){ INS5.online=false; i5Head(); });
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
       <div style="flex:1;min-width:200px">
-        <label style="font-size:12px;font-weight:700;color:var(--steel)">Part Number</label>
-        <input id="pf-partno" type="text" placeholder="e.g. 17683AAN110S" style="width:100%;font-size:15px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;text-transform:uppercase" onkeydown="if(event.key==='Enter')pfSearch()">
+        <label style="font-size:12px;font-weight:700;color:var(--steel)">Part Number <span style="font-weight:600">— one, or several with a comma / space between (up to 20)</span></label>
+        <input id="pf-partno" type="text" placeholder="e.g. 17683AAN110S, 06435AABA00S, 15410KWPD00S" style="width:100%;font-size:15px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;text-transform:uppercase" onkeydown="if(event.key==='Enter')pfSearch()">
       </div>
       <button class="btn" style="background:#0891b2;min-width:140px" onclick="pfSearch()">🔎 Find Stock</button>
     </div>
@@ -3946,6 +3946,8 @@ window.addEventListener('offline',function(){ INS5.online=false; i5Head(); });
     <div id="pf-kpi-row" class="hu-kpi-row"></div>
     <div id="pf-zonal-strip" class="hu-slicer" style="display:none"></div>
     <div class="hu-ctrl-bar" id="pf-filters" style="display:none">
+      <select id="pf-f-part" onchange="pfRender()" style="display:none;padding:5px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff"><option value="">All Parts</option></select>
+      <label id="pf-f-all-wrap" style="display:none;gap:6px;align-items:center;font-size:12px;font-weight:700;color:#0e7490"><input type="checkbox" id="pf-f-all" onchange="pfRender()"> Dealers having ALL parts</label>
       <select id="pf-f-area" onchange="pfRender()" style="padding:5px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff"><option value="">All Area Offices</option></select>
       <select id="pf-f-town" onchange="pfRender()" style="padding:5px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff"><option value="">All Towns</option></select>
       <select id="pf-f-zonal" onchange="pfRender()" style="padding:5px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;background:#fff"><option value="">All Zonal Offices</option></select>
@@ -15556,7 +15558,9 @@ function pfHandleStockFile(input){
    yet deployed, so this change cannot take the screen backwards.
    --------------------------------------------------------------------------- */
 function pfSearch(){
-  const pn=pfVal('pf-partno').trim().toUpperCase();
+  const parts=pfParts();
+  if(parts.length>1){ pfLiveMulti(parts); return; }   /* R147: several parts = the live all-India search for each */
+  const pn=(parts[0]||'');
   if(!pn){ pfInfo('Enter a part number first.','warn'); return; }
   PF_PART=pn;
   document.getElementById('pf-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)">Searching stock for '+pn+'…</div>';
@@ -15635,8 +15639,20 @@ function pfIdentify(pn){
    Measured 12-10-2026: 06435AABA00S = 6,766 rows, 5,270 dealers, 12 s.
    The same part asked again within 6 hours gets the same answer, no new export. */
 var PF_LIVE_RUN=0;
+/* R147 (Ravi 13-10-2026 "Start Multiple part searching in All India part Portal in Hero App"): the box takes several
+   numbers - comma, space, semicolon or new line between them. Cleaned the way hero_part_finder_ask cleans one. */
+function pfParts(){
+  const seen={}, out=[];
+  pfVal('pf-partno').toUpperCase().split(/[\s,;\/|]+/).forEach(function(s){
+    s=s.replace(/[^A-Z0-9]/g,'');
+    if(s.length>=4 && !seen[s]){ seen[s]=1; out.push(s); }
+  });
+  return out.slice(0,20);
+}
 function pfLiveAuto(){
-  const pn=pfVal('pf-partno').trim().toUpperCase();
+  const parts=pfParts();
+  if(parts.length>1){ pfLiveMulti(parts); return; }
+  const pn=(parts[0]||'');
   if(!pn){ pfInfo('Enter a part number first.','warn'); return; }
   PF_PART=pn;
   const run=++PF_LIVE_RUN, t0=Date.now();
@@ -15685,6 +15701,146 @@ function pfLiveAuto(){
     });
   }
 }
+/* ---- R147: several parts at once ------------------------------------------------------------------------------
+   Each part is its own request in the same queue (0118): the office PC answers them one after another (a few seconds
+   each), a part asked in the last 6 hours answers at once. One table at the end: every dealer row carries its part, and
+   "Dealers having ALL parts" keeps only the dealers that hold every part found - one call, one trip. */
+function pfLiveMulti(parts){
+  const run=++PF_LIVE_RUN, t0=Date.now();
+  PF_PART=parts.join(', ');
+  const st=parts.map(function(pn){ return {pn:pn, id:null, status:'asking', res:null, err:''}; });
+  const wrap=document.getElementById('pf-table-wrap');
+  document.getElementById('pf-filters').style.display='none';
+  document.getElementById('pf-kpi-row').innerHTML='';
+  const strip=document.getElementById('pf-zonal-strip'); if(strip) strip.style.display='none';
+  pfInfo('⚡ Live all-India search for '+parts.length+' parts — about 5 to 30 seconds each, answered one after another.','warn');
+  function draw(){
+    const secs=Math.round((Date.now()-t0)/1000);
+    const word={asking:'Asking…', queued:'Waiting for the office PC', running:'Hero BI working…', done:'Done', failed:'Failed'};
+    wrap.innerHTML='<div style="padding:14px"><div style="font-weight:700;margin-bottom:8px">Fetching '+parts.length+' parts from all India… '+secs+' s</div>'
+      +'<table class="hu-excel-table"><thead><tr><th>Part</th><th>Description</th><th>Status</th><th style="text-align:right">Dealers</th><th style="text-align:right">Qty</th></tr></thead><tbody>'
+      +st.map(function(s){
+        const sm=s.res&&s.res.summary||{};
+        return '<tr><td class="td-reg" style="font-size:12px">'+raviEsc(s.pn)+'</td><td style="font-size:11px">'+raviEsc(sm.desc||'')+'</td>'
+          +'<td style="font-size:12px;font-weight:700;color:'+(s.status==='done'?'#16a34a':s.status==='failed'?'#b91c1c':'#b45309')+'">'+raviEsc(s.status==='failed'?('Failed - '+(s.err||'')):(word[s.status]||s.status))+'</td>'
+          +'<td style="text-align:right">'+(s.status==='done'?(sm.dealers||0):'')+'</td><td style="text-align:right;font-weight:800;color:#0891b2">'+(s.status==='done'?(sm.totalQty||0):'')+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
+  }
+  draw();
+  st.forEach(function(s){
+    sbRpc('hero_part_finder_ask',{p_pn:s.pn}).then(function(a){
+      if(!a||a.ok===false){ s.status='failed'; s.err=(a&&a.error)||'no answer from the server'; }
+      else { s.id=a.id; s.status=a.status||'queued'; }
+    }).catch(function(e){ s.status='failed'; s.err=String(e&&e.message||e); });
+  });
+  function tick(){
+    if(run!==PF_LIVE_RUN) return;   /* a newer search took over this screen */
+    const open=st.filter(function(s){ return s.id && s.status!=='done' && s.status!=='failed'; });
+    const asking=st.some(function(s){ return s.status==='asking'; });
+    if(!open.length && !asking){ finish(); return; }
+    if(Date.now()-t0>15*60*1000){
+      open.forEach(function(s){ s.status='failed'; s.err='not answered in 15 minutes - still queued, ask again later'; });
+      finish(); return;
+    }
+    Promise.all(open.map(function(s){
+      return sbRpc('hero_part_finder_result',{p_id:s.id}).then(function(res){
+        if(!res) return;
+        if(res.status==='done'){ s.status='done'; s.res=res; }
+        else if(res.status==='failed'){ s.status='failed'; s.err=res.error||'the fetch failed'; }
+        else { s.status=res.status; if(res.pcSeenSecs>90) s.err='office PC not answering'; }
+      }).catch(function(){ /* a network blip: the next tick asks again */ });
+    })).then(function(){
+      if(run!==PF_LIVE_RUN) return;
+      draw();
+      const pcDown=st.some(function(s){ return s.err==='office PC not answering' && s.status!=='done' && s.status!=='failed'; });
+      if(pcDown) pfInfo('The office PC (it keeps the Hero BI logins) is not answering - your parts stay in the queue and are answered when it is back.','warn');
+      setTimeout(tick, 3000);
+    });
+  }
+  setTimeout(tick, 1500);
+  function finish(){
+    if(run!==PF_LIVE_RUN) return;
+    const done=st.filter(function(s){ return s.status==='done'; });
+    const rows=[]; const byDealer={}; const byZonal={};
+    done.forEach(function(s){ (s.res.rows||[]).forEach(function(r){
+      r.desc=r.desc||s.res.summary.desc||''; rows.push(r);
+      const k=r.dealerCode||r.dealer; (byDealer[k]=byDealer[k]||{})[r.pn]=1;
+      const z=r.zonal||''; if(!byZonal[z]) byZonal[z]={qty:0,d:{}}; byZonal[z].qty+=Number(r.qty||0); byZonal[z].d[k]=1;
+    }); });
+    rows.forEach(function(r){ r.cover=Object.keys(byDealer[r.dealerCode||r.dealer]||{}).length; });
+    rows.sort(function(a,b){ return b.cover-a.cover || (a.own!==b.own?(a.own?-1:1):0) || (a.pune!==b.pune?(a.pune?-1:1):0)
+      || String(a.dealer).localeCompare(String(b.dealer)) || String(a.pn).localeCompare(String(b.pn)); });
+    const found=done.filter(function(s){ return (s.res.rows||[]).length; }).length;
+    PF_RESULT={ok:true, multi:true, live:true, pn:PF_PART, rows:rows,
+      parts:st.map(function(s){ const sm=s.res&&s.res.summary||{};
+        return {pn:s.pn, desc:sm.desc||'', dealers:sm.dealers||0, qty:sm.totalQty||0, status:s.status, err:s.err,
+                stockDate:s.res&&s.res.stockDate||''}; }),
+      partsFound:found,
+      summary:{rows:rows.length, totalQty:rows.reduce(function(t,r){ return t+Number(r.qty||0); },0),
+               dealers:Object.keys(byDealer).length, desc:'',
+               zonal:Object.keys(byZonal).map(function(z){ return {zonal:z, qty:byZonal[z].qty, dealers:Object.keys(byZonal[z].d).length}; })
+                       .sort(function(a,b){ return b.qty-a.qty; })}};
+    const all=Object.keys(byDealer).filter(function(k){ return Object.keys(byDealer[k]).length===found; }).length;
+    const failed=st.filter(function(s){ return s.status==='failed'; });
+    pfInfo('✓ LIVE all-India stock for '+parts.length+' parts · '+found+' found in stock · '+PF_RESULT.summary.dealers+' dealers hold at least one'
+      +(found>1?' · '+all+' hold all '+found:'')+(failed.length?' · not answered: '+failed.map(function(s){ return s.pn; }).join(', '):''),
+      failed.length?'warn':'ok');
+    const allBox=document.getElementById('pf-f-all'); if(allBox) allBox.checked=false;
+    const partSel=document.getElementById('pf-f-part'); if(partSel) partSel.value='';
+    pfBuildFilters(); pfRender();
+  }
+}
+
+/* ---- R147: parts-person phone on every dealer row (Ravi 13-10-2026 "the Contact nos of Part persons of those
+   stockists and dealers are not given") ----------------------------------------------------------------------------
+   Hero's All India Part Finder report has no phone column, so the number is ours: hero_dealer_contacts (0120), one row
+   per dealer code, saved once by whoever calls that dealer and seen by every login from then on. 📞 = call;
+   "+ number" / ✎ = save or change the parts person and the mobile. */
+var PF_CONTACTS={};
+function pfContactsLoad(){
+  if(!PF_RESULT || PF_RESULT._contacts) return;
+  PF_RESULT._contacts=1;
+  const codes=[...new Set(PF_RESULT.rows.map(function(r){ return r.dealerCode; }).filter(Boolean))];
+  if(!codes.length || typeof sbRpc!=='function') return;
+  sbRpc('hero_dealer_contacts_get',{p_codes:codes}).then(function(m){
+    if(!m || typeof m!=='object') return;
+    Object.keys(m).forEach(function(k){ PF_CONTACTS[k]=m[k]; });
+    pfContactsPaint();
+  }).catch(function(){ /* the numbers are extra: the stock table stays as it is */ });
+}
+function pfPhoneCell(code){
+  if(!code) return '';
+  const c=PF_CONTACTS[code];
+  if(c && c.phone){
+    const tel=c.phone.length===10?'+91'+c.phone:c.phone;
+    return '<a href="tel:'+tel+'" title="Call '+raviEsc(c.person||'parts person')+(c.at?' (saved '+c.at+')':'')+'" style="text-decoration:none;font-weight:700;color:#0e7490;white-space:nowrap">📞 '
+      +raviEsc(c.phone)+'</a>'+(c.person?'<div style="font-size:10px;color:var(--steel)">'+raviEsc(c.person)+'</div>':'')
+      +(c.phone2?'<div style="font-size:10px"><a href="tel:'+(c.phone2.length===10?'+91':'')+raviEsc(c.phone2)+'" style="color:#0e7490">'+raviEsc(c.phone2)+'</a></div>':'')
+      +'<a href="#" onclick="pfContactEdit(\''+code+'\');return false" title="Change" style="font-size:10px;color:var(--steel)">✎ change</a>';
+  }
+  return '<a href="#" onclick="pfContactEdit(\''+code+'\');return false" title="Save this dealer\'s parts person and mobile - everybody sees it from then on" style="font-size:11px;font-weight:700;color:#0e7490;white-space:nowrap">＋ number</a>';
+}
+function pfContactsPaint(){
+  document.querySelectorAll('[data-pfc]').forEach(function(el){ el.innerHTML=pfPhoneCell(el.getAttribute('data-pfc')); });
+}
+function pfContactEdit(code){
+  const row=(PF_RESULT&&PF_RESULT.rows||[]).find(function(r){ return r.dealerCode===code; })||{};
+  const c=PF_CONTACTS[code]||{};
+  const name=row.dealer||code;
+  const person=prompt('Parts person at '+name+(row.town?' ('+row.town+')':'')+'\nName:', c.person||'');
+  if(person===null) return;
+  const phone=prompt('Mobile of '+(person||'the parts person')+' at '+name+'\n(leave empty and press OK to remove the number)', c.phone||'');
+  if(phone===null) return;
+  pfInfo('Saving the number for '+name+'…','warn');
+  sbRpc('hero_dealer_contact_set',{p_code:code, p_name:name, p_person:person, p_phone:phone, p_phone2:c.phone2||null, p_note:c.note||null}).then(function(r){
+    if(!r || r.ok===false){ pfInfo((r&&r.error)||'The number was not saved.','error'); return; }
+    if(r.removed) delete PF_CONTACTS[code];
+    else PF_CONTACTS[code]={person:(person||'').trim(), phone:r.phone||'', phone2:c.phone2||'', note:c.note||'', at:'today'};
+    pfContactsPaint();
+    pfInfo(r.removed?'Number removed for '+name+'.':'✓ Saved: '+name+' — '+((person||'').trim()||'parts person')+' '+(r.phone||'')+'. Everybody sees it from now on.','ok');
+  }).catch(function(e){ pfInfo('Not saved: '+String(e&&e.message||e),'error'); });
+}
+
 /* ---- Live Power BI via manual paste (fallback) ---- */
 function pfParseFetch(text){
   const m=text.match(/fetch\(\s*(['"])(.*?)\1/s); if(!m) throw new Error('Paste a Chrome "Copy as fetch" block.');
@@ -15779,13 +15935,22 @@ function pfBuildFilters(){
   fill('pf-f-area',rows.map(r=>r.area));
   fill('pf-f-town',rows.map(r=>r.town));
   fill('pf-f-zonal',rows.map(r=>r.zonal));
+  /* R147: the part picker and "ALL parts" only when several parts were asked */
+  const multi=!!PF_RESULT.multi;
+  const ps=document.getElementById('pf-f-part'), aw=document.getElementById('pf-f-all-wrap');
+  if(ps){ ps.style.display=multi?'':'none'; if(multi) fill('pf-f-part',rows.map(r=>r.pn)); else ps.value=''; }
+  if(aw){ aw.style.display=multi&&PF_RESULT.partsFound>1?'flex':'none'; if(!multi) document.getElementById('pf-f-all').checked=false; }
 }
 function pfFiltered(){
   if(!PF_RESULT) return [];
   const fA=pfVal('pf-f-area'), fT=pfVal('pf-f-town'), fZ=pfVal('pf-f-zonal');
   const own=document.getElementById('pf-f-own')&&document.getElementById('pf-f-own').checked;
   const q=pfVal('pf-f-search').toLowerCase().trim();
+  const fP=PF_RESULT.multi?pfVal('pf-f-part'):'';
+  const allOnly=PF_RESULT.multi&&document.getElementById('pf-f-all')&&document.getElementById('pf-f-all').checked;
   return PF_RESULT.rows.filter(r=>{
+    if(fP&&r.pn!==fP) return false;
+    if(allOnly&&r.cover<PF_RESULT.partsFound) return false;
     if(fA&&r.area!==fA) return false;
     if(fT&&r.town!==fT) return false;
     if(fZ&&r.zonal!==fZ) return false;
@@ -15804,8 +15969,16 @@ function pfRender(){
   /* R31: the labels follow the SOURCE. mp_stock answers from our own four
      outlets, so calling that figure "Total Qty (India)" would be a lie printed
      in 22px — the live Power BI fetch is the only path that really is India. */
-  const ours=!!PF_RESULT.ours;
-  document.getElementById('pf-kpi-row').innerHTML=(ours?[
+  const ours=!!PF_RESULT.ours, multi=!!PF_RESULT.multi;
+  pfContactsLoad();
+  const allDealers=multi?new Set(PF_RESULT.rows.filter(r=>r.cover>=PF_RESULT.partsFound).map(r=>r.dealerCode)).size:0;
+  document.getElementById('pf-kpi-row').innerHTML=(multi?[
+    {ic:'🧩',n:PF_RESULT.partsFound+' / '+PF_RESULT.parts.length,label:'Parts in stock somewhere',color:'#0891b2'},
+    {ic:'✅',n:allDealers,label:'Dealers with ALL '+PF_RESULT.partsFound,color:'#16a34a'},
+    {ic:'🏢',n:dealers,label:'Dealers (shown)',color:'#2563eb'},
+    {ic:'🏠',n:ownQty,label:'Sehgal Own Stock',color:'#16a34a'},
+    {ic:'📍',n:puneQty,label:'Pune Area Qty',color:'#7c3aed'}
+  ]:ours?[
     {ic:'📦',n:totalQty,label:'Qty at our outlets',color:'#16a34a'},
     {ic:'🏢',n:dealers,label:'Outlets holding it',color:'#2563eb'},
     {ic:'🧾',n:rows.length,label:'Storage locations',color:'#d97706'}
@@ -15819,33 +15992,45 @@ function pfRender(){
 
   const strip=document.getElementById('pf-zonal-strip');
   if(strip) strip.style.display='none';
-  if(strip && PF_RESULT.summary && PF_RESULT.summary.zonal && PF_RESULT.summary.zonal.length){
+  if(strip && multi){
+    /* R147: one chip per part asked - tap = only that part */
+    strip.style.display='flex';
+    strip.innerHTML='<span class="hu-slicer-label">Parts:</span>'+PF_RESULT.parts.map(p=>`<span class="hu-sl-btn" style="cursor:pointer${p.status!=='done'?';color:#b91c1c':''}" title="${raviEsc(p.desc||p.err||'')}" onclick="var s=document.getElementById('pf-f-part');s.value=(s.value==='${p.pn}'?'':'${p.pn}');pfRender()">${p.pn} <span class="sl-count">${p.status==='done'?p.qty:'✕'}</span> · ${p.status==='done'?p.dealers+'d':(p.status==='failed'?'not answered':'')}</span>`).join('');
+  } else if(strip && PF_RESULT.summary && PF_RESULT.summary.zonal && PF_RESULT.summary.zonal.length){
     strip.style.display='flex';
     strip.innerHTML='<span class="hu-slicer-label">Zonal:</span>'+PF_RESULT.summary.zonal.map(z=>`<span class="hu-sl-btn" style="cursor:default">${z.zonal||'—'} <span class="sl-count">${z.qty}</span> · ${z.dealers}d</span>`).join('');
   }
 
   const wrap=document.getElementById('pf-table-wrap');
   if(!rows.length){ wrap.innerHTML='<div style="text-align:center;padding:40px;color:var(--steel)"><div style="font-size:32px;margin-bottom:8px">🔍</div><div style="font-weight:700">No stock rows match the current filters</div></div>'; return; }
+  /* R147: several parts can mean tens of thousands of rows - the screen draws the first 2,000 (best dealers first),
+     the filters narrow it and Excel takes them all */
+  const CAP=2000, more=rows.length>CAP?rows.length-CAP:0, shown=more?rows.slice(0,CAP):rows;
+  const moreNote=more?`<div style="padding:8px 12px;font-size:12px;color:var(--steel)">Showing the first ${CAP} of ${rows.length} rows — narrow with the filters above, or ⬇ Excel for all.</div>`:'';
+  const cov=r=>multi?`<span style="font-size:10px;font-weight:800;color:${r.cover>=PF_RESULT.partsFound?'#16a34a':'#b45309'}">${r.cover}/${PF_RESULT.partsFound} parts</span>`:'';
   if(window.innerWidth<=760){
-    wrap.innerHTML=rows.map(r=>`<div class="blm-card" style="border-left-color:${r.own?'#16a34a':r.pune?'#7c3aed':'#0891b2'}">
+    wrap.innerHTML=shown.map(r=>`<div class="blm-card" style="border-left-color:${r.own?'#16a34a':r.pune?'#7c3aed':'#0891b2'}">
       <div class="blm-top"><div><span class="blm-reg" style="font-size:14px">${r.dealer||r.dealerCode}</span>${r.own?'<span class="blm-hu" style="background:#dcfce7;color:#166534;border-color:#86efac">SEHGAL</span>':r.pune?'<span class="blm-hu" style="background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe">PUNE</span>':''}</div><span style="font-weight:800;color:#0891b2">${r.qty} pc</span></div>
+      ${multi?`<div class="blm-mid" style="font-weight:700">${r.pn}${r.desc?' · '+r.desc:''} · ${cov(r)}</div>`:''}
       <div class="blm-mid">${[r.town,r.area,r.loc].filter(Boolean).join(' · ')}</div>
       <div class="blm-mid" style="font-size:10px">DLC ₹${r.dlc} · Value ₹${Math.round(r.dlcVal)}${r.date?' · stock '+r.date:''}</div>
-    </div>`).join('');
+      <div class="blm-mid" data-pfc="${r.dealerCode||''}">${pfPhoneCell(r.dealerCode)}</div>
+    </div>`).join('')+moreNote;
     return;
   }
   wrap.innerHTML=`<table class="hu-excel-table"><thead><tr>
-    <th>Dealer</th><th>Town</th><th>Area Office</th><th>Zonal</th><th>Inventory Location</th><th style="text-align:right">Qty</th><th style="text-align:right">DLC ₹</th><th></th>
-  </tr></thead><tbody>${rows.map(r=>`<tr${r.own?' style="background:#f0fdf4"':(r.pune?' style="background:#faf5ff"':'')}>
+    <th>Dealer</th>${multi?'<th>Part</th><th>Has</th>':''}<th>Town</th><th>Area Office</th><th>Zonal</th><th>Inventory Location</th><th style="text-align:right">Qty</th><th style="text-align:right">DLC ₹</th><th>Parts person</th>
+  </tr></thead><tbody>${shown.map(r=>`<tr${r.own?' style="background:#f0fdf4"':(r.pune?' style="background:#faf5ff"':'')}>
     <td class="td-reg" style="font-size:12px">${r.dealer||r.dealerCode}${r.own?' <span style="font-size:9px;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 4px;font-weight:800">SEHGAL</span>':''}</td>
+    ${multi?`<td style="font-size:11px;white-space:nowrap" title="${raviEsc(r.desc||'')}"><b>${r.pn}</b>${r.desc?'<div style="font-size:10px;color:var(--steel)">'+raviEsc(r.desc)+'</div>':''}</td><td>${cov(r)}</td>`:''}
     <td style="font-size:12px">${r.town||'—'}</td>
     <td style="font-size:11px">${r.area||'—'}</td>
     <td style="font-size:11px">${(r.zonal||'').replace('Zonal Office - ','')||'—'}</td>
     <td style="font-size:11px">${r.loc||'—'}</td>
     <td style="text-align:right;font-weight:800;color:#0891b2">${r.qty}</td>
     <td style="text-align:right;font-size:12px">${inr(r.dlc)}</td>
-    <td style="text-align:center">${r.town?`<a href="tel:" onclick="return false" title="Phone directory coming in next phase" style="opacity:.4">📞</a>`:''}</td>
-  </tr>`).join('')}</tbody></table>`;
+    <td data-pfc="${r.dealerCode||''}">${pfPhoneCell(r.dealerCode)}</td>
+  </tr>`).join('')}</tbody></table>`+moreNote;
 }
 function pfDownload(){
   /* SPEED 1 (26-Jul-2026): the export libraries are no longer loaded at startup.
@@ -15855,11 +16040,12 @@ function pfDownload(){
 
   const rows=pfFiltered(); if(!rows.length){ alert('Nothing to download.'); return; }
   if(!window.XLSX){ alert('Excel engine still loading, try again in a moment.'); return; }
-  const aoa=[['Part Number','Description','Dealer Code','Dealer Name','Town','Area Office','Zonal Office','Inventory Location','Qty','Curr DLC','DLC Value','Stock Date']];
-  rows.forEach(r=>aoa.push([r.pn,r.desc,r.dealerCode,r.dealer,r.town,r.area,r.zonal,r.loc,r.qty,r.dlc,r.dlcVal,r.date]));
+  const aoa=[['Part Number','Description','Dealer Code','Dealer Name','Town','Area Office','Zonal Office','Inventory Location','Qty','Curr DLC','DLC Value','Stock Date','Parts Person','Phone','Phone 2'].concat(PF_RESULT.multi?['Parts held (of '+PF_RESULT.partsFound+')']:[])];
+  rows.forEach(r=>{ const c=PF_CONTACTS[r.dealerCode]||{};
+    aoa.push([r.pn,r.desc,r.dealerCode,r.dealer,r.town,r.area,r.zonal,r.loc,r.qty,r.dlc,r.dlcVal,r.date,c.person||'',c.phone||'',c.phone2||''].concat(PF_RESULT.multi?[r.cover]:[])); });
   const ws=XLSX.utils.aoa_to_sheet(aoa), wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'PartStock');
-  XLSX.writeFile(wb,'PartFinder_'+PF_PART+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  XLSX.writeFile(wb,'PartFinder_'+String(PF_PART).replace(/[^A-Z0-9]+/gi,'_')+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 /* ---- Embedded quick-check from the SA estimate (per part row) ---- */
