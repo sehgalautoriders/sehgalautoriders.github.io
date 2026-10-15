@@ -28,8 +28,8 @@
 
 /* Must match window.HERO_RELEASE / window.HERO_BUILD in index.html exactly.
    release.ps1 bumps both together and refuses to publish on a mismatch. */
-const HERO_RELEASE = 107;
-const HERO_BUILD = 'R147-2026.10.13.1';
+const HERO_RELEASE = 108;
+const HERO_BUILD = 'R148-2026.10.15.1';
 const SHELL_CACHE = 'hero-shell-' + HERO_BUILD;
 /* Throttle for the background shell refresh — see the fetch handler. */
 let LAST_SHELL_REFRESH = 0;
@@ -135,6 +135,8 @@ self.addEventListener('fetch', function (event) {
 
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
   if (isLiveHost(url)) return;                     // backend + photos: never touched
+  /* R148 (15-10-2026): A.V.N.I Decisions is always read fresh from the network - a cached copy would show old buttons. */
+  if (url.origin === self.location.origin && /\/decisions\.html$/.test(url.pathname)) return;
 
   /* Libraries and fonts: from the phone first. Only hit the network if we have
      never seen the file. This is the ~2.2 MB saving. */

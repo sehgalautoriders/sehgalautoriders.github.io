@@ -62,3 +62,7 @@
 !sandbox/sandbox.js
 !sandbox/sw.js
 !sandbox/build.py
+# R148 (15-10-2026): decisions.html is A.V.N.I Decisions - Ravi's questions on his phone, 10 at a time (CEO login only;
+# the rows come from Supabase through the CEO's own login). Self-contained, no data inside, no key beyond the publishable one
+# that already ships in index.html. By NAME, as above.
+!decisions.html

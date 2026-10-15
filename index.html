@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 107;
-window.HERO_BUILD = 'R147-2026.10.13.1';
+window.HERO_RELEASE = 108;
+window.HERO_BUILD = 'R148-2026.10.15.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -30855,6 +30855,42 @@ var ES_BODY=null;
     '.wr-b{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin:6px 0;background:#fff;font-size:13px}.wr-l{font-size:13px}.wr-l.on{color:#16a34a}.wr-l.off{color:#dc2626}'+
     '@media(max-width:760px){.wr-g{grid-template-columns:1fr}.wr-c:not(:last-child):after{content:"⬇";right:auto;left:45%;top:auto;bottom:-14px}.vh-t .vh-s{font-size:11px}.vh-head td{display:inline-block;border:none;padding:3px 8px}}';
   document.head.appendChild(css);
+})();
+</script>
+
+<script>
+/* ================= R148 (Ravi 15-10-2026): A.V.N.I DECISIONS ON THE PHONE. =================
+   "Update all the approvals and doubts required from me to phone so that laptop opening and opening Sentinel and sitting on
+    it for 2 hrs is avoided and jobs get faster ... Take the approvals. Store in github or supabase. When the PC starts download
+    them and start working."
+   The questions only Ravi can answer (from every chat and from Sentinel) are in Supabase avni_decisions, written in plain words;
+   decisions.html shows them 10 at a time with the answer buttons. This block only puts a "Decisions · N" button on the screen for
+   the CEO login when something waits (re-checked every 5 minutes and whenever the app comes to the front). Nobody else sees it;
+   the server refuses every other login anyway (avni_decisions_list -> _avni_is_ravi). Additive: touches nothing else. */
+(function(){
+  'use strict';
+  if(window.HERO_SANDBOX) return;
+  function U(){ try{ return (typeof USER!=='undefined' && USER) || {}; }catch(e){ return {}; } }
+  function isCEO(){ try{ return String(U().role||'').toLowerCase()==='ceo'; }catch(e){ return false; } }
+  function draw(n,u){
+    var b=document.getElementById('avni-dec-pill');
+    if(!n){ if(b) b.remove(); return; }
+    if(!b){
+      b=document.createElement('a'); b.id='avni-dec-pill'; b.href='decisions.html';
+      b.style.cssText='position:fixed;right:12px;bottom:84px;z-index:9998;background:#b45309;color:#fff;border-radius:999px;padding:10px 14px;'
+        +'font:700 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);text-decoration:none';
+      document.body.appendChild(b);
+    }
+    b.textContent='🟠 Decisions · '+n+(u?' ('+u+' urgent)':'');
+  }
+  function tick(){
+    if(!isCEO() || typeof window.sbRpc!=='function'){ draw(0); return; }
+    window.sbRpc('avni_decisions_list',{p_view:'open',p_page:0,p_app:null}).then(function(d){
+      var c=(d&&d.counts)||{}; draw(c.open||0, c.urgent||0);
+    }).catch(function(){});
+  }
+  setTimeout(tick, 6000); setInterval(tick, 5*60000);
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') tick(); });
 })();
 </script>
 

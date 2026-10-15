@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>A.V.N.I Decisions</title>
+<link rel="icon" href="icon-192.png">
+<style>
+/* A.V.N.I Decisions (Ravi 15-10-2026): every question only Ravi can answer, on his phone, 10 at a time. The answer is saved in
+   Supabase at once (a receipt with the time); the PC acts on it when it is on. Same login as the Hero App (login CEO). */
+:root{--bg:#f4f6fa;--card:#fff;--ink:#0f172a;--soft:#475569;--line:#e2e8f0;--blue:#1d4ed8;--green:#15803d;--red:#b91c1c;--amber:#b45309;--chip:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#111a2e;--ink:#e5e7eb;--soft:#9aa6b8;--line:#1f2a44;--blue:#60a5fa;--green:#4ade80;--red:#f87171;--amber:#fbbf24;--chip:#1e293b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:40px}
+header{position:sticky;top:0;z-index:5;background:var(--ink);color:#fff;padding:10px 16px 8px}
+@media (prefers-color-scheme:dark){header{background:#020617}}
+header h1{margin:0;font-size:17px;letter-spacing:.3px}
+header .sub{font-size:12px;opacity:.8;margin-top:2px}
+.wrap{max-width:720px;margin:0 auto;padding:10px 16px}
+.counts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.count{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 4px;text-align:center}
+.count b{display:block;font-size:20px}
+.count span{font-size:11px;color:var(--soft)}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:6px 0}
+.tab{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600}
+.tab.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:4px 0 8px}
+.chip{flex:0 0 auto;border:0;background:var(--chip);color:var(--ink);border-radius:999px;padding:5px 10px;font-size:12px}
+.chip.on{outline:2px solid var(--blue)}
+.pc{font-size:12px;color:var(--soft);margin:2px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:10px 0}
+.card.u1{border-left:5px solid var(--red)}
+.card.u3{opacity:.92}
+.top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--soft)}
+.app{background:var(--chip);color:var(--ink);border-radius:6px;padding:1px 7px;font-weight:600}
+.urg{color:var(--red);font-weight:700}
+.title{font-weight:700;font-size:16px;margin:6px 0 4px}
+.ask{font-weight:600;margin:6px 0}
+.line{color:var(--soft);font-size:14px;margin:3px 0}
+.line b{color:var(--ink);font-weight:600}
+.more{background:none;border:0;color:var(--blue);padding:4px 0;font-size:13px}
+.detail{white-space:pre-wrap;font-size:12.5px;background:var(--bg);border-radius:8px;padding:8px;max-height:260px;overflow:auto;margin-top:4px}
+.opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.opt{border:1px solid var(--blue);background:transparent;color:var(--blue);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;min-height:44px}
+.opt.first{background:var(--blue);color:#fff}
+.opt.close{border-color:var(--line);color:var(--soft)}
+.opt:disabled{opacity:.5}
+.row{display:flex;gap:8px;margin-top:8px}
+textarea{width:100%;min-height:64px;border:1px solid var(--line);border-radius:10px;padding:8px;font:inherit;background:var(--bg);color:var(--ink)}
+.small{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:13px;min-height:40px}
+.receipt{margin-top:10px;font-size:13px;border-radius:10px;padding:8px 10px;background:#ecfdf5;color:#065f46}
+.receipt.wait{background:#fffbeb;color:#92400e}
+.receipt.bad{background:#fef2f2;color:#991b1b}
+@media (prefers-color-scheme:dark){.receipt{background:#052e1a;color:#86efac}.receipt.wait{background:#2a1d05;color:#fcd34d}.receipt.bad{background:#2a0b0b;color:#fca5a5}}
+.pager{display:flex;justify-content:space-between;align-items:center;margin:12px 0;font-size:13px;color:var(--soft)}
+.empty{text-align:center;color:var(--soft);padding:30px 10px}
+.login{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:20px}
+.login input{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;margin:6px 0;font:inherit;background:var(--bg);color:var(--ink)}
+.err{color:var(--red);font-size:13px;margin-top:6px}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+<header>
+  <h1>A.V.N.I Decisions</h1>
+  <div class="sub" id="sub">Your answers, 10 at a time. Saved at once - the PC acts on them when it is on.</div>
+</header>
+<div class="wrap" id="app"><div class="empty">Opening…</div></div>
+<script>
+(function(){
+'use strict';
+var SB_URL='https://tiwfuwfzjxcsbrifcdpu.supabase.co', SB_ANON='sb_publishable_slimmjt0POF4fhAnTAfLyQ_P1jYG9Xh', SB_DOMAIN='@sehgalautoriders.co.in';
+var VIEWS=[['open','Needs you'],['answered','Waiting for PC'],['later','Later'],['done','Done']];
+var S={view:'open', page:0, app:'', data:null, open:{}, busy:{}, msg:{}, toast:null};
+var DEMO=/[?&]demo=1/.test(location.search);
+var $app=document.getElementById('app');
+
+function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function when(v){ if(!v) return ''; var d=new Date(v); if(isNaN(d)) return String(v);
+  return d.toLocaleString('en-GB',{timeZone:'Asia/Kolkata',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-').replace(',',''); }
+function hhmm(v){ var t=when(v); return t.slice(-5); }
+
+/* ---------------- the Hero App login (same keys in this phone's storage) */
+function tok(){ try{ return {at:localStorage.getItem('sb_at')||'', rt:localStorage.getItem('sb_rt')||'', exp:Number(localStorage.getItem('sb_at_exp')||0)}; }catch(e){ return {at:'',rt:'',exp:0}; } }
+function store(s){ try{ localStorage.setItem('sb_at',s.access_token||''); localStorage.setItem('sb_rt',s.refresh_token||''); localStorage.setItem('sb_at_exp',String(Date.now()+((s.expires_in||3600)-120)*1000)); }catch(e){} }
+function timed(url,opts,ms){ var c=new AbortController(); var t=setTimeout(function(){ c.abort(); }, ms||20000);
+  return fetch(url,Object.assign({},opts,{signal:c.signal})).finally(function(){ clearTimeout(t); }); }
+async function refresh(){ var t=tok(); if(!t.rt) return '';
+  var r=await timed(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:t.rt})},12000);
+  if(!r.ok) return ''; var s=await r.json(); store(s); return s.access_token||''; }
+async function token(){ var t=tok(); if(t.at && Date.now()<t.exp) return t.at; return await refresh(); }
+async function rpc(name,args){
+  if(DEMO) return demoRpc(name,args||{});
+  var at=await token(); if(!at) throw Object.assign(new Error('Please log in'),{login:true});
+  var call=function(a){ return timed(SB_URL+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:SB_ANON,Authorization:'Bearer '+a,'Content-Type':'application/json'},body:JSON.stringify(args||{})},25000); };
+  var r=await call(at);
+  if(r.status===401){ at=await refresh(); if(!at) throw Object.assign(new Error('Please log in'),{login:true}); r=await call(at); }
+  var body=null; try{ body=await r.json(); }catch(e){}
+  if(!r.ok){ var m=(body&&(body.message||body.hint))||('HTTP '+r.status); if(/not allowed/i.test(m)) throw Object.assign(new Error('This page is only for the CEO login.'),{login:true}); throw new Error(m); }
+  return body;
+}
+async function login(code,pass){
+  code=String(code||'').trim().toLowerCase(); var email=code.indexOf('@')>=0?code:'';
+  if(!email){ try{ var rr=await timed(SB_URL+'/rest/v1/rpc/resolve_login',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({p_id:code})},8000);
+    if(rr.ok){ var em=await rr.json(); if(em&&typeof em==='string') email=em; } }catch(e){} if(!email) email=code+SB_DOMAIN; }
+  var r=await timed(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pass})},12000);
+  if(r.status===400) throw new Error('Login code or password is not right.');
+  if(!r.ok) throw new Error('The server did not answer (HTTP '+r.status+'). Try again.');
+  store(await r.json());
+}
+function showLogin(why){
+  $app.innerHTML='<div class="login"><b>Log in with your Hero App login</b><div class="line">'+esc(why||'Only the CEO login sees these questions.')+'</div>'
+   +'<input id="lc" placeholder="Login code (for example CEO)" autocomplete="username"><input id="lp" type="password" placeholder="Password" autocomplete="current-password">'
+   +'<button class="opt first" id="lb" style="width:100%;margin-top:6px">Log in</button><div class="err" id="le"></div>'
+   +'<div class="line" style="margin-top:10px">Already logged in to the Hero App on this phone? Open this page from the Hero App and you are in at once.</div></div>';
+  document.getElementById('lb').onclick=async function(){ var b=this; b.disabled=true; document.getElementById('le').textContent='';
+    try{ await login(document.getElementById('lc').value, document.getElementById('lp').value); load(); }
+    catch(e){ document.getElementById('le').textContent=e.message; b.disabled=false; } };
+}
+
+/* ---------------- the list */
+async function load(keep){
+  try{
+    var d=await rpc('avni_decisions_list',{p_view:S.view,p_page:S.page,p_app:S.app||null});
+    S.data=d; draw();
+  }catch(e){ if(e.login) showLogin(e.message); else if(!keep){ $app.innerHTML='<div class="empty">Could not load: '+esc(e.message)+'<br><br><button class="small" id="rt">Try again</button></div>'; document.getElementById('rt').onclick=function(){ load(); }; } }
+}
+function pcLine(pc){
+  if(!pc) return 'The PC has not picked up any answer yet. Your answers wait safely until it does.';
+  var at=pc.observed_at||pc.at, mins=at?Math.round((Date.now()-new Date(at))/60000):null;
+  if(mins!=null && mins<=5) return '🟢 The PC is on - it picked up answers at '+hhmm(at)+'. '+(pc.needsRavi!=null?pc.needsRavi+' things need you there.':'');
+  return '⚪ The PC was last seen '+when(at)+'. Your answers are saved here and it acts on them when it is on - nothing else waits for it.';
+}
+function draw(){
+  var d=S.data||{}, c=d.counts||{}, rows=d.rows||[], h='';
+  h+='<div class="counts"><div class="count"><b>'+(c.open||0)+'</b><span>Need you</span></div><div class="count"><b style="color:var(--red)">'+(c.urgent||0)+'</b><span>Urgent</span></div>'
+   +'<div class="count"><b>'+(c.answered||0)+'</b><span>Waiting for PC</span></div><div class="count"><b style="color:var(--green)">'+(c.doneToday||0)+'</b><span>Done today</span></div></div>';
+  if(S.toast) h+='<div class="receipt'+(S.toast.bad?' bad':'')+'" id="toast">'+esc(S.toast.t)+'</div>';
+  h+='<div class="pc">'+esc(pcLine(d.pc))+(c.reviewedToday?' You answered '+c.reviewedToday+' today.':'')+'</div>';
+  h+='<div class="tabs">'+VIEWS.map(function(v){ var n=v[0]==='open'?c.open:v[0]==='answered'?c.answered:v[0]==='later'?c.later:null;
+    return '<button class="tab'+(S.view===v[0]?' on':'')+'" data-view="'+v[0]+'">'+v[1]+(n?' · '+n:'')+'</button>'; }).join('')+'</div>';
+  if(S.view==='open' && (d.apps||[]).length>1){
+    h+='<div class="chips"><button class="chip'+(!S.app?' on':'')+'" data-app="">All</button>'+(d.apps||[]).map(function(a){ return '<button class="chip'+(S.app===a.app?' on':'')+'" data-app="'+esc(a.app)+'">'+esc(a.app)+' · '+a.n+'</button>'; }).join('')+'</div>';
+  }
+  if(!rows.length) h+='<div class="empty">'+(S.view==='open'?'Nothing needs you right now. 🎉':'Nothing here.')+'</div>';
+  rows.forEach(function(r){ h+=card(r); });
+  var total=d.total||0, from=S.page*10+1, to=Math.min(total,(S.page+1)*10);
+  if(total>10) h+='<div class="pager"><button class="small" id="pv"'+(S.page?'':' disabled')+'>‹ Previous 10</button><span>'+from+'-'+to+' of '+total+'</span><button class="small" id="nx"'+(to<total?'':' disabled')+'>Next 10 ›</button></div>';
+  $app.innerHTML=h;
+  $app.querySelectorAll('[data-view]').forEach(function(b){ b.onclick=function(){ S.view=b.dataset.view; S.page=0; S.app=''; load(); }; });
+  $app.querySelectorAll('[data-app]').forEach(function(b){ b.onclick=function(){ S.app=b.dataset.app; S.page=0; load(); }; });
+  var pv=document.getElementById('pv'), nx=document.getElementById('nx');
+  if(pv) pv.onclick=function(){ S.page--; load(); window.scrollTo(0,0); };
+  if(nx) nx.onclick=function(){ S.page++; load(); window.scrollTo(0,0); };
+  $app.querySelectorAll('[data-more]').forEach(function(b){ b.onclick=function(){ S.open[b.dataset.more]=!S.open[b.dataset.more]; draw(); }; });
+  $app.querySelectorAll('[data-ans]').forEach(function(b){ b.onclick=function(){ answer(b.dataset.id,b.dataset.ans); }; });
+  $app.querySelectorAll('[data-send]').forEach(function(b){ b.onclick=function(){ var t=document.getElementById('t-'+b.dataset.send); answer(b.dataset.send,'text',t&&t.value); }; });
+  $app.querySelectorAll('[data-later]').forEach(function(b){ b.onclick=function(){ act('avni_decision_later',{p_id:b.dataset.later,p_hours:24},b.dataset.later,'Moved to Later (24 hours).'); }; });
+  $app.querySelectorAll('[data-undo]').forEach(function(b){ b.onclick=function(){ act('avni_decision_undo',{p_id:b.dataset.undo},b.dataset.undo,'Taken back - it is open again.'); }; });
+}
+function card(r){
+  var id=r.id, k=esc(id), busy=S.busy[id], h='<div class="card u'+(r.urgency||2)+'">';
+  h+='<div class="top"><span class="app">'+esc(r.app||'A.V.N.I')+'</span>'+(r.urgency===1?'<span class="urg">URGENT</span>':r.urgency===3?'<span>can wait</span>':'')+'<span>'+esc(when(r.created_at))+'</span></div>';
+  h+='<div class="title">'+esc(r.title)+'</div>';
+  if(r.what) h+='<div class="line"><b>What happened:</b> '+esc(r.what)+'</div>';
+  if(r.ask) h+='<div class="ask">❓ '+esc(r.ask)+'</div>';
+  if(r.why) h+='<div class="line"><b>What changes:</b> '+esc(r.why)+'</div>';
+  if(r.if_nothing) h+='<div class="line"><b>If you do nothing:</b> '+esc(r.if_nothing)+'</div>';
+  if(r.detail){ h+='<button class="more" data-more="'+k+'">'+(S.open[id]?'Hide the details ▴':'More details ▾')+'</button>'; if(S.open[id]) h+='<div class="detail">'+esc(r.detail)+'</div>'; }
+  if(r.status==='open' || r.status==='later'){
+    var opts=r.options||[];
+    h+='<div class="opts">'+opts.map(function(o,i){ return '<button class="opt'+(i===0&&o.id!=='close'?' first':'')+(o.id==='close'?' close':'')+'" data-id="'+k+'" data-ans="'+esc(o.id)+'"'+(busy?' disabled':'')+' title="'+esc(o.means||'')+'">'+esc(o.label)+'</button>'; }).join('')+'</div>';
+    if(r.allow_text!==false) h+='<div style="margin-top:8px"><textarea id="t-'+k+'" placeholder="Or answer in your own words…"></textarea><div class="row"><button class="small" data-send="'+k+'"'+(busy?' disabled':'')+'>Send my words</button>'+(r.status==='open'?'<button class="small" data-later="'+k+'">Later (24 h)</button>':'')+'</div></div>';
+    else if(r.status==='open') h+='<div class="row"><button class="small" data-later="'+k+'">Later (24 h)</button></div>';
+  }
+  var a=r.answer?(labelOf(r)+(r.answer_text?' - "'+r.answer_text+'"':'')):'';
+  if(r.status==='answered') h+='<div class="receipt wait">✅ Saved at '+esc(hhmm(r.answered_at))+': <b>'+esc(a)+'</b>. The PC does it when it is on.'+(r.applied_result?' ('+esc(r.applied_result)+')':'')+' <button class="small" data-undo="'+k+'" style="margin-left:6px">Take back</button></div>';
+  if(r.status==='delivering') h+='<div class="receipt wait">⏳ Your answer <b>'+esc(a)+'</b> is being given now. '+esc(r.applied_result||'')+'</div>';
+  if(r.status==='done') h+='<div class="receipt">✔ Done'+(r.applied_at?' at '+esc(when(r.applied_at)):'')+(a?' - you said <b>'+esc(a)+'</b>':'')+'. '+esc(r.applied_result||'')+'</div>';
+  if(r.status==='failed') h+='<div class="receipt bad">✖ The PC could not do it: '+esc(r.applied_result||'')+'</div>';
+  if(r.status==='withdrawn') h+='<div class="receipt">'+esc(r.applied_result||'Not needed any more.')+'</div>';
+  if(r.status==='later' && r.later_until) h+='<div class="line">Comes back '+esc(when(r.later_until))+'.</div>';
+  if(S.msg[id]) h+='<div class="receipt'+(S.msg[id].bad?' bad':'')+'">'+esc(S.msg[id].t)+'</div>';
+  return h+'</div>';
+}
+function labelOf(r){ if(r.answer==='text') return 'In your words'; var o=(r.options||[]).filter(function(x){ return x.id===r.answer; })[0]; return o?o.label:String(r.answer||''); }
+async function answer(id,ans,text){
+  if(ans==='text' && !String(text||'').trim()){ S.msg[id]={t:'Write the answer first.',bad:true}; draw(); return; }
+  S.busy[id]=true; draw();
+  try{
+    var r=await rpc('avni_decision_answer',{p_id:id,p_answer:ans,p_text:text||null,p_device:navigator.userAgent.slice(0,150)});
+    var row=((S.data||{}).rows||[]).filter(function(x){ return x.id===id; })[0]||{};
+    var said=ans==='text'?'"'+String(text).trim().slice(0,80)+'"':(((row.options||[]).filter(function(o){ return o.id===ans; })[0]||{}).label||ans);
+    S.toast=r.ok?{t:'✅ Saved securely at '+hhmm(new Date())+' - '+(row.title||'')+': '+said+'. The PC acts on it when it is on; it is under "Waiting for PC" until then. Go on with the next one.'}
+                :{t:r.msg||'Not saved.',bad:true};
+    if(!r.ok) S.msg[id]=S.toast;
+  }catch(e){ if(e.login){ showLogin(e.message); return; } S.msg[id]={t:'Not saved - '+e.message+'. Nothing was sent; try again.',bad:true}; }
+  S.busy[id]=false; await load(true);
+  var mine=S.toast; setTimeout(function(){ delete S.msg[id]; if(S.toast===mine){ S.toast=null; draw(); } }, 15000);
+}
+async function act(fn,args,id,ok){
+  try{ var r=await rpc(fn,args); S.toast=r.ok?{t:ok}:{t:r.msg||'Not done.',bad:true}; }catch(e){ S.toast={t:e.message,bad:true}; }
+  await load(true);
+  var mine=S.toast; setTimeout(function(){ if(S.toast===mine){ S.toast=null; draw(); } }, 15000);
+}
+document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') load(true); });
+setInterval(function(){ if(document.visibilityState==='visible' && !Object.keys(S.busy).some(function(k){ return S.busy[k]; })) load(true); }, 60000);
+
+/* ---------------- ?demo=1: sample cards only, nothing is read or written (for the page's own screen check) */
+var DEMO_ROWS=[
+  {id:'demo-1',app:'Hero App',urgency:2,status:'open',created_at:new Date(Date.now()-3600e3).toISOString(),title:'Renewal calling book update',what:'Chat "Hero App - Renewal Sync": we checked the renewal list against the Hero data and found 214 customers missing.',ask:'Should we add the missing customers to the calling book?',why:'Staff get the right customers to call tomorrow.',if_nothing:'The calling book stays as it is.',detail:'In the chat\'s own words:\nI compared the renewal sync with the Hero data ...',options:[{id:'yes',label:'Yes, add them'},{id:'no',label:'No, keep as is'},{id:'close',label:'Not needed now - close it'}],allow_text:true},
+  {id:'demo-2',app:'AVNI Mail',urgency:1,status:'open',created_at:new Date(Date.now()-7200e3).toISOString(),title:'Large mail files do not fit',what:'40+ GB mail files cannot be read on this laptop.',ask:'Should we change the mail reader to read big files in pieces?',why:'Old mail becomes searchable without filling C:.',if_nothing:'The big files stay unread.',options:[{id:'yes',label:'Yes, change it'},{id:'no',label:'No'},{id:'close',label:'Not needed now - close it'}],allow_text:true},
+  {id:'demo-3',app:'For the MD',urgency:3,status:'open',created_at:new Date(Date.now()-86400e3).toISOString(),title:'187 reports waiting for the MD',ask:'Give them to the MD, then press Given.',options:[{id:'done',label:'Given - close it'},{id:'close',label:'Not needed now - close it'}],allow_text:false}
+];
+function demoRpc(name,a){
+  if(name==='avni_decisions_list'){ var rows=DEMO_ROWS.filter(function(r){ return a.p_view==='open'?(r.status==='open'):a.p_view==='answered'?(r.status==='answered'):false; });
+    return Promise.resolve({ok:true,total:rows.length,rows:rows,counts:{open:DEMO_ROWS.filter(function(r){return r.status==='open';}).length,urgent:1,answered:DEMO_ROWS.filter(function(r){return r.status==='answered';}).length,doneToday:0,later:0,reviewedToday:0},apps:[{app:'Hero App',n:1},{app:'AVNI Mail',n:1},{app:'For the MD',n:1}],pc:{at:new Date().toISOString(),needsRavi:3}}); }
+  if(name==='avni_decision_answer'){ var r=DEMO_ROWS.filter(function(x){ return x.id===a.p_id; })[0]; r.status='answered'; r.answer=a.p_answer; r.answer_text=a.p_text; r.answered_at=new Date().toISOString(); return Promise.resolve({ok:true}); }
+  if(name==='avni_decision_undo'){ var u=DEMO_ROWS.filter(function(x){ return x.id===a.p_id; })[0]; u.status='open'; u.answer=null; return Promise.resolve({ok:true}); }
+  return Promise.resolve({ok:true});
+}
+if(DEMO) document.getElementById('sub').textContent='Sample cards (demo) - nothing is saved.';
+load();
+})();
+</script>
+</body>
+</html>
