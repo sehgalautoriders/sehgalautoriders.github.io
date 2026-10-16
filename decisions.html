@@ -41,6 +41,7 @@ header .sub{font-size:12px;opacity:.8;margin-top:2px}
 .line b{color:var(--ink);font-weight:600}
 .more{background:none;border:0;color:var(--blue);padding:4px 0;font-size:13px}
 .detail{white-space:pre-wrap;font-size:12.5px;background:var(--bg);border-radius:8px;padding:8px;max-height:260px;overflow:auto;margin-top:4px}
+a.lnk{color:#1a56db;word-break:break-all;text-decoration:underline}
 .opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .opt{border:1px solid var(--blue);background:transparent;color:var(--blue);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;min-height:44px}
 .opt.first{background:var(--blue);color:#fff}
@@ -77,6 +78,9 @@ var DEMO=/[?&]demo=1/.test(location.search);
 var $app=document.getElementById('app');
 
 function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+// 16-10-2026 (Ravi: "direct links established on the Hero app in CEO login"): a web address in a question opens in a new tab.
+// Escaped first, then only http(s) addresses become links; a trailing full stop or bracket stays outside the link.
+function linky(x){ return esc(x).replace(/https?:\/\/[^\s<]*[^\s<.,;:)\]]/g,function(u){ return '<a class="lnk" href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'; }); }
 function when(v){ if(!v) return ''; var d=new Date(v); if(isNaN(d)) return String(v);
   return d.toLocaleString('en-GB',{timeZone:'Asia/Kolkata',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-').replace(',',''); }
 function hhmm(v){ var t=when(v); return t.slice(-5); }
@@ -163,11 +167,11 @@ function card(r){
   var id=r.id, k=esc(id), busy=S.busy[id], h='<div class="card u'+(r.urgency||2)+'">';
   h+='<div class="top"><span class="app">'+esc(r.app||'A.V.N.I')+'</span>'+(r.urgency===1?'<span class="urg">URGENT</span>':r.urgency===3?'<span>can wait</span>':'')+'<span>'+esc(when(r.created_at))+'</span></div>';
   h+='<div class="title">'+esc(r.title)+'</div>';
-  if(r.what) h+='<div class="line"><b>What happened:</b> '+esc(r.what)+'</div>';
+  if(r.what) h+='<div class="line"><b>What happened:</b> '+linky(r.what)+'</div>';
   if(r.ask) h+='<div class="ask">❓ '+esc(r.ask)+'</div>';
   if(r.why) h+='<div class="line"><b>What changes:</b> '+esc(r.why)+'</div>';
   if(r.if_nothing) h+='<div class="line"><b>If you do nothing:</b> '+esc(r.if_nothing)+'</div>';
-  if(r.detail){ h+='<button class="more" data-more="'+k+'">'+(S.open[id]?'Hide the details ▴':'More details ▾')+'</button>'; if(S.open[id]) h+='<div class="detail">'+esc(r.detail)+'</div>'; }
+  if(r.detail){ h+='<button class="more" data-more="'+k+'">'+(S.open[id]?'Hide the details ▴':'More details ▾')+'</button>'; if(S.open[id]) h+='<div class="detail">'+linky(r.detail)+'</div>'; }
   if(r.status==='open' || r.status==='later'){
     var opts=r.options||[];
     h+='<div class="opts">'+opts.map(function(o,i){ return '<button class="opt'+(i===0&&o.id!=='close'?' first':'')+(o.id==='close'?' close':'')+'" data-id="'+k+'" data-ans="'+esc(o.id)+'"'+(busy?' disabled':'')+' title="'+esc(o.means||'')+'">'+esc(o.label)+'</button>'; }).join('')+'</div>';
