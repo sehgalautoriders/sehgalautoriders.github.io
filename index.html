@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 109;
-window.HERO_BUILD = 'R149-2026.10.16.1';
+window.HERO_RELEASE = 110;
+window.HERO_BUILD = 'R150-2026.10.16.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -9477,6 +9477,13 @@ function esComputeCurrent(){
                           free:!(expressFee>0),_mandatory:true}]:[];
   const pre=rawPre+expressFee;
   let discLab=+val('es-disc-lab')||0, discParts=+val('es-disc-parts')||0;
+  /* R150 (Ravi 16-10-2026, objective 9 - labour to 15 lakh, "125 cc and above should be costing more"): paid-service
+     LABOUR never goes below its class floor (hero_labour_floor: up to 110 cc 1000 · 125 cc 1500 · 150+ 2000 · premium
+     2500; the CEO changes them on Workshop Programme). No block (R65 stays): the labour discount is capped at the floor,
+     and the estimate screen says when the labour lines themselves are under the floor. */
+  const labFloor=(dec.type==='paid' && typeof esLabourFloor_==='function')?esLabourFloor_(modelName):0;
+  if(labFloor>0){ const maxLabDisc=Math.max(0, labour-labFloor); if(discLab>maxLabDisc) discLab=maxLabDisc; }
+  try{ window.ES_LABOUR_FLOOR_STATE={floor:labFloor, labour:labour, below:labFloor>0&&labour<labFloor, model:modelName, type:dec.type}; }catch(e){}
   let requestedDisc=discLab+discParts; if(!requestedDisc) requestedDisc=+val('es-disc')||0;
   const maxOtherDisc=Math.max(0,netService-floor);
   let otherDisc=Math.min(requestedDisc,maxOtherDisc);
@@ -30880,6 +30887,192 @@ var ES_BODY=null;
     '.wr-g{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative}.wr-c{position:relative}.wr-c:not(:last-child):after{content:"➜";position:absolute;right:-12px;top:40%;color:#94a3b8;font-size:18px}'+
     '.wr-b{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin:6px 0;background:#fff;font-size:13px}.wr-l{font-size:13px}.wr-l.on{color:#16a34a}.wr-l.off{color:#dc2626}'+
     '@media(max-width:760px){.wr-g{grid-template-columns:1fr}.wr-c:not(:last-child):after{content:"⬇";right:auto;left:45%;top:auto;bottom:-14px}.vh-t .vh-s{font-size:11px}.vh-head td{display:inline-block;border:none;padding:3px 8px}}';
+  document.head.appendChild(css);
+})();
+</script>
+
+<script>
+/* ================= R150 (Ravi 16-10-2026 20:0x): THE WORKSHOP PROGRAMME =================
+   "make it as you wish. I have given you complete freedom." Ten objectives: 1 holdup down · 2 parts availability ·
+   3 requisitions by technicians · 4 every technician enrolled · 5 staff mobiles their own · 6 customers asked (paid how
+   much vs DMS bill, vehicle inside?, informed?, JC open why) · 7 daily reports loaded · 8 targets by the WM, compulsory ·
+   9 labour to 15 lakh, 125 cc and premium costing more · 10 improve the workshop. "Do this much and keep records of
+   everything on the CEO Login."
+   Server: hero-app 0124 (hero_programme_page / _note / hero_labour_floor_set, the boss chase, the report watch, the
+   daily 20:30 snapshot). This screen (CEO / GM): the ten rows with today's numbers, the labour floors (editable), the
+   reports, the boss sends, the record. Deep link #programme. Also: esLabourFloor_ for the estimate (R150 in esCalc). */
+(function(){
+  'use strict';
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function isTop(){ try{ return typeof isTopMgmtUser==='function' && isTopMgmtUser(); }catch(e){ return false; } }
+  function rs(n){ if(n==null||n==='') return '—'; n=Math.round(+n||0); return '₹'+n.toLocaleString('en-IN'); }
+  function lk(n){ if(n==null) return '—'; return '₹'+(Math.round(+n/1000)/100).toFixed(2)+' L'; }
+  function num(n){ return n==null?'—':String(n); }
+
+  /* ---- labour floor for the estimate (reads hero_labour_floor once; defaults until then) ---- */
+  window.HERO_LABOUR_FLOOR={upto110:1000, cc125:1500, cc150plus:2000, premium:2500};
+  function labourClass(model){
+    var m=String(model||'').toUpperCase();
+    if(/HARLEY|X ?440|MAVRICK|MAVERICK|VIDA/.test(m)) return 'premium';
+    if(/160|200|210|250|XPULSE|KARIZMA|ACHIEVER|HUNK|CBZ|IMPULSE/.test(m)) return 'cc150plus';
+    if(/125|GLAMOUR|SUPER SPLENDOR|MAESTRO EDGE|XOOM|ZOOM|DESTINI PRIME/.test(m)) return 'cc125';
+    return 'upto110';
+  }
+  window.esLabourFloor_=function(model){ return +window.HERO_LABOUR_FLOOR[labourClass(model)]||0; };
+  function loadFloors(){
+    try{
+      if(typeof sbFetch!=='function') return;
+      sbFetch('/rest/v1/hero_labour_floor?select=class,floor_labour',{method:'GET'}).then(function(r){ return r.json(); }).then(function(rows){
+        if(Array.isArray(rows)&&rows.length){ var f={}; rows.forEach(function(x){ f[x.class]=+x.floor_labour||0; }); window.HERO_LABOUR_FLOOR=f; }
+      }).catch(function(){});
+    }catch(e){}
+  }
+  setTimeout(loadFloors, 3000);
+  /* the line under the labour discount box: labour lines under the class floor */
+  setInterval(function(){
+    try{
+      var st=window.ES_LABOUR_FLOOR_STATE, box=document.getElementById('es-disc-lab'); if(!box) return;
+      var host=box.parentNode, w=document.getElementById('es-labfloor-warn');
+      if(!st || st.type!=='paid' || !st.floor){ if(w) w.remove(); return; }
+      if(!w){ w=document.createElement('div'); w.id='es-labfloor-warn'; w.style.cssText='font-size:12px;margin-top:4px;grid-column:1/-1'; host.appendChild(w); }
+      var cls=labourClass(st.model);
+      w.innerHTML=st.below
+        ? '<span class="es-warn">⚠ Labour '+rs(st.labour)+' is below the '+esc(cls.replace('upto110','up to 110 cc').replace('cc125','125 cc').replace('cc150plus','150 cc +').replace('premium','premium'))+' standard '+rs(st.floor)+' — add the service labour lines. No labour discount below the standard.</span>'
+        : '<span style="color:#166534">● Labour '+rs(st.labour)+' · standard for this class '+rs(st.floor)+' (labour discount stops there)</span>';
+    }catch(e){}
+  }, 1200);
+
+  /* ---- the screen ---- */
+  var OBJ=[
+    [1,'Holdup should reduce','90% same-day delivery; every pending vehicle asked why, every round'],
+    [2,'Parts availability should improve','every vehicle held for parts has a part no., a source and an arrival time'],
+    [3,'Requisitions captured by the technicians','every requisition photographed in the app by the technician'],
+    [4,'Every technician enrolled in the app','the WM gets each technician registered (login page → Technician)'],
+    [5,'Staff mobile numbers are their own','no blank, no shared number; every login verified'],
+    [6,'Customers asked on WhatsApp','paid how much vs the DMS bill · vehicle still inside? · informed? · JC open why'],
+    [7,'Daily reports loaded','holdup, stock, Per1, Per2, same-day % - every morning, per the HAR files'],
+    [8,'Targets set by the WM, compulsorily','every SA has this month\'s labour target; the WM is chased until done'],
+    [9,'Labour to ₹15 lakh a month','estimates in their own language (DMS bills); 125 cc and premium cost more'],
+    [10,'Improve the workshop','everything done is on this record']];
+  function ensureView(id, html){
+    if(document.getElementById('view-'+id)) return document.getElementById('view-'+id);
+    var ref=document.getElementById('view-targets')||document.getElementById('view-holdup'); if(!ref) return null;
+    var v=document.createElement('div'); v.id='view-'+id; v.style.display='none'; v.innerHTML=html;
+    ref.parentNode.insertBefore(v, ref.nextSibling); return v;
+  }
+  function wpView(){
+    return ensureView('programme','<div class="wrap wp"><div class="hu-topbar"><h2>🏁 Workshop Programme</h2><div class="hu-actions">'+
+      '<button class="hu-actbtn" style="background:#475569" onclick="wpBoot(true)">↻ Refresh</button>'+
+      '<button class="hu-actbtn" style="background:#0f766e" onclick="showView(\'home\')">← Home</button></div></div>'+
+      '<div id="wp-body"><div class="hint">Loading…</div></div></div>');
+  }
+  var D=null;
+  window.wpBoot=function(force){
+    var b=document.getElementById('wp-body'); if(!b) return;
+    if(!force && D) { paint(); return; }
+    b.innerHTML='<div class="hint">Loading the ten objectives…</div>';
+    sbRpc('hero_programme_page',{p_log:150}).then(function(d){ if(!d||!d.ok) throw new Error((d&&d.error)||'no data'); D=d; paint(); })
+      .catch(function(e){ b.innerHTML='<div class="vh-alert">▲ '+esc(e&&e.message||e)+'</div>'; });
+  };
+  function names(arr, k, max){ arr=arr||[]; var s=arr.slice(0,max||6).map(function(x){ return x[k||'name']; }).join(', '); return s+(arr.length>(max||6)?' +'+(arr.length-(max||6)):''); }
+  function today(m){
+    var o1=m.o1||{}, o2=m.o2||{}, o3=m.o3||{}, o4=m.o4||{}, o5=m.o5||{}, o6=m.o6||{}, o7=m.o7||{}, o8=m.o8||{}, o9=m.o9||{}, o10=m.o10||{};
+    var sdd=o1.sdd||{};
+    return {
+      1:{t:'<b>'+num(o1.open)+'</b> open · <b class="wp-red">'+num(o1.goneOut)+'</b> gone out, JC open · '+num(o1.over30d)+' over 30 days · same-day <b>'+num(sdd.pct)+'%</b> ('+num(sdd.sameDay)+' of '+num(sdd.opened)+', '+esc(sdd.day||'')+') of '+num(o1.sddTarget)+'%',
+         a:'WhatsApp chase 10/12/14/16/18 to WM · GM · Parts (today: '+num((o1.chaseToday||{}).sent)+' sent, '+num((o1.chaseToday||{}).delivered)+' delivered) · customers asked at 11:00 · holdup loaded '+esc(o1.holdupLoaded||'—'), bad:(sdd.pct||0)<(o1.sddTarget||90)},
+      2:{t:'<b>'+num(o2.partsHeld)+'</b> vehicles held for parts · '+num(o2.partsAnsweredToday)+' answered today · stock '+esc(o2.stockDate||'—')+' ('+num(o2.stockLines)+' lines, loaded '+esc(o2.stockLoaded||'—')+') · Part Finder asks this week '+num(o2.partFinder7d),
+         a:'Parts coordinator chased every round for part no. / source / arrival; All-India Part Finder answers from Hero BI', bad:(o2.partsHeld||0)>0&&!(o2.partsAnsweredToday>0)},
+      3:{t:'<b>'+num(o3.week)+'</b> this week · '+num(o3.today)+' today · '+num(o3.total)+' ever · by: '+esc(names(o3.byPerson,'name',4)||'nobody'),
+         a:'Technicians photograph requisitions in Vehicle History; counted here daily', bad:(o3.week||0)<5},
+      4:{t:'<b>'+num(o4.enrolled)+'</b> technicians enrolled · '+num(o4.pending)+' waiting for approval ('+num(o4.pendingAll)+' registrations pending in all)',
+         a:'WM chased 09:30 and 15:00 until every technician is in; the CEO approves under Master Data → Registrations', bad:(o4.enrolled||0)<1},
+      5:{t:'<b>'+num((o5.missing||[]).length)+'</b> without a number: '+esc(names(o5.missing,'name',8)||'none')+' · <b>'+num((o5.shared||[]).length)+'</b> sharing one number: '+esc(names(o5.shared,'name',5)||'none')+' · '+num(o5.verified)+' of '+num(o5.staff)+' verified',
+         a:'In the WM\'s daily list; each person: login page → "Change my mobile number"', bad:((o5.missing||[]).length+(o5.shared||[]).length)>0},
+      6:{t:'asked <b>'+num(o6.asked7d)+'</b> (7 d, '+num(o6.delivered7d)+' delivered) · replied '+num(o6.replied7d)+' · has it '+num(o6.hasIt)+' · still at workshop '+num(o6.atWorkshop)+' · told us the amount '+num(o6.paidTold)+' · <b class="wp-red">'+num(o6.mismatch)+'</b> differ from the DMS bill · '+num(o6.toAskNow)+' to ask at '+esc(o6.customerRound||'11:00')+(o6.customerLive?' (LIVE)':' (test)'),
+         a:'Approved template "has your vehicle come back?" → reply opens the window → "how much did you pay?" → compared with the DMS bill; "still at workshop" → the WM is asked why', bad:!o6.customerLive},
+      7:{t:'<b class="'+((o7.missing||0)?'wp-red':'')+'">'+num(o7.missing)+'</b> report'+((o7.missing||0)===1?'':'s')+' not loaded today'+((o7.reports||[]).filter(function(r){return !r.ok;}).length?': '+esc((o7.reports||[]).filter(function(r){return !r.ok;}).map(function(r){ return r.report+(r.dealer!=='all'?' '+r.dealer:'')+' (last '+(r.last||'never')+')'; }).join(', ')):''),
+         a:'Report watch 09:00 and 12:30 → one WhatsApp to the CEO when something is missing; the fix named per report (below)', bad:(o7.missing||0)>0},
+      8:{t:'<b>'+num(o8.set)+'</b> SAs with a real target for '+esc(o8.month||'')+' · <b class="'+((o8.missing||[]).length?'wp-red':'')+'">'+num((o8.missing||[]).length)+'</b> without: '+esc(names(o8.missing,'name',6)||'none')+' · month labour target '+lk(o8.monthLabourTarget)+' · WM chased today '+num(o8.wmChasedToday)+'×',
+         a:'WM held on the Targets screen until every SA has one (0108); chased on WhatsApp 09:30 + 15:00; GM copied in the afternoon', bad:(o8.missing||[]).length>0},
+      9:{t:'<b>'+lk(o9.mtd)+'</b> labour this month → projected <b class="'+((o9.projected||0)<(o9.goal||0)?'wp-red':'')+'">'+lk(o9.projected)+'</b> of '+lk(o9.goal)+' goal (last month '+lk(o9.prevMonth)+') · paid service labour avg <b>'+rs(o9.paidAvgLabour)+'</b> per bill vs outside ~'+rs(o9.outsideAvg)+' · estimate labour avg '+rs(o9.estimateAvgLabour30d),
+         a:'Labour floors by class in every estimate (no labour discount below them) · model table from DMS bills below · the WM\'s targets add up to the month', bad:(o9.projected||0)<(o9.goal||0)},
+      10:{t:num(o10.actions7d)+' entries this week · last: '+esc(((o10.last||[])[0]||{}).text||'—'),
+         a:'This record: every chase, reply, alert and change, with the time', bad:false}
+    };
+  }
+  function paint(){
+    var b=document.getElementById('wp-body'); if(!b||!D) return;
+    var m=D.measures||{}, T=today(m), lab=D.labour||{}, o9=m.o9||{};
+    var html='<div class="wp-goal">Labour this month <b>'+lk(o9.mtd)+'</b> · projected <b>'+lk(o9.projected)+'</b> · goal <b>'+lk(o9.goal)+'</b> · numbers read at '+esc(String(m.at||'').replace('T',' ').slice(0,16))+' (IST shown below)</div>';
+    html+='<table class="vh-t wp-t"><thead><tr><th>#</th><th>Objective</th><th>Today</th><th>What runs for it</th></tr></thead><tbody>';
+    OBJ.forEach(function(o){ var t=T[o[0]]||{}; html+='<tr class="'+(t.bad?'wp-bad':'')+'"><td><b>'+o[0]+'</b></td><td><b>'+esc(o[1])+'</b><div class="vh-s">'+esc(o[2])+'</div></td><td>'+(t.t||'—')+'</td><td class="vh-s">'+esc(t.a||'')+'</td></tr>'; });
+    html+='</tbody></table>';
+    /* 9 · labour by class + by model */
+    html+='<div class="vh-h3">9 · Paid-service labour per model, last '+num(lab.days)+' days (from Hero DMS bills) — the floors</div>';
+    html+='<table class="vh-t wp-t"><thead><tr><th>Class</th><th>Bills</th><th>Avg labour</th><th>Median</th><th>Labour now</th><th>With the floor</th><th>Floor</th></tr></thead><tbody>';
+    (lab.classes||[]).forEach(function(c){
+      html+='<tr><td><b>'+esc(c.class)+'</b><div class="vh-s">'+esc(c.label)+'</div></td><td>'+num(c.bills)+'</td><td>'+rs(c.avg)+'</td><td>'+rs(c.median)+'</td><td>'+rs(c.nowTotal)+'</td><td>'+rs(c.withFloor)+'</td>'+
+        '<td><input type="number" inputmode="numeric" value="'+esc(c.floor)+'" style="width:80px;padding:4px;border:1px solid #cbd5e1;border-radius:6px" data-cls="'+esc(c.class)+'" '+(isTop()?'':'disabled')+'> '+(isTop()?'<button class="vh-mini" onclick="wpFloor(this)">Set</button>':'')+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    html+='<table class="vh-t wp-t"><thead><tr><th>Model</th><th>Class</th><th>Bills</th><th>Avg</th><th>Median</th><th>P75</th><th>Estimate avg</th><th>Floor</th></tr></thead><tbody>';
+    (lab.models||[]).slice(0,30).forEach(function(x){
+      html+='<tr class="'+(x.belowFloor?'wp-bad':'')+'"><td><b>'+esc(x.model)+'</b></td><td>'+esc(x.class)+'</td><td>'+num(x.bills)+'</td><td>'+rs(x.avg)+'</td><td>'+rs(x.median)+'</td><td>'+rs(x.p75)+'</td><td>'+(x.estimateAvg!=null?rs(x.estimateAvg)+' ('+num(x.estimates)+')':'—')+'</td><td>'+rs(x.floor)+(x.belowFloor?' <span class="wp-red">below</span>':'')+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    /* 7 · reports */
+    var reps=(m.o7||{}).reports||[];
+    html+='<div class="vh-h3">7 · Daily reports today</div><table class="vh-t wp-t"><thead><tr><th>Report</th><th>Dealer</th><th>Expected</th><th>Last loaded</th><th>Fix</th></tr></thead><tbody>';
+    reps.forEach(function(r){ html+='<tr class="'+(r.ok?'':'wp-bad')+'"><td>'+(r.ok?'● ':'▲ ')+esc(r.report)+'</td><td>'+esc(r.dealer)+'</td><td>'+esc(r.expected)+'</td><td>'+esc(r.last||'never')+'</td><td class="vh-s">'+esc(r.fix)+'</td></tr>'; });
+    html+='</tbody></table>';
+    /* boss sends */
+    html+='<div class="vh-h3">4 · 5 · 7 · 8 · The boss list to the WM (09:30, 15:00; GM in the afternoon) — last sends</div>';
+    html+=(D.bossLast||[]).length?'<table class="vh-t wp-t"><tbody>'+(D.bossLast||[]).map(function(x){ return '<tr><td>'+esc(x.at)+'</td><td>'+esc(x.role)+' '+esc(x.name)+'</td><td>'+(x.ok?(x.windowClosed?'template delivered':'delivered'):'<span class="wp-red">not delivered</span>')+'</td></tr>'; }).join('')+'</tbody></table>':'<div class="vh-s">Not sent yet — the first list goes at 09:30 tomorrow.</div>';
+    /* the record */
+    html+='<div class="vh-h3">10 · The record (newest first)</div>';
+    if(isTop()) html+='<div class="vh-form"><label>Add a note to the record <input id="wp-note" placeholder="what was decided / done" style="width:70%"></label><button class="vh-mini" onclick="wpNote()">Save</button> <span id="wp-note-msg" class="vh-s"></span></div>';
+    html+='<table class="vh-t wp-t"><thead><tr><th>When</th><th>#</th><th>Kind</th><th>What</th><th>By</th></tr></thead><tbody>';
+    (D.log||[]).forEach(function(x){ html+='<tr class="'+(/mismatch|alert/.test(x.kind)?'wp-bad':'')+'"><td style="white-space:nowrap">'+esc(x.at)+'</td><td>'+num(x.o)+'</td><td>'+esc(x.kind)+'</td><td>'+esc(x.text)+'</td><td class="vh-s">'+esc(x.by||'')+'</td></tr>'; });
+    html+='</tbody></table>';
+    b.innerHTML=html;
+  }
+  window.wpFloor=function(btn){
+    var inp=btn.previousElementSibling, cls=inp&&inp.getAttribute('data-cls'), v=+(inp&&inp.value)||0;
+    if(!cls) return; btn.disabled=true;
+    sbRpc('hero_labour_floor_set',{p_class:cls, p_floor:v}).then(function(r){ if(!r||!r.ok) throw new Error((r&&r.error)||'not saved'); window.HERO_LABOUR_FLOOR[cls]=v; wpBoot(true); })
+      .catch(function(e){ alert('Not saved: '+(e&&e.message||e)); btn.disabled=false; });
+  };
+  window.wpNote=function(){
+    var el=document.getElementById('wp-note'), msg=document.getElementById('wp-note-msg'); if(!el||!el.value.trim()) return;
+    var by=''; try{ by=(USER&&(USER.name||USER.display_name||USER.Name))||''; }catch(e){}
+    sbRpc('hero_programme_note',{p_objective:10, p_kind:'note', p_text:el.value.trim(), p_by:by||'CEO'}).then(function(r){ if(!r||!r.ok) throw new Error('not saved'); el.value=''; msg.textContent='✓ Saved'; wpBoot(true); })
+      .catch(function(e){ msg.textContent='Not saved: '+(e&&e.message||e); });
+  };
+  /* tile + route + deep link (same shape as R145/R146) */
+  function addTile(){
+    try{
+      var box=document.getElementById('home-tiles'); if(!box||!isTop()||box.querySelector('[data-wp]')) return;
+      var t=document.createElement('div'); t.className='mod-tile ops'; t.setAttribute('data-wp','1');
+      t.style.cssText='--tile-c:#7f1d1d;--tile-bg:#fef2f2'; t.setAttribute('onclick',"openModule('programme')");
+      t.innerHTML='<div class="mt-ic">🏁</div><div><div class="mt-tt">Workshop Programme</div><div class="mt-dd">The ten objectives with today\'s numbers, the labour floors, the boss list to the WM, the record of everything done.</div></div><div class="mt-arrow">›</div>';
+      box.insertBefore(t, box.firstChild);
+    }catch(e){}
+  }
+  var origTiles=window.renderHomeTiles;
+  if(typeof origTiles==='function') window.renderHomeTiles=function(){ var r=origTiles.apply(this, arguments); addTile(); return r; };
+  addTile(); setTimeout(addTile,1500); setTimeout(addTile,5000);
+  try{ var tb=document.getElementById('home-tiles'), tmr=null; if(tb&&window.MutationObserver) new MutationObserver(function(){ if(tmr) return; tmr=setTimeout(function(){ tmr=null; addTile(); },200); }).observe(tb,{childList:true}); }catch(e){}
+  var origOpen=window.openModule;
+  window.openModule=function(id){
+    if(id==='programme'){ if(!isTop()){ alert('Workshop Programme is for the CEO and GM logins.'); return; } wpView(); showView('programme'); wpBoot(false); return; }
+    return origOpen.apply(this, arguments);
+  };
+  function deepLink(){ try{ if(location.hash==='#programme' && isTop()){ history.replaceState(null,'',location.pathname+location.search); openModule('programme'); } }catch(e){} }
+  setTimeout(deepLink, 4500); window.addEventListener('hashchange', deepLink);
+  var css=document.createElement('style'); css.id='r150-style';
+  css.textContent='.wp-goal{background:#7f1d1d;color:#fff;border-radius:8px;padding:8px 12px;margin:6px 0;font-size:13.5px}.wp-t{margin:6px 0 10px}.wp-t td{font-size:12.5px}.wp-bad td{background:#fef2f2}.wp-red{color:#b91c1c}'+
+    '@media(max-width:760px){.wp-t,.wp-t thead,.wp-t tbody,.wp-t tr,.wp-t td{display:block}.wp-t thead{display:none}.wp-t tr{border-bottom:2px solid #e5e7eb;padding:4px 0}.wp-t td{border:0;padding:2px 4px}}';
   document.head.appendChild(css);
 })();
 </script>
