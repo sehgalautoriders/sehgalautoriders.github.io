@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 108;
-window.HERO_BUILD = 'R148-2026.10.15.1';
+window.HERO_RELEASE = 109;
+window.HERO_BUILD = 'R149-2026.10.16.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -12922,10 +12922,13 @@ function huDrawTable_(){
       /* R22 (Ravi 03-Aug-2026): a FREE-SERVICE vehicle held beyond 2 days gets a
          red pulsing button on its row — not a whole red column. */
       const isFreeLate=/free/i.test(String(r[HU_COLS.type]||''))&&days>2;
-      return `<tr id="hu-tr-${i}" class="${isSel?'hu-selected':''} ${isPartFlag?'hu-row-part-flag':''}" onclick="huRowClick(event,${i})" style="cursor:pointer">
+      /* R149 (Ravi 16-10-2026): the vehicle has GONE OUT (customer said so on WhatsApp / came again with a new job card /
+         invoiced) but its job card is still open -> the whole row in dark red (window.huGoneOut, from hero_chase_my_items). */
+      const goneWhy=(typeof window.huGoneOut==='function')?window.huGoneOut(r[HU_COLS.jcNo],reg):'';
+      return `<tr id="hu-tr-${i}" class="${isSel?'hu-selected':''} ${isPartFlag?'hu-row-part-flag':''} ${goneWhy?'hu-gone-out':''}" onclick="huRowClick(event,${i})" style="cursor:pointer"${goneWhy?` title="${String(goneWhy).replace(/"/g,'&quot;')}"`:''}>
         <td style="width:32px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${isSel?'checked':''} onchange="huToggleRow(${i},this.checked)"></td>
         <td style="width:18px;text-align:center;pointer-events:none"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${dotCls==='green'?'var(--ok)':'var(--signal-d)'}"></span></td>
-        <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}</td>
+        <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}${goneWhy?'<span class="hu-gone-tag">GONE OUT · JC OPEN</span>':''}</td>
         <td id="hu-mob-${i}" data-k="${huMobKey(r)}" class="mono" style="white-space:nowrap;font-size:12px;min-width:104px" onclick="event.stopPropagation()">${(m=>m?`<a href="tel:+91${m}" style="color:#2563eb;text-decoration:none">📱 ${m}</a>`:'<span style="color:var(--steel)">—</span>')(huRowMobSync(r))}</td>
         <td class="hu-wrapcell" style="font-size:12px;min-width:96px">${r[HU_COLS.model]||'—'}</td>
         <td class="td-days ${dClass}">${days>=0?days+'d':'—'}</td>
@@ -29021,6 +29024,13 @@ window.heroChangeMobile=function(){
 #avask-ov tr.av-a-row.av-open td{background:#FEF2F2;padding:4px 6px 8px;border-bottom:2px solid #E5E5E5}
 #avask-ov tr.av-q-row.done td{opacity:.45}
 #avask-ov tr.av-q-row.done .av-go{color:#15803d}
+/* R149 (Ravi 16-10-2026): vehicle GONE OUT, job card still open = dark red, in this panel and in the Holdup list */
+#avask-ov tr.av-q-row.av-out td,#view-holdup tr.hu-gone-out td{background:#7F1D1D!important;color:#fff!important}
+#avask-ov tr.av-q-row.av-out .q,#avask-ov tr.av-q-row.av-out .av-ask,#avask-ov tr.av-q-row.av-out .av-days,#avask-ov tr.av-q-row.av-out .av-go{color:#fff!important}
+#view-holdup tr.hu-gone-out td a,#view-holdup tr.hu-gone-out td.td-reg,#view-holdup tr.hu-gone-out td span{color:#fff!important}
+#view-holdup tr.hu-gone-out select,#view-holdup tr.hu-gone-out input{color:#171717!important;background:#fff!important}
+.hu-gone-tag{display:block;margin-top:2px;font-size:9.5px;font-weight:800;letter-spacing:.3px;color:#fff;background:#450a0a;border-radius:3px;padding:1px 4px;width:max-content;text-decoration:none}
+#avask-sum .gone{display:inline-block;background:#7F1D1D;color:#fff;font-weight:700;border-radius:4px;padding:1px 6px;margin-right:6px}
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="Why pending">
@@ -29053,6 +29063,11 @@ window.heroChangeMobile=function(){
     if(a){ a.classList.add('av-open'); try{ a.scrollIntoView({block:'nearest'}); }catch(e){} var s=a.querySelector('[data-f="st"]'); if(s) try{ s.focus({preventScroll:true}); }catch(e){} }
   };
   var LAST_D=null;
+  var GONE={};
+  window.huGoneOut=function(jc,reg){
+    var j=String(jc||'').trim().toUpperCase(), r=String(reg||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+    return (j&&GONE['J:'+j])||(r&&GONE['R:'+r])||'';
+  };
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   /* R127: USER.role was never saved at login (fixed in finishLogin_), so for
      everyone already logged in it is worked out from the designation. */
@@ -29084,8 +29099,10 @@ window.heroChangeMobile=function(){
     var pill=document.getElementById('avask-pill');
     var n=ITEMS.length;
     pill.textContent='Why pending · '+n; pill.style.display=n?'block':'none';
+    var gone=ITEMS.filter(function(it){ return it.gone_out; }).length;
     document.getElementById('avask-sum').innerHTML=
-      '<b>'+n+'</b> vehicle'+(n===1?'':'s')+' with no answer today. Each answer stops the asking for today. '+sddText(d||{});
+      (gone?'<span class="gone">'+gone+' GONE OUT · job card still open — close in DMS today</span>':'')
+      +'<b>'+n+'</b> vehicle'+(n===1?'':'s')+' with no answer today. Each answer stops the asking for today. '+sddText(d||{});
     /* R134 (Ravi 01-10-2026: "Give 4 big buttons for the locations classification"):
        one button per dealer code with its count; tap = only that location, tap again = all. */
     var cnt={}; ITEMS.forEach(function(it){ var c=String(it.dealer_code); cnt[c]=(cnt[c]||0)+1; });
@@ -29105,7 +29122,8 @@ window.heroChangeMobile=function(){
       /* R140 (Ravi 05-10-2026 "the screen is going down too much"): one line per vehicle; the answer
          form opens under the row that is tapped, one at a time (avaskTog). */
       var op=(i===OPEN)?' av-open':'';
-      h+='<tr class="av-q-row'+op+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+      h+='<tr class="av-q-row'+op+(it.gone_out?' av-out':'')+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+        +(it.gone_out?'<span class="hu-gone-tag">GONE OUT · JC OPEN</span>':'')
         +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div></td>'
         +'<td><span class="av-go">'+(op?'Close ▴':'Answer ▾')+'</span><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
         +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2"><div class="av-f">'
@@ -29129,6 +29147,14 @@ window.heroChangeMobile=function(){
     try{
       var d=await sbRpc('hero_chase_my_items',{});
       ITEMS=(d&&d.items)||[];
+      /* R149: the gone-out job cards also paint the Holdup list dark red */
+      var go={}, was=JSON.stringify(GONE);
+      ITEMS.forEach(function(it){ if(!it.gone_out) return; var w=String(it.question||'GONE OUT');
+        if(it.jc_number) go['J:'+String(it.jc_number).trim().toUpperCase()]=w;
+        if(it.reg_no) go['R:'+String(it.reg_no).replace(/[^A-Za-z0-9]/g,'').toUpperCase()]=w; });
+      GONE=go;
+      if(JSON.stringify(go)!==was && typeof huRender==='function' && document.getElementById('view-holdup')
+         && document.getElementById('view-holdup').offsetParent!==null){ try{ huRender(); }catch(e){} }
       paint(d);
       var n=ITEMS.length;
       if(n && (LAST_N<0 || n!==LAST_N || Date.now()-(window.AVASK_LAST_NOTE||0)>AUTO_MS)){ window.AVASK_LAST_NOTE=Date.now(); notify(n); }
