@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="robots" content="noindex, nofollow">
+<title>MD Version</title>
+<link rel="icon" href="icon-192.png">
+<style>
+/* MD Version - Key People Safety (Ravi 17-10-2026): the day-wise register of three company cars seen by OUR gate and parking
+   cameras, for the CEO alone. The page holds no data: everything comes from Supabase kp_register(), which answers only the CEO
+   login and logs every read. Opened inside AVNI.exe (Dealership > MD Version) and on any browser; works with the PC off.
+   Words: "car seen", never "person present"; every line has its age; Not seen vs Unknown; no face matching. Tabs, tables. */
+:root{--bg:#f4f6fa;--card:#fff;--ink:#0f172a;--soft:#475569;--line:#e2e8f0;--blue:#1d4ed8;--green:#15803d;--red:#b91c1c;--amber:#b45309;--chip:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#111a2e;--ink:#e5e7eb;--soft:#9aa6b8;--line:#1f2a44;--blue:#60a5fa;--green:#4ade80;--red:#f87171;--amber:#fbbf24;--chip:#1e293b}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{background:var(--ink);color:#fff;padding:10px 16px 8px;flex:0 0 auto}
+@media (prefers-color-scheme:dark){header{background:#020617}}
+header h1{margin:0;font-size:17px}
+header .sub{font-size:12px;opacity:.8;margin-top:2px}
+.wrap{max-width:1100px;width:100%;margin:0 auto;padding:8px 16px;flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+.fresh{border-radius:10px;padding:6px 10px;font-size:13px;margin:4px 0 6px;background:#ecfdf5;color:#065f46}
+@media (prefers-color-scheme:dark){.fresh{background:#052e1a;color:#86efac}}
+.tabs{display:flex;gap:6px;margin:4px 0 8px;flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.tab.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;flex:1 1 auto;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;background:var(--card);text-align:left;font-size:12px;color:var(--soft);padding:6px 6px;border-bottom:1px solid var(--line)}
+td{padding:6px;border-bottom:1px solid var(--line);vertical-align:top}
+.reg{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--soft)}
+.seen{color:var(--green);font-weight:700}.weak{color:var(--amber);font-weight:700}.none{color:var(--soft);font-size:12px}
+.small{font-size:12px;color:var(--soft)}
+.old{color:var(--amber);font-weight:600;font-size:12px}
+.clk{cursor:pointer}.clk:hover{background:var(--chip)}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:7px 12px;font-size:13px;cursor:pointer}
+.btn.p{background:var(--blue);border-color:var(--blue);color:#fff}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0 0;flex-wrap:wrap}
+.detail{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--bg)}
+.foot{font-size:12px;color:var(--soft);margin:6px 2px 4px;flex:0 0 auto}
+.login{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:20px auto;max-width:420px}
+.login input{width:100%;margin:6px 0;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+.err{color:var(--red);font-size:13px;margin-top:6px}
+img.photo{max-width:100%;border-radius:8px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>MD Version · Key People Safety</h1>
+  <div class="sub">Cars seen by our gate and parking cameras · CEO only · works with the PC off</div>
+</header>
+<div class="wrap" id="app"><div class="small">Opening…</div></div>
+<script>
+(function(){
+'use strict';
+var SB_URL='https://tiwfuwfzjxcsbrifcdpu.supabase.co', SB_ANON='sb_publishable_slimmjt0POF4fhAnTAfLyQ_P1jYG9Xh', SB_DOMAIN='@sehgalautoriders.co.in';
+var S={tab:'cars', data:null, range:{}, pick:null, busy:false, err:''};
+var $app=document.getElementById('app');
+
+function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function ist(v){ var d=new Date(v); return new Date(d.getTime()+(330+d.getTimezoneOffset())*60000); }
+function p2(n){ return String(n).padStart(2,'0'); }
+function dmy(v){ var d=ist(v); return p2(d.getDate())+'-'+p2(d.getMonth()+1)+'-'+d.getFullYear()+' '+p2(d.getHours())+':'+p2(d.getMinutes()); }
+function dm(v){ var d=ist(v); return p2(d.getDate())+'-'+p2(d.getMonth()+1)+' '+p2(d.getHours())+':'+p2(d.getMinutes()); }
+function hm(v){ var d=ist(v); return p2(d.getHours())+':'+p2(d.getMinutes()); }
+function dayName(d){ var a=d.split('-'); return a[2]+'-'+a[1]+'-'+a[0]; }
+function ago(v){ var h=Math.floor((Date.now()-new Date(v).getTime())/3600000); if(h<1) return 'less than an hour ago'; if(h<24) return h+' hour'+(h===1?'':'s')+' ago'; var d=Math.floor(h/24); return d+' day'+(d===1?'':'s')+' ago'; }
+function ledgerTs(t){ if(!t) return null; t=t.replace(' ','T'); return /[+Z]/.test(t.slice(10))?t:t+'+05:30'; }
+function roles(c){ var o=[]; (c||[]).forEach(function(x){ if(x.role&&o.indexOf(x.role)<0) o.push(x.role); }); return o.join(' / ')||'camera'; }
+function cams(c){ return (c||[]).map(function(x){ return (x.camera||'?')+(x.role?' ('+x.role+')':''); }).join(', '); }
+function src(s){ var o=[]; (s||[]).forEach(function(x){ var t=x.indexOf('ledger:hik-backfill')===0?'hourly recorder sample':x.indexOf('ledger:')===0?'PC plate reader':'recorder / camera event'; if(o.indexOf(t)<0) o.push(t); }); return o.join(', '); }
+function isoDay(d){ return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()); }
+
+/* ---------------- the Hero App login (same keys as the Hero App and decisions.html on this browser) */
+function tok(){ try{ return {at:localStorage.getItem('sb_at')||'', rt:localStorage.getItem('sb_rt')||'', exp:Number(localStorage.getItem('sb_at_exp')||0)}; }catch(e){ return {at:'',rt:'',exp:0}; } }
+function store(s){ try{ localStorage.setItem('sb_at',s.access_token||''); localStorage.setItem('sb_rt',s.refresh_token||''); localStorage.setItem('sb_at_exp',String(Date.now()+((s.expires_in||3600)-120)*1000)); }catch(e){} }
+function forget(){ try{ ['sb_at','sb_rt','sb_at_exp'].forEach(function(k){ localStorage.removeItem(k); }); }catch(e){} }
+function timed(url,opts,ms){ var c=new AbortController(); var t=setTimeout(function(){ c.abort(); }, ms||20000);
+  return fetch(url,Object.assign({cache:'no-store'},opts,{signal:c.signal})).finally(function(){ clearTimeout(t); }); }
+async function refresh(){ var t=tok(); if(!t.rt) return '';
+  var r=await timed(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:t.rt})},12000);
+  if(!r.ok) return ''; var s=await r.json(); store(s); return s.access_token||''; }
+async function token(){ var t=tok(); if(t.at && Date.now()<t.exp) return t.at; return await refresh(); }
+async function rpc(name,args){
+  var at=await token(); if(!at) throw Object.assign(new Error('Please log in'),{login:true});
+  var call=function(a){ return timed(SB_URL+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:SB_ANON,Authorization:'Bearer '+a,'Content-Type':'application/json'},body:JSON.stringify(args||{})},25000); };
+  var r=await call(at);
+  if(r.status===401){ at=await refresh(); if(!at) throw Object.assign(new Error('Please log in'),{login:true}); r=await call(at); }
+  var body=null; try{ body=await r.json(); }catch(e){}
+  if(!r.ok){ throw new Error((body&&(body.message||body.hint))||('HTTP '+r.status)); }
+  return body;
+}
+async function login(code,pass){
+  code=String(code||'').trim().toLowerCase(); var email=code.indexOf('@')>=0?code:'';
+  if(!email){ try{ var rr=await timed(SB_URL+'/rest/v1/rpc/resolve_login',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({p_id:code})},8000);
+    if(rr.ok){ var em=await rr.json(); if(em&&typeof em==='string') email=em; } }catch(e){} if(!email) email=code+SB_DOMAIN; }
+  var r=await timed(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pass})},12000);
+  if(r.status===400) throw new Error('Login code or password is not right.');
+  if(!r.ok) throw new Error('The server did not answer (HTTP '+r.status+'). Try again.');
+  store(await r.json());
+}
+function showLogin(why){
+  $app.innerHTML='<div class="login"><b>Log in with your Hero App login</b><div class="small">'+esc(why||'Only the CEO login sees this register. The server checks it, not this page.')+'</div>'
+   +'<input id="lc" placeholder="Login code (for example CEO)" autocomplete="username"><input id="lp" type="password" placeholder="Password" autocomplete="current-password">'
+   +'<button class="btn p" id="lb" style="width:100%;margin-top:6px">Log in</button><div class="err" id="le"></div></div>';
+  document.getElementById('lb').onclick=async function(){ var b=this; b.disabled=true; document.getElementById('le').textContent='';
+    try{ await login(document.getElementById('lc').value, document.getElementById('lp').value); load(); }
+    catch(e){ document.getElementById('le').textContent=e.message; b.disabled=false; } };
+}
+
+/* ---------------- photos: signed for 2 minutes with the CEO's login, shown as a blob (no link stays) */
+async function photo(path, el){
+  el.textContent='Fetching…';
+  try{
+    var at=await token(); var i=path.indexOf('/'); var bucket=path.slice(0,i), obj=path.slice(i+1).split('/').map(encodeURIComponent).join('/');
+    var r=await timed(SB_URL+'/storage/v1/object/sign/'+bucket+'/'+obj,{method:'POST',headers:{apikey:SB_ANON,Authorization:'Bearer '+at,'Content-Type':'application/json'},body:JSON.stringify({expiresIn:120})},15000);
+    if(!r.ok){ el.textContent='No photo (HTTP '+r.status+')'; return; }
+    var j=await r.json(); var g=await timed(SB_URL+'/storage/v1'+j.signedURL,{},20000);
+    if(!g.ok){ el.textContent='No photo (HTTP '+g.status+')'; return; }
+    var u=URL.createObjectURL(await g.blob()); var img=document.createElement('img'); img.className='photo'; img.alt='gate photo'; img.src=u; el.replaceWith(img);
+  }catch(e){ el.textContent='Photo not fetched: '+e.message; }
+}
+
+/* ---------------- the register */
+async function load(){
+  S.busy=true; S.err=''; if(S.data) render();
+  try{
+    var args={p_client:'AVNI.exe / web '+navigator.userAgent.slice(0,60)}; if(S.range.from){ args.p_from=S.range.from; args.p_to=S.range.to; }
+    var d=await rpc('kp_register',args);
+    if(!d||!d.ok){ $app.innerHTML='<div class="login"><b style="color:var(--red)">'+esc((d&&d.msg)||'This register is for the CEO login only.')+'</b><div class="row"><button class="btn" id="out">Log in with another login</button></div></div>';
+      document.getElementById('out').onclick=function(){ forget(); showLogin(); }; return; }
+    S.data=d; S.at=Date.now(); render();
+  }catch(e){ if(e.login){ showLogin(); return; } S.err=e.message; if(S.data) render(); else $app.innerHTML='<div class="login"><b>'+esc(e.message)+'</b><div class="row"><button class="btn" id="tr">Try again</button></div></div>', document.getElementById('tr').onclick=load; }
+  finally{ S.busy=false; }
+}
+function label(reg){ var v=(S.data.vehicles||[]).filter(function(x){ return x.reg===reg; })[0]; return v?v.label:reg; }
+
+function carsTab(d){
+  return '<table><tr><th>Car</th><th>Last seen by our cameras</th></tr>'+d.vehicles.map(function(v){
+    var l=v.last_seen;
+    return '<tr><td><b>'+esc(v.label)+'</b><div class="reg">'+esc(v.reg)+'</div></td><td>'+(l?
+      'Car seen '+esc(dm(l.at))+' - '+esc(ago(l.at))+'<div class="small">'+esc(l.workshop)+' · '+esc(l.camera||'camera')+(l.role?' ('+esc(l.role)+')':'')+(l.sampled?' · hourly sample, about ±1 hour':'')+'</div>'
+      +(l.age_hours>=6?'<div class="old">Old sighting - not where the car is now</div>':'')
+      :'<span class="none">Not seen by our cameras - Unknown</span>')+'</td></tr>';
+  }).join('')+'</table>';
+}
+function cell(c){
+  if(c.status==='seen'||c.status==='weak') return '<span class="'+c.status+'">'+(c.status==='seen'?'Car seen':'Weak read')+'</span>'+c.places.map(function(p){
+    return '<div class="small">'+esc(p.workshop)+' '+hm(p.first_at)+(p.last_at!==p.first_at?'–'+hm(p.last_at):'')+' · '+esc(roles(p.cameras))+'</div>'; }).join('');
+  return '<span class="none">'+(c.status==='not_seen'?'Not seen':'Unknown')+'</span>';
+}
+function daysTab(d){
+  var h='<table><tr><th>Day</th>'+d.vehicles.map(function(v){ return '<th>'+esc(v.label)+' <span class="reg">'+esc(v.reg)+'</span></th>'; }).join('')+'</tr>';
+  h+=d.days.map(function(day,i){
+    return '<tr><td>'+esc(dayName(day.day))+'<div class="small">'+(day.camera_sites.length?day.camera_sites.length+' site'+(day.camera_sites.length===1?'':'s')+' on camera':'no camera data')+'</div></td>'
+      +day.cars.map(function(c,j){ return '<td'+(c.places.length?' class="clk" data-d="'+i+'" data-c="'+j+'"':'')+'>'+cell(c)+'</td>'; }).join('')+'</tr>';
+  }).join('')+'</table>';
+  if(S.pick){ var day=d.days[S.pick[0]], c=day.cars[S.pick[1]];
+    h+='<div class="detail"><b>'+esc(label(c.reg))+' · '+esc(c.reg)+' · '+esc(dayName(day.day))+'</b> <button class="btn" id="cl">Close</button>'+c.places.map(function(p,k){
+      return '<div style="margin-top:6px"><b>'+esc(p.workshop)+': car seen first '+hm(p.first_at)+', last '+hm(p.last_at)+(p.confirmed?'':' (weak read)')+'</b>'
+       +'<div class="small">'+esc(cams(p.cameras))+'</div><div class="small">'+p.confirmed_reads+' confirmed of '+p.reads+' read'+(p.reads===1?'':'s')+' · confidence '+esc(p.best_conf==null?'—':p.best_conf)+' · '+esc(src(p.sources))+'</div>'
+       +(p.sampled_only?'<div class="old">Hourly recorder sample: the time is good to about an hour - not an exact gate crossing.</div>':'')
+       +(p.photo?'<button class="btn ph" data-p="'+esc(p.photo)+'">Show gate photo</button>':'<div class="small">No gate photo kept</div>')+'</div>'; }).join('')+'</div>';
+  }
+  h+='<div class="row"><button class="btn" id="older"'+(S.busy?' disabled':'')+'>Older 30 days</button>'+(S.range.from?'<button class="btn" id="today">Back to today</button>':'')+'</div>'
+    +'<div class="small" style="margin-top:6px">"Not seen" = our cameras had data that day and did not see the car. "Unknown" = no camera data that day. Click a sighting for its cameras and photo.</div>';
+  return h;
+}
+function misTab(d){
+  if(!d.possible_misreads.length) return '<div class="small">No near-miss plate reads in these days.</div>';
+  return '<div class="small">Plates the camera read that are close to one of the three cars. They are NOT counted in the register - each is a different car unless you decide otherwise from the photo.</div>'
+   +'<table><tr><th>Read</th><th>Close to</th><th>When</th><th>Where</th><th>Confidence</th><th></th></tr>'+d.possible_misreads.map(function(m){
+    return '<tr><td class="reg"><b>'+esc(m.read)+'</b></td><td>'+esc(label(m.near))+' <span class="reg">'+esc(m.near)+'</span></td><td>'+esc(dm(m.at))+'<div class="small">'+esc(ago(m.at))+'</div></td>'
+     +'<td>'+esc(m.workshop||m.site)+'<div class="small">'+esc(m.camera||'camera')+(m.role?' ('+esc(m.role)+')':'')+'</div></td><td>'+esc(m.conf==null?'—':m.conf)+'</td>'
+     +'<td>'+(m.photo?'<button class="btn ph" data-p="'+esc(m.photo)+'">Photo</button>':'')+'</td></tr>'; }).join('')+'</table>';
+}
+function render(){
+  var d=S.data, f=d.fresh||{};
+  var tabs=[['cars','Cars'],['days','Day by day'],['mis','Possible misreads'+(d.possible_misreads.length?' · '+d.possible_misreads.length:'')]];
+  $app.innerHTML='<div class="fresh">Updated '+esc(dmy(S.at))+' · days '+esc(dayName(d.from))+' to '+esc(dayName(d.to))
+    +'<div class="small">PC cameras sent up to '+(f.ledger_last_ts?esc(dm(ledgerTs(f.ledger_last_ts))):'—')+' · recorders up to '+(f.recorder_last_at?esc(dm(f.recorder_last_at)):'—')+'</div></div>'
+    +'<div class="tabs">'+tabs.map(function(t){ return '<button class="tab'+(S.tab===t[0]?' on':'')+'" data-t="'+t[0]+'">'+esc(t[1])+'</button>'; }).join('')
+    +'<button class="tab" id="rf">Refresh</button><button class="tab" id="lock">Lock</button></div>'
+    +'<div class="panel">'+(S.tab==='cars'?carsTab(d):S.tab==='days'?daysTab(d):misTab(d))+'</div>'
+    +'<div class="foot">'+esc(d.words)+' Hero: '+esc(d.hero.text)+'. Gate photos are for you to look at by hand - no face matching is done.'+(S.err?' <span style="color:var(--red)">'+esc(S.err)+'</span>':'')+'</div>';
+  Array.prototype.forEach.call($app.querySelectorAll('[data-t]'),function(b){ b.onclick=function(){ S.tab=b.getAttribute('data-t'); S.pick=null; render(); }; });
+  Array.prototype.forEach.call($app.querySelectorAll('td.clk'),function(td){ td.onclick=function(){ S.pick=[+td.getAttribute('data-d'),+td.getAttribute('data-c')]; render(); }; });
+  Array.prototype.forEach.call($app.querySelectorAll('.ph'),function(b){ b.onclick=function(){ photo(b.getAttribute('data-p'), b); }; });
+  var x;
+  if((x=document.getElementById('cl'))) x.onclick=function(){ S.pick=null; render(); };
+  if((x=document.getElementById('older'))) x.onclick=function(){ var f0=new Date(d.from+'T00:00:00'); var to=new Date(f0.getTime()-86400000); var fr=new Date(to.getTime()-29*86400000); S.range={from:isoDay(fr),to:isoDay(to)}; S.pick=null; load(); };
+  if((x=document.getElementById('today'))) x.onclick=function(){ S.range={}; S.pick=null; load(); };
+  document.getElementById('rf').onclick=load;
+  document.getElementById('lock').onclick=function(){ S.data=null; forget(); showLogin('Locked. Log in again to open.'); };
+}
+// leaving the page for 10 minutes drops the answer from the screen
+var hiddenAt=0; document.addEventListener('visibilitychange',function(){ if(document.hidden){ hiddenAt=Date.now(); } else if(hiddenAt && Date.now()-hiddenAt>600000 && S.data){ S.data=null; load(); } });
+load();
+})();
+</script>
+</body>
+</html>

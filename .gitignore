@@ -70,3 +70,6 @@
 # owner and age, CEO / Maruti admin login only (rows come from Supabase mar_truth_board through that login). Self-contained,
 # no data inside, no key beyond the publishable one that already ships in index.html. By NAME, as above.
 !maruti-truth.html
+# 17-10-2026: key-people.html is MD Version - Key People Safety, the CEO-only register of key cars seen by our cameras
+# (no data in the file; kp_register answers only the CEO login). Opened inside AVNI.exe. Whitelisted by name.
+!key-people.html
