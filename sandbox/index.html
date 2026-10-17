@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 110;
-window.HERO_BUILD = 'R153-2026.10.17.2';
+window.HERO_BUILD = 'R154-2026.10.17.3';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -29077,6 +29077,13 @@ window.heroChangeMobile=function(){
   };
   var LAST_D=null;
   var GONE={};
+  /* R154: the CEO / GM saw the vehicle in the workshop - recorded as the latest word (named), the customer is asked again in 3 days */
+  window.avaskHere=async function(i){
+    var it=ITEMS[i]; if(!it) return;
+    if(!confirm('ZERO TRUST: you overrule the customer. Is '+(it.reg_no||it.jc_number)+' physically in the workshop right now?')) return;
+    try{ await sbRpc('hero_holdup_customer_override',{p_jc_key:it.jc_key,p_where:'workshop',p_note:'seen on the Why not invoiced? screen'}); LAST_AUTO=0; load(false); }
+    catch(e){ alert('Could not record: '+((e&&e.message)||e)); }
+  };
   window.huGoneOut=function(jc,reg){
     var j=String(jc||'').trim().toUpperCase(), r=String(reg||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
     return (j&&GONE['J:'+j])||(r&&GONE['R:'+r])||'';
@@ -29173,7 +29180,10 @@ window.heroChangeMobile=function(){
         +'<label>Why<input data-f="rs" placeholder="why not delivered" value="'+esc(it.reason)+'"></label>'
         +'<label>Promise<select data-f="eta">'+opts(etas(), it.eta)+'</select></label>'
         +'<label>'+(parts?'Part no. · where · order no.':'Remarks')+'<input data-f="rm" placeholder="'+(parts?'part no. · where · order no.':'remarks')+'" value="'+esc(it.remarks)+'"></label>'
-        +'<button type="button" class="sv" onclick="avaskSave('+i+')">Save</button></div></td></tr>';
+        +'<button type="button" class="sv" onclick="avaskSave('+i+')">Save</button>'
+        /* R154 (0128): zero trust lets only the CEO / GM overrule a customer's tap - the vehicle is physically here */
+        +((it.red&&(role()==='gm'||role()==='ceo'))?'<button type="button" class="sv" style="background:#166534" onclick="avaskHere('+i+')">Vehicle is HERE — I saw it</button>':'')
+        +'</div></td></tr>';
     });
     tb.innerHTML=h||'<tr><td colspan="2" style="padding:14px">Nothing waiting. Every pending vehicle has an answer today.</td></tr>';
   }
