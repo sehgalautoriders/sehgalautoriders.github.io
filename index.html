@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 110;
-window.HERO_BUILD = 'R154-2026.10.17.3';
+window.HERO_RELEASE = 111;
+window.HERO_BUILD = 'R155-2026.10.17.4';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -28098,6 +28098,7 @@ Object.assign(window.HERO_LANG_EXTRA,{"📱 Change my mobile number": ["📱 म
     }catch(e){}
   }
   R.fill=fillSlots; R.load=loadIndex;
+  R.start=startReading;   /* R155: the Why-not-invoiced panel starts the reading for its own row */
 
   var origCell=window.huReqPhotoCell;
   if(typeof origCell==='function'){
@@ -29044,6 +29045,25 @@ window.heroChangeMobile=function(){
 #view-holdup tr.hu-gone-out select,#view-holdup tr.hu-gone-out input{color:#171717!important;background:#fff!important}
 .hu-gone-tag{display:block;margin-top:2px;font-size:9.5px;font-weight:800;letter-spacing:.3px;color:#fff;background:#450a0a;border-radius:3px;padding:1px 4px;width:max-content;text-decoration:none}
 #avask-sum .gone{display:inline-block;background:#7F1D1D;color:#fff;font-weight:700;border-radius:4px;padding:1px 6px;margin-right:6px}
+/* R155 (Ravi 17-10-2026 16:2x "You are giving them nothing"): the proof on every row - the customer's number and his WhatsApp,
+   the guard's missing gate out, the WHY chain, and for parts the requisition photo + the All-India stock (server hero-app 0140) */
+#avask-ov .avx-cust{font-size:12px;font-weight:700;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#avask-ov .avx-cust a{color:#1d4ed8;text-decoration:none;font-weight:800}
+#avask-ov tr.av-out .avx-cust a{color:#fde68a!important}
+#avask-ov .avx-gate{display:block;width:max-content;max-width:100%;font-size:10.5px;font-weight:800;color:#fff!important;background:#b91c1c;border-radius:3px;padding:1px 5px;margin-top:2px;white-space:normal}
+#avask-ov .avx-wa{margin:2px 0 6px;font-size:12px;max-width:520px}
+#avask-ov .avx-wa .us{background:#fff;color:#171717;border-radius:9px 9px 9px 2px;padding:5px 8px;margin:3px 40px 3px 0;white-space:pre-wrap;border:1px solid #E5E5E5}
+#avask-ov .avx-wa .him{background:#dcf8c6;color:#171717;border-radius:9px 9px 2px 9px;padding:5px 8px;margin:3px 0 3px 40px;font-weight:700}
+#avask-ov .avx-wa .tm{display:block;font-size:10px;color:#6B6B6B;font-weight:400;text-align:right;margin-top:1px}
+#avask-ov .avx-wa .hd{font-size:11px;font-weight:800;color:#065f46}
+#avask-ov .avx-facts{font-size:11.5px;color:#374151;margin:2px 0 4px;line-height:1.45}
+#avask-ov .avx-facts b.bad{color:#b91c1c}
+#avask-ov .avx-tools{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}
+#avask-ov .avx-tools button,#avask-ov .avx-tools a{font:700 12px system-ui,sans-serif;padding:7px 10px;border-radius:7px;border:1px solid #0891b2;background:#ecfeff;color:#0e7490;text-decoration:none;cursor:pointer}
+#avask-ov .avx-tools .ph{border-color:#b45309;background:#fffbeb;color:#92400e}
+#avask-ov table.avx-req{font-size:11.5px;margin:4px 0;border-collapse:collapse;width:auto}
+#avask-ov table.avx-req td,#avask-ov table.avx-req th{padding:2px 7px;border-bottom:1px solid #eee;text-align:left;font-weight:400}
+#avask-sum .gate{display:inline-block;background:#b91c1c;color:#fff;font-weight:700;border-radius:4px;padding:1px 6px;margin:3px 6px 0 0}
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="Why pending">
@@ -29077,6 +29097,104 @@ window.heroChangeMobile=function(){
   };
   var LAST_D=null;
   var GONE={};
+  /* R155: the facts per job card (hero_holdup_facts_for_me, server 0140) - loaded beside the list, painted when they arrive */
+  var FACTS={}, GATE=null, PARTSP=[], FACTS_AT=0, FACTS_BUSY=false;
+  function mob(m){ m=String(m||''); return m.length===10?m.slice(0,5)+' '+m.slice(5):m; }
+  function dtm(t){ try{ var x=new Date(t); if(isNaN(x)) return ''; var p=function(n){ return ('0'+n).slice(-2); };
+    return p(x.getDate())+'-'+p(x.getMonth()+1)+' '+p(x.getHours())+':'+p(x.getMinutes()); }catch(e){ return ''; } }
+  function factsOf(it){ return (it&&FACTS[it.jc_key])||null; }
+  function isParts(it){ return it.q_role==='parts' || / - parts\./.test(String(it.question||'')) || /pending\s*for\s*parts/i.test(String(it.status||'')); }
+  /* the customer's number on the row itself - at the TOP of a red (out) row, so the workshop calls him and cross-checks */
+  function custTop(it){
+    var f=factsOf(it); if(!f) return '';
+    var m=String(f.mobile||''), st='onclick="event.stopPropagation()"';
+    var h=m?('<div class="avx-cust">📞 <a href="tel:+91'+esc(m)+'" '+st+'>'+esc(mob(m))+'</a>'+(f.name?' · '+esc(f.name):'')
+        +' · <a href="https://wa.me/91'+esc(m)+'" target="_blank" rel="noopener" '+st+'>WhatsApp</a></div>')
+      :'<div class="avx-cust" style="color:#b91c1c">no customer mobile on record</div>';
+    if(f.gate_gap) h+='<span class="avx-gate">🚪 LEFT WITHOUT GATE OUT'+(f.guard?' · guard '+esc(f.guard):'')+' — why?</span>';
+    return h;
+  }
+  /* the open row: his WhatsApp (what we sent, what he answered), gate / camera, the answers so far, the parts tools */
+  function factsBlock(it,i){
+    var f=factsOf(it); if(!f) return '<div class="avx-facts" style="color:#6B6B6B">loading the customer and gate facts…</div>';
+    var h='';
+    if(f.asked||f.said){
+      h+='<div class="avx-wa"><div class="hd">WhatsApp with the customer'+(f.mobile?' · '+esc(mob(f.mobile)):'')+'</div>';
+      if(f.asked) h+='<div class="us">'+esc(String(f.asked.text||'').split('\n').filter(function(x){ return x.trim(); }).slice(0,6).join('\n'))
+        +'<span class="tm">we sent · '+esc(dtm(f.asked.at))+'</span></div>';
+      if(f.said) h+='<div class="him">'+esc(f.said.text||f.said.answer)
+        +'<span class="tm">'+(f.said.kind==='staff'?esc(f.said.by||'staff')+' (staff correction)':'customer '+esc(mob(f.said.mobile||f.mobile)))+' · '+esc(dtm(f.said.at))+'</span></div>';
+      else h+='<div class="tm" style="text-align:left">no reply from the customer yet</div>';
+      if(f.paid!=null||f.gst||f.receipt) h+='<div class="tm" style="text-align:left;font-weight:700;color:#171717">'
+        +(f.paid!=null?'paid ₹'+esc(f.paid)+' · ':'')+(f.gst?'GST bill: '+esc(f.gst)+' · ':'')+(f.receipt?'receipt on file':'')+'</div>';
+      h+='</div>';
+    }
+    h+='<div class="avx-facts">'
+      +(f.gate_in?'Gate in '+esc(dtm(f.gate_in))+(f.guard?' (guard '+esc(f.guard)+')':''):'No gate entry found')
+      +' · gate out '+(f.gate_out?esc(dtm(f.gate_out))+(f.gate_out_by?' by '+esc(f.gate_out_by):''):'<b class="bad">NOT written by the guard</b>')
+      +(f.cam_exit?' · camera saw it leave '+esc(dtm(f.cam_exit)):'')
+      +(f.gate_gap?'<br><b class="bad">🚪 The vehicle has left but the guard wrote no gate out. Why? Ask the guard.</b>':'')
+      +'</div>';
+    var w=f.why||[];
+    if(w.length) h+='<div class="avx-facts"><b>WHY #'+esc(f.why_n||1)+' · answers so far:</b> '+w.map(function(e){
+        return esc(String(e.date||'').slice(0,5))+' '+esc(e.by||'')+': "'+esc(e.status||'')+(e.reason?' - '+esc(e.reason):'')+'"'+(e.eta?' (promise '+esc(e.eta)+')':''); }).join(' ← ')+'</div>';
+    else h+='<div class="avx-facts"><b>WHY #'+esc(f.why_n||1)+'</b> · nobody has answered for this vehicle yet.</div>';
+    var parts=isParts(it), rq=f.req;
+    if(rq&&rq.lines&&rq.lines.length){
+      h+='<table class="avx-req"><tr><th>Part on the requisition</th><th>Qty</th><th>Our stock</th></tr>'+rq.lines.slice(0,10).map(function(l){
+        var q=Number(l.stock); return '<tr><td><b>'+esc(l.pn||'')+'</b> '+esc(l.desc||'')+'</td><td>'+esc(l.qty||1)+'</td><td style="font-weight:800;color:'+(q>0?'#065f46':'#b91c1c')+'">'+(l.stock==null?'—':esc(q))+'</td></tr>'; }).join('')
+        +'</table><div class="avx-facts" style="font-size:10.5px;color:#6B6B6B">requisition read '+esc(dtm(rq.at))+(rq.by?' · confirmed by '+esc(rq.by):'')+'</div>';
+    }
+    h+='<div class="avx-tools">'
+      +(f.mobile?'<a href="tel:+91'+esc(f.mobile)+'">📞 Call customer '+esc(mob(f.mobile))+'</a>':'')
+      +((parts||rq||f.req_photo)?'<button type="button" class="ph" onclick="avaskReq('+i+')">📷 '+(rq||f.req_photo?'New requisition photo':'Requisition photo')+' — we read it</button>'
+        +'<button type="button" onclick="avaskPF('+i+')">🔎 All-India stock'+(rq&&rq.lines&&rq.lines.length?' ('+rq.lines.length+' part'+(rq.lines.length===1?'':'s')+')':'')+'</button>':'')
+      +'</div>';
+    if(parts && PARTSP.length) h+='<div class="avx-facts">Parts answers go to <b>'+esc(PARTSP.join(' / '))+'</b> at once (WhatsApp within 5 minutes).</div>';
+    return h;
+  }
+  function loadFacts(force){
+    if(FACTS_BUSY || (!force && Date.now()-FACTS_AT<60000)) return;
+    FACTS_BUSY=true;
+    Promise.resolve(sbRpc('hero_holdup_facts_for_me',{})).then(function(r){
+      if(r&&r.ok){ FACTS=r.rows||{}; GATE=r.gate||null; PARTSP=r.parts_people||[]; FACTS_AT=Date.now(); if(LAST_D) paint(LAST_D); }
+    }).catch(function(e){ try{ console.warn('[R155] facts', e); }catch(_){} }).then(function(){ FACTS_BUSY=false; });
+  }
+  /* 📷 requisition photo straight from this panel: saved (the same upload as the Holdup list), then read by the slip reader
+     (read-text OCR -> hero_requisition_parse -> our stock); the panel closes so the reader's table is on top */
+  window.avaskReq=function(i){
+    var it=ITEMS[i]; if(!it) return;
+    var k={jc:String(it.jc_number||'').trim(), dealer:String(it.dealer_code||'').trim(), reg:String(it.reg_no||'').trim().toUpperCase(), model:String(it.model||'').trim()};
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+    inp.onchange=function(){
+      var file=inp.files&&inp.files[0]; if(!file) return;
+      var rd=new FileReader();
+      rd.onload=function(e){
+        var du=e.target.result; avaskClose();
+        Promise.resolve(window.jpost({type:'upload_requisition_photo', jcNo:k.jc, dealer:k.dealer, reg:k.reg, photoData:du})).then(function(res){
+          var url=String((res&&(res.url||res.photoUrl))||''); var R=window.HERO_R106;
+          if(R&&typeof R.start==='function') R.start(k, du, /^https?:/.test(url)?url:'');
+          else alert('Requisition photo saved for '+(k.reg||k.jc)+'.');
+          FACTS_AT=0;
+        }, function(err){ alert('The requisition photo was NOT saved: '+((err&&err.message)||err)+'. Try again when the connection is back.'); });
+      };
+      rd.readAsDataURL(file);
+    };
+    inp.click();
+  };
+  /* 🔎 All-India stock of the parts on the requisition (Hero BI through the office PC, R144); none read yet = the box is empty to type */
+  window.avaskPF=function(i){
+    var it=ITEMS[i]; if(!it) return; var f=factsOf(it)||{};
+    var pns=((f.req&&f.req.lines)||[]).map(function(l){ return String(l.pn||'').trim(); }).filter(function(x){ return x; });
+    avaskClose();
+    try{ openModule('partfinder'); }catch(e){}
+    setTimeout(function(){
+      var inp=document.getElementById('pf-partno'); if(!inp) return;
+      inp.value=pns.join(', ');
+      if(pns.length && typeof pfLiveAuto==='function') pfLiveAuto();
+      else { try{ inp.focus(); }catch(e){} if(typeof pfInfo==='function') pfInfo('No part numbers read for '+(it.reg_no||it.jc_number)+' yet - type them, or take the requisition photo first.','warn'); }
+    },300);
+  };
   /* R154: the CEO / GM saw the vehicle in the workshop - recorded as the latest word (named), the customer is asked again in 3 days */
   window.avaskHere=async function(i){
     var it=ITEMS[i]; if(!it) return;
@@ -29150,6 +29268,9 @@ window.heroChangeMobile=function(){
       +(function(z){ if(!z) return ''; return '<div style="margin-top:3px"><b style="color:#7F1D1D">ZERO TRUST</b> — the customer and the camera prove it, not the advisor. '
           +'Customers asked <b>'+esc(z.asked||0)+'</b> · said "with me" <b style="color:#7F1D1D">'+esc(z.said_customer||0)+'</b> · said "still here" <b>'+esc(z.said_workshop||0)+'</b> · paid <b>'+esc(z.paid||0)+'</b> · receipts <b>'+esc(z.receipts||0)+'</b> · camera out <b>'+esc(z.camera||0)+'</b>'
           +(z.no_mobile?' · <span style="color:#b91c1c">no mobile for '+esc(z.no_mobile)+' (cannot be asked)</span>':'')+'</div>'; })(d&&d.zt)
+      /* R155: the guards' gate book - a vehicle that leaves without a gate out is highlighted on its row too */
+      +(GATE&&Number(GATE.in_7d||0)>0?'<div><span class="gate">🚪 GATE OUT by the guards: '+esc(GATE.out_today||0)+' today against '+esc(GATE.in_today||0)+' gate ins · '+esc(GATE.out_7d||0)+' in 7 days'
+          +(GATE.last_out?' (last '+esc(GATE.last_out)+')':'')+' — why are gate outs not written?</span></div>':'')
       ;
     /* R134 (Ravi 01-10-2026: "Give 4 big buttons for the locations classification"):
        one button per dealer code with its count; tap = only that location, tap again = all. */
@@ -29170,12 +29291,12 @@ window.heroChangeMobile=function(){
       /* R140 (Ravi 05-10-2026 "the screen is going down too much"): one line per vehicle; the answer
          form opens under the row that is tapped, one at a time (avaskTog). */
       var op=(i===OPEN)?' av-open':'';
-      h+='<tr class="av-q-row'+op+(it.gone_out?' av-out':'')+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
+      h+='<tr class="av-q-row'+op+(it.gone_out?' av-out':'')+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td>'+(it.gone_out?custTop(it):'')+'<b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
         +(it.gone_out?'<span class="hu-gone-tag">OUT · NOT INVOICED</span>':'')
         +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div>'
-        +custLine(it)+'</td>'
+        +custLine(it)+(it.gone_out?'':custTop(it))+'</td>'
         +'<td><span class="av-go">'+(op?'Close ▴':'Answer ▾')+'</span><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
-        +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2"><div class="av-f">'
+        +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2">'+factsBlock(it,i)+'<div class="av-f">'
         +'<label>Status<select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></label>'
         +'<label>Why<input data-f="rs" placeholder="why not delivered" value="'+esc(it.reason)+'"></label>'
         +'<label>Promise<select data-f="eta">'+opts(etas(), it.eta)+'</select></label>'
@@ -29208,6 +29329,7 @@ window.heroChangeMobile=function(){
       if(JSON.stringify(go)!==was && typeof huRender==='function' && document.getElementById('view-holdup')
          && document.getElementById('view-holdup').offsetParent!==null){ try{ huRender(); }catch(e){} }
       paint(d);
+      loadFacts(!auto);
       var n=ITEMS.length;
       if(n && (LAST_N<0 || n!==LAST_N || Date.now()-(window.AVASK_LAST_NOTE||0)>AUTO_MS)){ window.AVASK_LAST_NOTE=Date.now(); notify(n); }
       LAST_N=n;
