@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 110;
-window.HERO_BUILD = 'R151-2026.10.16.3';
+window.HERO_BUILD = 'R152-2026.10.17.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -12437,6 +12437,7 @@ function huHydrateFromBackend(cb, force){
       o[HU_COLS.model]=String(r['Model']||'');
       o[HU_COLS.type]=String(r['JC Type']||'');
       o[HU_COLS.status]=String(r['Order Status']||'');
+      o['Invoiced']=String(r['Invoiced']||'');   /* R152 (0125): invoiced in Hero DMS = with the customer, not holdup */
       o[HU_COLS.pendingDays]=String(r['Pending Days']||'');
       o[HU_COLS.supervisor]=String(r['Supervisor ID']||'');
       /* THE "MY HOLDUP: 0" BUG (Ravi 27-Jul-2026).
@@ -12801,6 +12802,9 @@ function huDrawTable_(){
 
   let rows=HU_DATA.filter((r)=>{
     if(!showDelivered && String(r['Holdup Status']||'').toUpperCase()==='DELIVERED') return false;
+    /* R152 (Ravi 17-10-2026, the holdup law): holdup = not invoiced in Hero DMS (in the workshop); invoiced = with the
+       customer. Hero's own pending list keeps an invoiced job card until its close step - we do not. Tick Delivered to see them. */
+    if(!showDelivered && String(r['Invoiced']||'')) return false;
     const code=String(r[HU_COLS.code]||'');
     const realWs=HU_CODE_TO_WS[code]||'';
     if(allowed){ const ok=allowed.some(a=>sameWsJs(a,realWs)); if(!ok) return false; }
@@ -12929,13 +12933,14 @@ function huDrawTable_(){
       /* R22 (Ravi 03-Aug-2026): a FREE-SERVICE vehicle held beyond 2 days gets a
          red pulsing button on its row — not a whole red column. */
       const isFreeLate=/free/i.test(String(r[HU_COLS.type]||''))&&days>2;
-      /* R149 (Ravi 16-10-2026): the vehicle has GONE OUT (customer said so on WhatsApp / came again with a new job card /
-         invoiced) but its job card is still open -> the whole row in dark red (window.huGoneOut, from hero_chase_my_items). */
+      /* R149 / R152 (Ravi 16-10 and 17-10-2026): the vehicle is OUT WITHOUT INVOICE (customer said so on WhatsApp / gate out /
+         came again with a new job card) - still holdup, the whole row in dark red (window.huGoneOut, from hero_chase_my_items).
+         An INVOICED vehicle is with the customer: not holdup, hidden unless Delivered is ticked (R152, the holdup law). */
       const goneWhy=(typeof window.huGoneOut==='function')?window.huGoneOut(r[HU_COLS.jcNo],reg):'';
       return `<tr id="hu-tr-${i}" class="${isSel?'hu-selected':''} ${isPartFlag?'hu-row-part-flag':''} ${goneWhy?'hu-gone-out':''}" onclick="huRowClick(event,${i})" style="cursor:pointer"${goneWhy?` title="${String(goneWhy).replace(/"/g,'&quot;')}"`:''}>
         <td style="width:32px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${isSel?'checked':''} onchange="huToggleRow(${i},this.checked)"></td>
         <td style="width:18px;text-align:center;pointer-events:none"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${dotCls==='green'?'var(--ok)':'var(--signal-d)'}"></span></td>
-        <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}${goneWhy?'<span class="hu-gone-tag">GONE OUT · JC OPEN</span>':''}</td>
+        <td class="td-reg" style="min-width:100px;cursor:pointer;color:#2563eb;text-decoration:underline dotted" onclick="event.stopPropagation();huShowDetail(${i})" title="Open vehicle detail window">${reg||'—'}${regIsVin?'<span style="font-size:9px;color:var(--steel);display:block">(VIN)</span>':''}${goneWhy?'<span class="hu-gone-tag">OUT · NOT INVOICED</span>':''}${r['Invoiced']?'<span class="hu-gone-tag" style="background:#166534">INVOICED '+String(r['Invoiced']).replace(/[<>&"]/g,'')+' · with customer</span>':''}</td>
         <td id="hu-mob-${i}" data-k="${huMobKey(r)}" class="mono" style="white-space:nowrap;font-size:12px;min-width:104px" onclick="event.stopPropagation()">${(m=>m?`<a href="tel:+91${m}" style="color:#2563eb;text-decoration:none">📱 ${m}</a>`:'<span style="color:var(--steel)">—</span>')(huRowMobSync(r))}</td>
         <td class="hu-wrapcell" style="font-size:12px;min-width:96px">${r[HU_COLS.model]||'—'}</td>
         <td class="td-days ${dClass}">${days>=0?days+'d':'—'}</td>
@@ -13026,6 +13031,7 @@ function huRenderSummary(rows){
   let html=`<div class="hu-sum-wrap">
     <div class="hu-sum-chips">
       <span class="hu-chip total${HU_MATRIX_FILTER?'':' active'}" onclick="HU_MATRIX_FILTER=null;huRender()">🚗 Total <b>${total}</b></span>
+      <span class="hu-chip" style="--cc:#166534" title="Holdup = not invoiced in Hero DMS (in the workshop). Invoiced = with the customer, out of holdup. Hero's own pending list still shows an invoiced job card until its close step; we do not count it. Tick Delivered to see them.">🧾 Invoiced · with customer <b>${(HU_DATA||[]).filter(r=>String(r['Invoiced']||'')).length}</b></span>
       <span class="hu-chip clickable${grpActive('PARTS')?' active':''}" style="--cc:#7e22ce" onclick="huMatrixToggleGrp('PARTS')">🔧 Parts Pending <b>${parts}</b></span>
       <span class="hu-chip clickable${grpActive('APPR')?' active':''}" style="--cc:#4f46e5" onclick="huMatrixToggleGrp('APPR')">🛡 Approval <b>${appr}</b></span>
       <span class="hu-chip clickable${grpActive('READY')?' active':''}" style="--cc:#166534" onclick="huMatrixToggleGrp('READY')">🟢 Ready / Not Delivered <b>${ready}</b></span>
@@ -29031,7 +29037,7 @@ window.heroChangeMobile=function(){
 #avask-ov tr.av-a-row.av-open td{background:#FEF2F2;padding:4px 6px 8px;border-bottom:2px solid #E5E5E5}
 #avask-ov tr.av-q-row.done td{opacity:.45}
 #avask-ov tr.av-q-row.done .av-go{color:#15803d}
-/* R149 (Ravi 16-10-2026): vehicle GONE OUT, job card still open = dark red, in this panel and in the Holdup list */
+/* R149 / R152: vehicle OUT WITHOUT INVOICE (still holdup) = dark red, in this panel and in the Holdup list */
 #avask-ov tr.av-q-row.av-out td,#view-holdup tr.hu-gone-out td{background:#7F1D1D!important;color:#fff!important}
 #avask-ov tr.av-q-row.av-out .q,#avask-ov tr.av-q-row.av-out .av-ask,#avask-ov tr.av-q-row.av-out .av-days,#avask-ov tr.av-q-row.av-out .av-go{color:#fff!important}
 #view-holdup tr.hu-gone-out td a,#view-holdup tr.hu-gone-out td.td-reg,#view-holdup tr.hu-gone-out td span{color:#fff!important}
@@ -29041,7 +29047,7 @@ window.heroChangeMobile=function(){
 </style>
 <button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="Why pending">
-  <div class="ah"><b>Why not delivered? — we ask every vehicle</b>
+  <div class="ah"><b>Why not invoiced? — we ask every holdup vehicle</b>
     <button type="button" id="avask-notif" onclick="avaskNotifOn()">🔔 Alerts</button>
     <button type="button" onclick="avaskClose()">Close</button></div>
   <div class="as" id="avask-sum"></div>
@@ -29099,7 +29105,7 @@ window.heroChangeMobile=function(){
     var last=rows[0].day, y=rows.filter(function(r){ return r.day===last; });
     var o=0,s=0; y.forEach(function(r){ o+=r.opened; s+=r.same_day; });
     var p=Math.round(100*s/o), t=Number(d.target||90);
-    return 'Same-day delivery '+esc(last.split('-').reverse().join('-'))+': <span class="'+(p>=t?'ok':'bad')+'">'+p+'%</span> ('+s+' of '+o+') · target '+t+'%';
+    return 'Same-day delivery (invoiced the same day) '+esc(last.split('-').reverse().join('-'))+': <span class="'+(p>=t?'ok':'bad')+'">'+p+'%</span> ('+s+' of '+o+') · target '+t+'%';
   }
   function paint(d){
     LAST_D=d;
@@ -29107,9 +29113,15 @@ window.heroChangeMobile=function(){
     var n=ITEMS.length;
     pill.textContent='Why pending · '+n; pill.style.display=n?'block':'none';
     var gone=ITEMS.filter(function(it){ return it.gone_out; }).length;
+    var inv=Number((d&&d.invoiced)||0);
+    /* R152 (Ravi 17-10-2026, the holdup law): holdup = not invoiced in Hero DMS (in the workshop); invoiced = with the
+       customer. No "closed", no "gone out - job card open": an invoiced vehicle is simply out of this list. */
     document.getElementById('avask-sum').innerHTML=
-      (gone?'<span class="gone">'+gone+' GONE OUT · job card still open — close in DMS today</span>':'')
-      +'<b>'+n+'</b> vehicle'+(n===1?'':'s')+' with no answer today. Each answer stops the asking for today. '+sddText(d||{});
+      (gone?'<span class="gone">'+gone+' OUT WITHOUT INVOICE — vehicle has left, no invoice in Hero DMS: still holdup, invoice today</span>':'')
+      +'<b>'+n+'</b> vehicle'+(n===1?'':'s')+' in holdup (not invoiced) with no answer today. Each answer stops the asking for today. '
+      +(inv?'<b>'+inv+'</b> invoiced — with the customer, out of holdup. ':'')
+      +sddText(d||{})
+      +'<div style="margin-top:3px;color:var(--steel)">Holdup = not invoiced in Hero DMS. Invoiced = with the customer. A close is not a delivery.</div>';
     /* R134 (Ravi 01-10-2026: "Give 4 big buttons for the locations classification"):
        one button per dealer code with its count; tap = only that location, tap again = all. */
     var cnt={}; ITEMS.forEach(function(it){ var c=String(it.dealer_code); cnt[c]=(cnt[c]||0)+1; });
@@ -29130,7 +29142,7 @@ window.heroChangeMobile=function(){
          form opens under the row that is tapped, one at a time (avaskTog). */
       var op=(i===OPEN)?' av-open':'';
       h+='<tr class="av-q-row'+op+(it.gone_out?' av-out':'')+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
-        +(it.gone_out?'<span class="hu-gone-tag">GONE OUT · JC OPEN</span>':'')
+        +(it.gone_out?'<span class="hu-gone-tag">OUT · NOT INVOICED</span>':'')
         +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div></td>'
         +'<td><span class="av-go">'+(op?'Close ▴':'Answer ▾')+'</span><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
         +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2"><div class="av-f">'
@@ -29145,7 +29157,7 @@ window.heroChangeMobile=function(){
   function notify(n){
     try{
       if(typeof Notification==='undefined' || Notification.permission!=='granted' || document.visibilityState==='visible') return;
-      new Notification('Why pending?', {body: n+' vehicle'+(n===1?' is':'s are')+' not delivered with no answer today. Why?', tag:'avask'});
+      new Notification('Why pending?', {body: n+' vehicle'+(n===1?' is':'s are')+' in holdup (not invoiced) with no answer today. Why?', tag:'avask'});
     }catch(e){}
   }
   async function load(auto){
@@ -29156,7 +29168,7 @@ window.heroChangeMobile=function(){
       ITEMS=(d&&d.items)||[];
       /* R149: the gone-out job cards also paint the Holdup list dark red */
       var go={}, was=JSON.stringify(GONE);
-      ITEMS.forEach(function(it){ if(!it.gone_out) return; var w=String(it.question||'GONE OUT');
+      ITEMS.forEach(function(it){ if(!it.gone_out) return; var w=String(it.question||'OUT - NOT INVOICED');
         if(it.jc_number) go['J:'+String(it.jc_number).trim().toUpperCase()]=w;
         if(it.reg_no) go['R:'+String(it.reg_no).replace(/[^A-Za-z0-9]/g,'').toUpperCase()]=w; });
       GONE=go;
@@ -30979,7 +30991,7 @@ var ES_BODY=null;
     var o1=m.o1||{}, o2=m.o2||{}, o3=m.o3||{}, o4=m.o4||{}, o5=m.o5||{}, o6=m.o6||{}, o7=m.o7||{}, o8=m.o8||{}, o9=m.o9||{}, o10=m.o10||{};
     var sdd=o1.sdd||{};
     return {
-      1:{t:'<b>'+num(o1.open)+'</b> open · <b class="wp-red">'+num(o1.goneOut)+'</b> gone out, JC open · '+num(o1.over30d)+' over 30 days · same-day <b>'+num(sdd.pct)+'%</b> ('+num(sdd.sameDay)+' of '+num(sdd.opened)+', '+esc(sdd.day||'')+') of '+num(o1.sddTarget)+'%',
+      1:{t:'<b>'+num(o1.open)+'</b> in holdup (not invoiced) · <b class="wp-red">'+num(o1.goneOut)+'</b> out without invoice · '+num(o1.over30d)+' over 30 days · same-day <b>'+num(sdd.pct)+'%</b> ('+num(sdd.sameDay)+' of '+num(sdd.opened)+', '+esc(sdd.day||'')+') of '+num(o1.sddTarget)+'%',
          a:'WhatsApp chase 10/12/14/16/18 to WM · GM · Parts (today: '+num((o1.chaseToday||{}).sent)+' sent, '+num((o1.chaseToday||{}).delivered)+' delivered) · customers asked at 11:00 · holdup loaded '+esc(o1.holdupLoaded||'—'), bad:(sdd.pct||0)<(o1.sddTarget||90)},
       2:{t:'<b>'+num(o2.partsHeld)+'</b> vehicles held for parts · '+num(o2.partsAnsweredToday)+' answered today · stock '+esc(o2.stockDate||'—')+' ('+num(o2.stockLines)+' lines, loaded '+esc(o2.stockLoaded||'—')+') · Part Finder asks this week '+num(o2.partFinder7d),
          a:'Parts coordinator chased every round for part no. / source / arrival; All-India Part Finder answers from Hero BI', bad:(o2.partsHeld||0)>0&&!(o2.partsAnsweredToday>0)},
