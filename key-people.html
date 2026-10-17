@@ -112,7 +112,7 @@ function showLogin(why){
 }
 
 /* ---------------- photos: signed for 2 minutes with the CEO's login, shown as a blob (no link stays) */
-async function photo(path, el){
+async function photo(path, el, frame){
   el.textContent='Fetching…';
   try{
     var at=await token(); var i=path.indexOf('/'); var bucket=path.slice(0,i), obj=path.slice(i+1).split('/').map(encodeURIComponent).join('/');
@@ -120,7 +120,8 @@ async function photo(path, el){
     if(!r.ok){ el.textContent='No photo (HTTP '+r.status+')'; return; }
     var j=await r.json(); var g=await timed(SB_URL+'/storage/v1'+j.signedURL,{},20000);
     if(!g.ok){ el.textContent='No photo (HTTP '+g.status+')'; return; }
-    var u=URL.createObjectURL(await g.blob()); var img=document.createElement('img'); img.className='photo'; img.alt='gate photo'; img.src=u; el.replaceWith(img);
+    var u=URL.createObjectURL(await g.blob()); var img=document.createElement('img'); img.className='photo'; img.alt='camera photo'; img.src=u; img.title=frame?'Click for the full frame':''; el.replaceWith(img);
+    if(frame){ img.style.cursor='zoom-in'; img.onclick=function(){ img.onclick=null; var b=document.createElement('button'); b.className='btn'; b.textContent='Fetching the full frame…'; img.replaceWith(b); photo(frame, b, null); }; }
   }catch(e){ el.textContent='Photo not fetched: '+e.message; }
 }
 
@@ -144,29 +145,37 @@ function carsTab(d){
     return '<tr><td><b>'+esc(v.label)+'</b><div class="reg">'+esc(v.reg)+'</div></td><td>'+(l?
       'Car seen '+esc(dm(l.at))+' - '+esc(ago(l.at))+'<div class="small">'+esc(l.workshop)+' · '+esc(l.camera||'camera')+(l.role?' ('+esc(l.role)+')':'')+(l.sampled?' · hourly sample, about ±1 hour':'')+'</div>'
       +(l.age_hours>=6?'<div class="old">Old sighting - not where the car is now</div>':'')
-      :'<span class="none">Not seen by our cameras - Unknown</span>')+'</td></tr>';
+      :'<span class="none">Car not seen by our cameras - Unknown</span>')
+      +(v.face_last_seen?'<div class="small" style="color:#4338ca">Face seen '+esc(dm(v.face_last_seen.at))+' - '+esc(ago(v.face_last_seen.at))+' · '+esc(v.face_last_seen.workshop)+' · '+esc(v.face_last_seen.camera||'camera')+'</div>':'')+'</td></tr>';
   }).join('')+'</table>';
 }
 function cell(c){
-  if(c.status==='seen'||c.status==='weak') return '<span class="'+c.status+'">'+(c.status==='seen'?'Car seen':'Weak read')+'</span>'+c.places.map(function(p){
-    return '<div class="small">'+esc(p.workshop)+' '+hm(p.first_at)+(p.last_at!==p.first_at?'–'+hm(p.last_at):'')+' · '+esc(roles(p.cameras))+'</div>'; }).join('');
+  if(c.status==='seen'||c.status==='weak') return '<span class="'+c.status+'">'+(c.status==='seen'?'Seen':'Weak read')+'</span>'+c.places.map(function(p){
+    return '<div class="small">'+(p.car_face?'car + face · ':'car · ')+esc(p.workshop)+' '+hm(p.first_at)+(p.last_at!==p.first_at?'–'+hm(p.last_at):'')+' · '+esc(roles(p.cameras))+'</div>'; }).join('')
+    +(c.faces||[]).map(function(f){ return '<div class="small" style="color:#4338ca">face · '+esc(f.workshop)+' '+hm(f.first_at)+(f.last_at!==f.first_at?'–'+hm(f.last_at):'')+'</div>'; }).join('')
+    +(c.photo_missing?'<div class="small" style="color:var(--red);font-weight:700">photo missing</div>':'');
   return '<span class="none">'+(c.status==='not_seen'?'Not seen':'Unknown')+'</span>';
 }
 function daysTab(d){
   var h='<table><tr><th>Day</th>'+d.vehicles.map(function(v){ return '<th>'+esc(v.label)+' <span class="reg">'+esc(v.reg)+'</span></th>'; }).join('')+'</tr>';
   h+=d.days.map(function(day,i){
     return '<tr><td>'+esc(dayName(day.day))+'<div class="small">'+(day.camera_sites.length?day.camera_sites.length+' site'+(day.camera_sites.length===1?'':'s')+' on camera':'no camera data')+'</div></td>'
-      +day.cars.map(function(c,j){ return '<td'+(c.places.length?' class="clk" data-d="'+i+'" data-c="'+j+'"':'')+'>'+cell(c)+'</td>'; }).join('')+'</tr>';
+      +day.cars.map(function(c,j){ return '<td'+((c.places.length||(c.faces||[]).length)?' class="clk" data-d="'+i+'" data-c="'+j+'"':'')+'>'+cell(c)+'</td>'; }).join('')+'</tr>';
   }).join('')+'</table>';
   if(S.pick){ var day=d.days[S.pick[0]], c=day.cars[S.pick[1]];
     h+='<div class="detail"><b>'+esc(label(c.reg))+' · '+esc(c.reg)+' · '+esc(dayName(day.day))+'</b> <button class="btn" id="cl">Close</button>'+c.places.map(function(p,k){
       return '<div style="margin-top:6px"><b>'+esc(p.workshop)+': car seen first '+hm(p.first_at)+', last '+hm(p.last_at)+(p.confirmed?'':' (weak read)')+'</b>'
        +'<div class="small">'+esc(cams(p.cameras))+'</div><div class="small">'+p.confirmed_reads+' confirmed of '+p.reads+' read'+(p.reads===1?'':'s')+' · confidence '+esc(p.best_conf==null?'—':p.best_conf)+' · '+esc(src(p.sources))+'</div>'
        +(p.sampled_only?'<div class="old">Hourly recorder sample: the time is good to about an hour - not an exact gate crossing.</div>':'')
-       +(p.photo?'<button class="btn ph" data-p="'+esc(p.photo)+'">Show gate photo</button>':'<div class="small">No gate photo kept</div>')+'</div>'; }).join('')+'</div>';
+       +(p.car_face?'<div class="small" style="color:#4338ca;font-weight:600">car + face at the same place within the hour</div>':'')
+       +(p.photo?'<button class="btn ph" data-p="'+esc(p.photo)+'" data-f="'+esc(p.frame||'')+'">Show gate photo</button>':'<div class="small" style="color:var(--red);font-weight:700">photo missing</div>')+'</div>'; }).join('')
+     +(c.faces||[]).map(function(f){
+      return '<div style="margin-top:6px"><b style="color:#4338ca">'+esc(f.workshop)+': face seen first '+hm(f.first_at)+', last '+hm(f.last_at)+'</b>'
+       +'<div class="small">'+esc(cams(f.cameras))+'</div><div class="small">'+f.n+' face match'+(f.n===1?'':'es')+' · similarity '+esc(f.best_sim==null?'—':f.best_sim)+' · our approved face engine</div>'
+       +(f.photo?'<button class="btn ph" data-p="'+esc(f.photo)+'" data-f="'+esc(f.frame||'')+'">Show face photo</button>':'<div class="small" style="color:var(--red);font-weight:700">photo missing</div>')+'</div>'; }).join('')+'</div>';
   }
   h+='<div class="row"><button class="btn" id="older"'+(S.busy?' disabled':'')+'>Older 30 days</button>'+(S.range.from?'<button class="btn" id="today">Back to today</button>':'')+'</div>'
-    +'<div class="small" style="margin-top:6px">"Not seen" = our cameras had data that day and did not see the car. "Unknown" = no camera data that day. Click a sighting for its cameras and photo.</div>';
+    +'<div class="small" style="margin-top:6px">Every day from '+esc(dayName(d.calendar_from||d.from))+'. "Not seen" = our cameras had data that day and did not see the car or face. "Unknown" = no camera data that day. "photo missing" = seen, but the photo is not kept. Click a sighting for its cameras and photos; click a photo for the full frame.</div>';
   return h;
 }
 function misTab(d){
@@ -178,9 +187,9 @@ function misTab(d){
      +'<td>'+(m.photo?'<button class="btn ph" data-p="'+esc(m.photo)+'">Photo</button>':'')+'</td></tr>'; }).join('')+'</table>';
 }
 function render(){
-  var d=S.data, f=d.fresh||{};
+  var d=S.data, f=d.fresh||{}; d.possible_misreads=d.possible_misreads||[];
   var tabs=[['cars','Cars'],['days','Day by day'],['mis','Possible misreads'+(d.possible_misreads.length?' · '+d.possible_misreads.length:'')]];
-  $app.innerHTML='<div class="fresh">Updated '+esc(dmy(S.at))+' · days '+esc(dayName(d.from))+' to '+esc(dayName(d.to))
+  $app.innerHTML='<div class="fresh">Updated '+esc(dmy(S.at))+' · days '+esc(dayName(d.from))+' to '+esc(dayName(d.to))+(f.faces_last_at?' · faces checked '+esc(dm(f.faces_last_at)):'')
     +'<div class="small">PC cameras sent up to '+(f.ledger_last_ts?esc(dm(ledgerTs(f.ledger_last_ts))):'—')+' · recorders up to '+(f.recorder_last_at?esc(dm(f.recorder_last_at)):'—')+'</div></div>'
     +'<div class="tabs">'+tabs.map(function(t){ return '<button class="tab'+(S.tab===t[0]?' on':'')+'" data-t="'+t[0]+'">'+esc(t[1])+'</button>'; }).join('')
     +'<button class="tab" id="rf">Refresh</button><button class="tab" id="lock">Lock</button></div>'
@@ -188,7 +197,7 @@ function render(){
     +'<div class="foot">'+esc(d.words)+' Hero: '+esc(d.hero.text)+'. Gate photos are for you to look at by hand - no face matching is done.'+(S.err?' <span style="color:var(--red)">'+esc(S.err)+'</span>':'')+'</div>';
   Array.prototype.forEach.call($app.querySelectorAll('[data-t]'),function(b){ b.onclick=function(){ S.tab=b.getAttribute('data-t'); S.pick=null; render(); }; });
   Array.prototype.forEach.call($app.querySelectorAll('td.clk'),function(td){ td.onclick=function(){ S.pick=[+td.getAttribute('data-d'),+td.getAttribute('data-c')]; render(); }; });
-  Array.prototype.forEach.call($app.querySelectorAll('.ph'),function(b){ b.onclick=function(){ photo(b.getAttribute('data-p'), b); }; });
+  Array.prototype.forEach.call($app.querySelectorAll('.ph'),function(b){ b.onclick=function(){ photo(b.getAttribute('data-p'), b, b.getAttribute('data-f')||null); }; });
   var x;
   if((x=document.getElementById('cl'))) x.onclick=function(){ S.pick=null; render(); };
   if((x=document.getElementById('older'))) x.onclick=function(){ var f0=new Date(d.from+'T00:00:00'); var to=new Date(f0.getTime()-86400000); var fr=new Date(to.getTime()-29*86400000); S.range={from:isoDay(fr),to:isoDay(to)}; S.pick=null; load(); };
