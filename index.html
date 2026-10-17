@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 110;
-window.HERO_BUILD = 'R152-2026.10.17.1';
+window.HERO_BUILD = 'R153-2026.10.17.2';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -29100,6 +29100,23 @@ window.heroChangeMobile=function(){
   function etas(){ try{ return (typeof HU_ETA_OPTIONS!=='undefined')?HU_ETA_OPTIONS:['Today','Tomorrow','4-5 Days','Above 5 Days']; }catch(e){ return ['Today','Tomorrow']; } }
   function opts(list,cur){ cur=String(cur||''); var h='<option value="">—</option>';
     list.forEach(function(o){ h+='<option'+(String(o)===cur?' selected':'')+'>'+esc(o)+'</option>'; }); return h; }
+  /* R153 ZERO TRUST: what the customer said (WhatsApp), what the camera saw, and the verdict - the proof, not the advisor */
+  function custLine(it){
+    var c=it.cust; if(!c) return '';
+    var dd=function(t){ try{ var x=new Date(t); return isNaN(x)?'':(('0'+x.getDate()).slice(-2)+'-'+('0'+(x.getMonth()+1)).slice(-2)); }catch(e){ return ''; } };
+    var p=[];
+    if(c.where==='customer') p.push('<b>customer says: WITH ME</b>'+(c.at?' '+dd(c.at):''));
+    else if(c.where==='workshop') p.push('customer says: still here'+(c.at?' '+dd(c.at):''));
+    else if(c.asked) p.push('customer asked '+esc(c.asked)+'×, no reply'+(c.last_asked?' (last '+dd(c.last_asked)+')':''));
+    else if(c.mobile===false) p.push('<span style="color:#b91c1c">no mobile — cannot ask</span>');
+    else p.push('customer not asked yet');
+    if(c.paid!=null) p.push('<b>paid ₹'+esc(c.paid)+'</b>');
+    if(c.gst==='no') p.push('<b>NO GST bill</b>'); else if(c.gst==='yes') p.push('GST bill ✓');
+    if(c.receipt) p.push('<b>receipt on file</b>');
+    if(c.cam_out) p.push('camera: out '+dd(c.cam_out));
+    var v=String(it.verdict||'');
+    return '<div class="q" style="font-size:11px">'+(it.red?'<b style="color:#fff;background:#450a0a;border-radius:3px;padding:0 4px">'+esc(v)+'</b> ':'')+p.join(' · ')+'</div>';
+  }
   function sddText(d){
     var rows=(d.sdd||[]).filter(function(r){ return r.opened>0; }); if(!rows.length) return '';
     var last=rows[0].day, y=rows.filter(function(r){ return r.day===last; });
@@ -29121,7 +29138,12 @@ window.heroChangeMobile=function(){
       +'<b>'+n+'</b> vehicle'+(n===1?'':'s')+' in holdup (not invoiced) with no answer today. Each answer stops the asking for today. '
       +(inv?'<b>'+inv+'</b> invoiced — with the customer, out of holdup. ':'')
       +sddText(d||{})
-      +'<div style="margin-top:3px;color:var(--steel)">Holdup = not invoiced in Hero DMS. Invoiced = with the customer. A close is not a delivery.</div>';
+      +'<div style="margin-top:3px;color:var(--steel)">Holdup = not invoiced in Hero DMS. Invoiced = with the customer. A close is not a delivery.</div>'
+      /* R153 (Ravi 17-10-2026): ZERO TRUST - the customer and the camera are the proof, never the advisor's status */
+      +(function(z){ if(!z) return ''; return '<div style="margin-top:3px"><b style="color:#7F1D1D">ZERO TRUST</b> — the customer and the camera prove it, not the advisor. '
+          +'Customers asked <b>'+esc(z.asked||0)+'</b> · said "with me" <b style="color:#7F1D1D">'+esc(z.said_customer||0)+'</b> · said "still here" <b>'+esc(z.said_workshop||0)+'</b> · paid <b>'+esc(z.paid||0)+'</b> · receipts <b>'+esc(z.receipts||0)+'</b> · camera out <b>'+esc(z.camera||0)+'</b>'
+          +(z.no_mobile?' · <span style="color:#b91c1c">no mobile for '+esc(z.no_mobile)+' (cannot be asked)</span>':'')+'</div>'; })(d&&d.zt)
+      ;
     /* R134 (Ravi 01-10-2026: "Give 4 big buttons for the locations classification"):
        one button per dealer code with its count; tap = only that location, tap again = all. */
     var cnt={}; ITEMS.forEach(function(it){ var c=String(it.dealer_code); cnt[c]=(cnt[c]||0)+1; });
@@ -29143,7 +29165,8 @@ window.heroChangeMobile=function(){
       var op=(i===OPEN)?' av-open':'';
       h+='<tr class="av-q-row'+op+(it.gone_out?' av-out':'')+'" data-q="'+i+'" onclick="avaskTog('+i+')"><td><b>'+no+'. '+esc(it.reg_no||it.jc_number)+'</b>'
         +(it.gone_out?'<span class="hu-gone-tag">OUT · NOT INVOICED</span>':'')
-        +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div></td>'
+        +'<div class="q"><span class="av-days">'+esc(it.days_open)+'d</span> · '+esc(DEALER[it.dealer_code]||it.dealer_code)+(it.asked_total?(' · '+esc(it.asked_total)+'×'):'')+' · '+esc(it.model)+' · '+esc(it.jc_type)+'</div>'
+        +custLine(it)+'</td>'
         +'<td><span class="av-go">'+(op?'Close ▴':'Answer ▾')+'</span><div class="av-ask">'+esc(it.question)+'</div></td></tr>'
         +'<tr data-i="'+i+'" class="av-a-row'+op+'"><td colspan="2"><div class="av-f">'
         +'<label>Status<select data-f="st">'+opts(statuses(), it.status==='Not Allocated'?'':it.status)+'</select></label>'
