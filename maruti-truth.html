@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Maruti Truth</title>
+<link rel="icon" href="icon-192.png">
+<style>
+/* Maruti truth (Ravi 17-10-2026): one reconciled row per Maruti job card - DMS (open / invoiced / amount) + our cameras
+   (first / last seen) + the customer's own answer - and the exceptions from it, each with its owner from the escalation
+   matrix and its age. Holdup law (17-10): no invoice in DMS = holdup, invoiced = with the customer, nothing in between.
+   Server: Supabase mar_truth_board() (CEO / Maruti admin login). Every source shows its own data date. Tabs, no page scroll. */
+:root{--bg:#f4f6fa;--card:#fff;--ink:#0f172a;--soft:#475569;--line:#e2e8f0;--blue:#1d4ed8;--green:#15803d;--red:#b91c1c;--amber:#b45309;--chip:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#111a2e;--ink:#e5e7eb;--soft:#9aa6b8;--line:#1f2a44;--blue:#60a5fa;--green:#4ade80;--red:#f87171;--amber:#fbbf24;--chip:#1e293b}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;display:flex;flex-direction:column}
+header{background:#0f172a;color:#fff;padding:8px 14px 6px;flex:0 0 auto}
+header h1{margin:0;font-size:16px;letter-spacing:.3px}
+header .sub{font-size:11.5px;opacity:.85;margin-top:2px}
+.src{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.src span{background:rgba(255,255,255,.12);border-radius:6px;padding:2px 7px;font-size:11.5px;white-space:nowrap}
+.src span.old{background:#7f1d1d}
+.tabs{display:flex;gap:4px;padding:6px 10px 0;overflow-x:auto;flex:0 0 auto;border-bottom:1px solid var(--line);background:var(--card)}
+.tabs button{border:0;background:none;color:var(--soft);font:inherit;font-weight:600;padding:8px 10px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+.tabs button.on{color:var(--blue);border-bottom-color:var(--blue)}
+.tabs .n{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--chip);font-size:11px;color:var(--ink)}
+.tabs .n.money{background:var(--red);color:#fff}
+.tools{display:flex;gap:8px;align-items:center;padding:6px 12px;flex:0 0 auto;flex-wrap:wrap}
+.tools select,.tools input{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.tools .hint{color:var(--soft);font-size:12px}
+.panel{flex:1 1 auto;min-height:0;overflow-y:auto;padding:0 12px 14px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:var(--chip);font-size:12px;color:var(--soft);z-index:1}
+td.reg{font-weight:700;white-space:nowrap}
+td.age{white-space:nowrap;font-weight:700}
+.age.a1{color:var(--amber)}.age.a2{color:var(--red)}
+.own b{display:block}.own small{color:var(--soft)}
+.money-row td:first-child{border-left:4px solid var(--red)}
+.empty{padding:30px 10px;text-align:center;color:var(--soft)}
+.login{max-width:360px;margin:30px auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.login input{width:100%;margin:6px 0;padding:9px;font:inherit;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.login button{width:100%;padding:10px;border:0;border-radius:6px;background:var(--blue);color:#fff;font:inherit;font-weight:700;margin-top:6px}
+.err{color:var(--red);margin-top:6px}
+.law{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 8px;font-size:13px}
+.small{font-size:12px;color:var(--soft)}
+@media (max-width:700px){ td.src-col,th.src-col{display:none} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Maruti truth — holdup &amp; money</h1>
+  <div class="sub">One row per job card: DMS + our cameras + the customer's own answer. Holdup = no invoice in DMS. Invoiced = with the customer.</div>
+  <div class="src" id="src"><span>Opening…</span></div>
+</header>
+<nav class="tabs" id="tabs"></nav>
+<div class="tools" id="tools"></div>
+<main class="panel" id="panel"><div class="empty">Opening…</div></main>
+<script>
+(function(){
+'use strict';
+var SB_URL='https://tiwfuwfzjxcsbrifcdpu.supabase.co', SB_ANON='sb_publishable_slimmjt0POF4fhAnTAfLyQ_P1jYG9Xh', SB_DOMAIN='@sehgalautoriders.co.in';
+var KINDS=[
+  ['CUSTOMER_HAS_VEHICLE_JC_OPEN','Customer has it, JC open','The vehicle is with the customer (their answer, or not on our cameras for 2+ watched days) but DMS has no invoice.'],
+  ['INVOICED_BUT_ON_OUR_CAMERA','Invoiced, still here','DMS has the invoice but the vehicle was on our camera 2-10 days after it (or the customer says it is at the workshop), with no new JC.'],
+  ['PAID_NO_GST_BILL','Paid, no GST bill','The customer paid and says no GST bill was given. Money - goes to the CEO.'],
+  ['PAID_NOT_EQUAL_DMS','Paid ≠ DMS','What the customer paid is not the DMS bill amount. Money - goes to the CEO.'],
+  ['CAMERA_ENTRY_NO_JC','Camera, no JC','A known Maruti customer vehicle was inside (3+ reads on workshop cameras) and DMS has no JC for it within 3 days. Only up to the DMS data date minus 3 days.'],
+  ['PARTS_HOLDUP','Parts holdup','DMS holdup reason is parts (PNA) and there is still no invoice.']
+];
+var S={tab:KINDS[0][0], ws:'', q:'', data:null};
+var DEMO=/[?&]demo=1/.test(location.search);
+var $=function(id){ return document.getElementById(id); };
+function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function day(v){ if(!v) return '—'; var d=new Date(v); if(isNaN(d)) return String(v);
+  return d.toLocaleDateString('en-GB',{timeZone:'Asia/Kolkata',day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-'); }
+function when(v){ if(!v) return '—'; var d=new Date(v); if(isNaN(d)) return String(v);
+  return d.toLocaleString('en-GB',{timeZone:'Asia/Kolkata',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-').replace(',',''); }
+function ageDays(v){ if(!v) return 99999; return (Date.now()-new Date(v))/86400000; }
+
+/* ---------------- the same login as the Hero App / decisions page (same keys in this phone's storage) */
+function tok(){ try{ return {at:localStorage.getItem('sb_at')||'', rt:localStorage.getItem('sb_rt')||'', exp:Number(localStorage.getItem('sb_at_exp')||0)}; }catch(e){ return {at:'',rt:'',exp:0}; } }
+function store(s){ try{ localStorage.setItem('sb_at',s.access_token||''); localStorage.setItem('sb_rt',s.refresh_token||''); localStorage.setItem('sb_at_exp',String(Date.now()+((s.expires_in||3600)-120)*1000)); }catch(e){} }
+function timed(url,opts,ms){ var c=new AbortController(); var t=setTimeout(function(){ c.abort(); }, ms||20000);
+  return fetch(url,Object.assign({},opts,{signal:c.signal})).finally(function(){ clearTimeout(t); }); }
+async function refresh(){ var t=tok(); if(!t.rt) return '';
+  var r=await timed(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:t.rt})},12000);
+  if(!r.ok) return ''; var s=await r.json(); store(s); return s.access_token||''; }
+async function token(){ var t=tok(); if(t.at && Date.now()<t.exp) return t.at; return await refresh(); }
+async function rpc(name,args){
+  if(DEMO || window.__MT_DEMO){ if(window.__MT_DEMO) return window.__MT_DEMO; throw new Error('demo data not loaded'); }
+  var at=await token(); if(!at) throw Object.assign(new Error('Please log in'),{login:true});
+  var call=function(a){ return timed(SB_URL+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:SB_ANON,Authorization:'Bearer '+a,'Content-Type':'application/json'},body:JSON.stringify(args||{})},30000); };
+  var r=await call(at);
+  if(r.status===401){ at=await refresh(); if(!at) throw Object.assign(new Error('Please log in'),{login:true}); r=await call(at); }
+  var body=null; try{ body=await r.json(); }catch(e){}
+  if(!r.ok){ var m=(body&&(body.message||body.hint))||('HTTP '+r.status); if(/login only|not allowed/i.test(m)) throw Object.assign(new Error('This page is only for the CEO / Maruti admin login.'),{login:true}); throw new Error(m); }
+  return body;
+}
+async function login(code,pass){
+  code=String(code||'').trim().toLowerCase(); var email=code.indexOf('@')>=0?code:'';
+  if(!email){ try{ var rr=await timed(SB_URL+'/rest/v1/rpc/resolve_login',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({p_id:code})},8000);
+    if(rr.ok){ var em=await rr.json(); if(em&&typeof em==='string') email=em; } }catch(e){} if(!email) email=code+SB_DOMAIN; }
+  var r=await timed(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:SB_ANON,'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pass})},12000);
+  if(r.status===400) throw new Error('Login code or password is not right.');
+  if(!r.ok) throw new Error('The server did not answer (HTTP '+r.status+'). Try again.');
+  store(await r.json());
+}
+function showLogin(why){
+  $('tabs').innerHTML=''; $('tools').innerHTML='';
+  $('panel').innerHTML='<div class="login"><b>Log in with your Hero App login</b><div class="small">'+esc(why||'Only the CEO / Maruti admin login sees this.')+'</div>'
+   +'<input id="lc" placeholder="Login code (for example CEO)" autocomplete="username"><input id="lp" type="password" placeholder="Password" autocomplete="current-password">'
+   +'<button id="lb">Log in</button><div class="err" id="le"></div></div>';
+  $('lb').onclick=async function(){ var b=this; b.disabled=true; $('le').textContent='';
+    try{ await login($('lc').value, $('lp').value); load(); } catch(e){ $('le').textContent=e.message; b.disabled=false; } };
+}
+
+/* ---------------- data */
+async function load(){
+  try{ S.data=await rpc('mar_truth_board',{p_workshop:null}); draw(); }
+  catch(e){ if(e.login) showLogin(e.message); else $('panel').innerHTML='<div class="empty">Could not load: '+esc(e.message)+'</div>'; }
+}
+function srcLine(s){
+  // every source with its own date; a source more than 3 days old is shown red - the board is only as fresh as it
+  var cov=s.camera_covered||{}, covTxt=Object.keys(cov).map(function(k){ return k.charAt(0)+k.slice(1).toLowerCase()+' '+day(cov[k]); }).join(', ');
+  var items=[
+    ['DMS job cards to', s.dms_jc_to, 'loaded '+when(s.dms_jc_loaded)],
+    ['DMS billing to', s.dms_billing_to, ''],
+    ['DMS holdup to', s.dms_holdup_to, ''],
+    ['Cameras last read', s.camera_last, covTxt?'fully watched: '+covTxt:''],
+    ['Customer answers last', s.customer_last, ''],
+    ['Board refreshed', s.refreshed_at, (s.rows||0)+' job cards']
+  ];
+  return items.map(function(it){ var old=ageDays(it[1])>3 && it[0]!=='Customer answers last';
+    return '<span'+(old?' class="old" title="older than 3 days"':'')+'>'+esc(it[0])+': <b>'+esc(it[0]==='Cameras last read'||it[0]==='Board refreshed'||it[0]==='Customer answers last'?when(it[1]):day(it[1]))+'</b>'+(it[2]?' · '+esc(it[2]):'')+'</span>'; }).join('');
+}
+function draw(){
+  var d=S.data||{}, s=d.sources||{}, c=d.counts||{}, rows=d.rows||[];
+  $('src').innerHTML=srcLine(s);
+  var t='';
+  KINDS.forEach(function(k){ var n=c[k[0]]||0, money=/^PAID/.test(k[0]);
+    t+='<button class="'+(S.tab===k[0]?'on':'')+'" data-k="'+k[0]+'">'+esc(k[1])+'<span class="n'+(money&&n?' money':'')+'">'+n+'</span></button>'; });
+  t+='<button class="'+(S.tab==='ANSWERS'?'on':'')+'" data-k="ANSWERS">Customer answers<span class="n">'+((d.tests||[]).length)+'</span></button>';
+  $('tabs').innerHTML=t;
+  Array.prototype.forEach.call($('tabs').querySelectorAll('button'),function(b){ b.onclick=function(){ S.tab=b.getAttribute('data-k'); draw(); }; });
+  if(S.tab==='ANSWERS'){ $('tools').innerHTML='<span class="hint">The two WhatsApp questions and what came back. Today: test only to our own numbers (8888869529 / 8888881327).</span>'; drawAnswers(d.tests||[]); return; }
+  var wss={}; rows.forEach(function(r){ wss[r.workshop]=1; });
+  var opts='<option value="">All workshops</option>'+Object.keys(wss).sort().map(function(w){ return '<option'+(S.ws===w?' selected':'')+'>'+esc(w)+'</option>'; }).join('');
+  var kind=KINDS.filter(function(k){ return k[0]===S.tab; })[0]||KINDS[0];
+  $('tools').innerHTML='<select id="ws">'+opts+'</select><input id="q" placeholder="Reg / JC" value="'+esc(S.q)+'" size="12"><span class="hint">'+esc(kind[2])+'</span>';
+  $('ws').onchange=function(){ S.ws=this.value; drawRows(rows); };
+  $('q').oninput=function(){ S.q=this.value; drawRows(rows); };
+  drawRows(rows);
+}
+function drawRows(rows){
+  var q=S.q.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  var list=rows.filter(function(r){ return r.kind===S.tab && (!S.ws||r.workshop===S.ws) &&
+    (!q || String(r.reg_no||'').toUpperCase().replace(/[^A-Z0-9]/g,'').indexOf(q)>=0 || String(r.jc_no||'').toUpperCase().indexOf(q)>=0); });
+  if(!list.length){ $('panel').innerHTML='<div class="empty">Nothing here'+(S.ws||q?' for this filter':'')+'.</div>'; return; }
+  var h='<table><thead><tr><th>Vehicle / JC</th><th>Workshop</th><th>What we saw</th><th>Age</th><th>Owner now</th><th class="src-col">Sources</th></tr></thead><tbody>';
+  list.forEach(function(r){
+    var a=r.age_days==null?'—':r.age_days+' d', cls=r.age_days>=7?'a2':r.age_days>=2?'a1':'';
+    var src=r.sources||{}, st=Object.keys(src).filter(function(k){ return src[k]; }).map(function(k){ return esc(k.replace(/_/g,' '))+': '+esc(when(src[k])); }).join('<br>');
+    h+='<tr class="'+(r.money?'money-row':'')+'"><td class="reg">'+esc(r.reg_no||'—')+'<br><small>'+esc(r.jc_no||'no JC')+'</small></td>'
+      +'<td>'+esc(r.workshop)+'</td><td>'+esc(r.fact)+'<br><small class="small">since '+esc(when(r.fact_at))+'</small></td>'
+      +'<td class="age '+cls+'">'+esc(a)+'</td>'
+      +'<td class="own"><b>'+esc(r.owner_role||'—')+'</b>'+(r.owner_person?esc(r.owner_person)+'<br>':'')+'<small>level '+esc(r.owner_level||1)+(r.top_role&&r.top_role!==r.owner_role?' · then '+esc(r.top_role):'')+'</small></td>'
+      +'<td class="src-col small">'+st+'</td></tr>';
+  });
+  $('panel').innerHTML=h+'</tbody></table><div class="small" style="margin-top:6px">'+list.length+' shown. Owner moves up the escalation matrix by age (24 h WM → 48 h GM → CEO; money: Accounts → CEO after 24 h).</div>';
+}
+function drawAnswers(list){
+  if(!list.length){ $('panel').innerHTML='<div class="empty">No questions sent yet.</div>'; return; }
+  var W={with_me:'With the customer',at_workshop:'At the workshop',not_sure:'Not sure'};
+  var h='<table><thead><tr><th>Vehicle / JC</th><th>Sent</th><th>Step</th><th>Where</th><th>Paid</th><th>To</th><th>GST bill</th><th>Answered</th></tr></thead><tbody>';
+  list.forEach(function(t){ var step=t.step===-1?'retired':t.step===0?'opener sent':t.step===1?'asked: where':t.step===2?'asked: payment':'answered';
+    h+='<tr><td class="reg">'+esc(t.reg_no)+'<br><small>'+esc(t.jc_no)+' · …'+esc(t.mobile_end)+'</small></td><td>'+esc(when(t.created_at))+'</td><td>'+esc(step)+'</td>'
+      +'<td>'+esc(W[t.vehicle_where]||'—')+'</td><td>'+(t.declared_amount!=null?'Rs '+esc(t.declared_amount):'—')+'</td><td>'+esc(t.paid_to||'—')+'</td>'
+      +'<td>'+esc(t.gst_bill||'—')+'</td><td>'+esc(when(t.submitted_at))+'</td></tr>'; });
+  $('panel').innerHTML=h+'</tbody></table>';
+}
+window.__mtLoad=load;
+load();
+})();
+</script>
+</body>
+</html>

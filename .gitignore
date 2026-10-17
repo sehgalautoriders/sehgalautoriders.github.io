@@ -66,3 +66,7 @@
 # the rows come from Supabase through the CEO's own login). Self-contained, no data inside, no key beyond the publishable one
 # that already ships in index.html. By NAME, as above.
 !decisions.html
+# 17-10-2026: maruti-truth.html is Maruti truth - holdup and money exceptions (DMS + cameras + the customer's answer) with
+# owner and age, CEO / Maruti admin login only (rows come from Supabase mar_truth_board through that login). Self-contained,
+# no data inside, no key beyond the publishable one that already ships in index.html. By NAME, as above.
+!maruti-truth.html
