@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 111;
-window.HERO_BUILD = 'R155-2026.10.17.4';
+window.HERO_RELEASE = 112;
+window.HERO_BUILD = 'R156-2026.10.19.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -27555,7 +27555,8 @@ Object.assign(window.HERO_LANG_EXTRA,{"📱 Change my mobile number": ["📱 म
   window.ins4Classic=function(){ alert('The classic view is retired — the Renewal Workbench is the only insurance screen now.'); };
   window.insbBoot=function(){
     var v=document.getElementById('view-insboard'); if(!v) return;
-    v.innerHTML='<div style="padding:14px"><h2 style="margin:0 0 6px">Insurance Board</h2><div class="hint">Today’s allocation per SMRE, live from Supabase.</div><div id="insb-sb" class="hint" style="margin-top:10px">Loading…</div></div>';
+    v.innerHTML='<div style="padding:14px"><h2 style="margin:0 0 6px">Insurance Board</h2><div class="hint">Today’s allocation per SMRE, live from Supabase.</div><div id="insb-sb" class="hint" style="margin-top:10px">Loading…</div><h3 style="margin:18px 0 4px">Renewals vs the daily list</h3><div class="hint">Every policy we issued, checked against the lists of the 45 days before it. Target 90 %, stretch 95 %. Nothing is added to an old list afterwards.</div><div id="insb-cov" class="hint" style="margin-top:8px">Loading…</div></div>';
+    try{ insbCov_(); }catch(e){}
     sbRpc('insurance_team_summary',{}).then(function(r){
       var el=document.getElementById('insb-sb'); if(!el) return;
       if(!ok(r)){ el.textContent='Not allowed for this login.'; return; }
@@ -27566,6 +27567,29 @@ Object.assign(window.HERO_LANG_EXTRA,{"📱 Change my mobile number": ["📱 म
         +rows.map(function(z){ return '<tr style="border-bottom:1px solid #eef2f7"><td style="padding:4px 6px">'+S(z.employee_code)+'</td><td>'+N(z.assigned)+'</td><td>'+N(z.remaining)+'</td><td>'+N(z.contacted)+'</td><td>'+N(z.completed)+'</td></tr>'; }).join('')
         +'</tbody></table><div class="hint" style="margin-top:8px">Work date '+S(r.work_date)+'</div>';
     }).catch(function(e){ var el=document.getElementById('insb-sb'); if(el) el.textContent='Could not load: '+S(e&&e.message||e); });
+  };
+
+  /* R156 (0136): renewals vs the daily list. Ravi 17-10: "only 20-30% of them were there ...
+     ensure 90-95% are there in daily calling which are converted." ins_coverage measures every
+     issued policy against the frozen lists before it and names the reason when it was missed. */
+  window.insbCov_=function(){
+    var el=document.getElementById('insb-cov'); if(!el) return;
+    var th='padding:4px 6px;text-align:left;border-bottom:1px solid var(--line)', td='padding:3px 6px;border-bottom:1px solid #eef2f7';
+    function tbl(head, rows){ return '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px"><thead><tr>'+head.map(function(h){ return '<th style="'+th+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'+rows.map(function(r){ return '<tr>'+r.map(function(c){ return '<td style="'+td+'">'+c+'</td>'; }).join('')+'</tr>'; }).join('')+'</tbody></table>'; }
+    sbRpc('ins_coverage',{}).then(function(r){
+      if(!ok(r)){ el.textContent='Not allowed for this login.'; return; }
+      var pct=Number(r.coverage_pct||0), col=pct>=90?'#15803d':(pct>=60?'#b45309':'#c81e2c');
+      var f=r.freshness||{};
+      var miss=(r.missed||[]).slice(0,60);
+      el.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px">'
+        +[[pct+' %','On a list before renewal',col],[N(r.on_list)+' / '+N(r.issued),'Policies on a list / issued',''],[N(r.on_list_worked),'On a list and a call recorded',''],[S(r.target_pct)+' %','Target','']].map(function(x){ return '<div style="border:1px solid var(--line);border-radius:10px;padding:8px 12px"><div style="font-size:22px;font-weight:800'+(x[2]?';color:'+x[2]:'')+'">'+x[0]+'</div><div class="hint">'+x[1]+'</div></div>'; }).join('')
+        +'</div><div class="hint">Policies '+S(r.from)+' to '+S(r.to)+' · policy file last loaded '+S(f.policies_last_imported).slice(0,10)+' (latest policy '+S(f.policies_latest_effective)+') · a list was made on '+N(f.list_days_in_period)+' days</div>'
+        +tbl(['Month','Issued','On a list','%'],(r.by_month||[]).map(function(z){ return [S(z.month),N(z.issued),N(z.on_list),S(z.pct)+' %']; }))
+        +tbl(['Why','Policies'],(r.reasons||[]).map(function(z){ return [S(z.reason),N(z.n)]; }))
+        +tbl(['SMRE','Renewals on the list','Call recorded'],(r.by_smre||[]).map(function(z){ return [S(z.smre),N(z.on_list),N(z.worked)]; }))
+        +'<div class="hint" style="margin-top:10px">Missed - latest '+miss.length+'</div>'
+        +tbl(['Date','Policy','Reg','Customer','Why missed'],miss.map(function(z){ return [S(z.date),S(z.policy),S(z.reg),S(z.customer),S(z.reason)]; }));
+    }).catch(function(e){ el.textContent='Could not load: '+S(e&&e.message||e); });
   };
 
   /* ------------------------------------------------- ESTIMATE HISTORY --
