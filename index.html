@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 112;
-window.HERO_BUILD = 'R156-2026.10.19.1';
+window.HERO_RELEASE = 113;
+window.HERO_BUILD = 'R157-2026.10.19.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -31301,6 +31301,127 @@ var ES_BODY=null;
   }
   setTimeout(tick, 6000); setInterval(tick, 5*60000);
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') tick(); });
+})();
+</script>
+
+<script>
+/* ================= R157 (Ravi 19-10-2026): CAMERAS TODAY - THE DAILY CAMERA CENSUS. =================
+   "Are we daily seeing how many cameras are there and how many are working and visible and how many are not working and not
+    visible. How many are capturing people and plates. What is the status?"
+   The PC (WP-0016 camera_census.py) counts every camera every hour in the day and once more after the 21:00 catch-up, and
+   stores the day in Supabase (hero-app 0144 cam_census_*). This block puts a "Cameras today" tile on the CEO home with the
+   numbers in it, and a page: per site (channels, with picture, not visible, not checked, watched / answering now, people,
+   plates), the cameras with no picture named with since when, and the Hero sites as NOT CONNECTED (never zero).
+   CEO only - the server refuses every other login (cam_census_day -> is_ceo). Additive: touches nothing else. */
+(function(){
+  'use strict';
+  if(window.HERO_SANDBOX) return;
+  function U(){ try{ return (typeof USER!=='undefined' && USER) || {}; }catch(e){ return {}; } }
+  function isCEO(){ try{ return String(U().role||'').toLowerCase()==='ceo'; }catch(e){ return false; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function n(v){ return v==null ? '–' : Number(v).toLocaleString('en-IN'); }
+  function dmy(d){ d=String(d||''); return d.length>=10 ? d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4) : d; }
+  function ist(t){ try{ var d=new Date(t); if(isNaN(d)) return ''; return d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(',',''); }catch(e){ return ''; } }
+  function dmhm(t){ t=String(t||''); return t.length>=16 ? t.slice(8,10)+'-'+t.slice(5,7)+' '+t.slice(11,16) : (t?dmy(t):''); }
+  var WORDS={visible:'picture OK',recorder_offline:'recorder not on the internet',no_video:'camera not connected to the recorder',
+             blank:'blank picture (black / video loss / covered)',locked:'stream locked - needs the recorder code',refused:'recorder refused the stream',unknown:'not checked today'};
+  var D=null;
+  function ensureView(){
+    if(document.getElementById('view-camcensus')) return document.getElementById('view-camcensus');
+    var ref=document.getElementById('view-targets')||document.getElementById('view-holdup'); if(!ref) return null;
+    var v=document.createElement('div'); v.id='view-camcensus'; v.style.display='none';
+    v.innerHTML='<div class="wrap cc"><div class="hu-topbar"><h2>📹 Cameras today</h2><div class="hu-actions">'+
+      '<button class="hu-actbtn" style="background:#475569" onclick="ccBoot(true)">↻ Refresh</button>'+
+      '<button class="hu-actbtn" style="background:#0f766e" onclick="showView(\'home\')">← Home</button></div></div>'+
+      '<div id="cc-body"><div class="hint">Loading…</div></div></div>';
+    ref.parentNode.insertBefore(v, ref.nextSibling); return v;
+  }
+  function load(){ return sbRpc('cam_census_day',{p_day:null}).then(function(d){ if(!d||!d.day) throw new Error('no camera count stored yet'); D=d; return d; }); }
+  window.ccBoot=function(force){
+    var b=document.getElementById('cc-body'); if(!b) return;
+    if(!force && D){ paint(); return; }
+    b.innerHTML='<div class="hint">Counting the cameras…</div>';
+    load().then(paint).catch(function(e){ b.innerHTML='<div class="vh-alert">▲ '+esc(e&&e.message||e)+'</div>'; });
+  };
+  function paint(){
+    var b=document.getElementById('cc-body'); if(!b||!D) return;
+    var t=D.totals||{}, sites=D.sites||[], bad=D.not_visible||[];
+    var red=sites.filter(function(s){ return s.connected && s.nothing_today; });
+    var h='<div class="hint">Day '+esc(dmy(D.day))+' · counted '+esc(ist(D.updated_at))+' · every hour in the day, final after the 21:00 catch-up. "Not checked" is neither working nor broken.</div>';
+    h+='<div class="cc-kpis">'+
+      k('Channels',t.channels,'')+k('With picture',t.visible,'ok')+k('Not visible',t.not_visible,t.not_visible?'bad':'')+
+      k('Not checked',t.unknown,t.unknown?'warn':'')+k('Watched · answering now',n(t.watched)+' · '+n(t.answering),'',true)+
+      k('People (faces)',t.faces,'')+k('Plates · vehicles',n(t.plate_reads)+' · '+n(t.vehicles),'',true)+'</div>';
+    if(red.length) h+='<div class="vh-alert">● NOTHING captured today (no face, no plate): '+red.map(function(s){ return esc(s.label); }).join(', ')+'</div>';
+    h+='<table class="vh-t cc-t"><thead><tr><th>Site</th><th>Channels</th><th>Picture</th><th>Not visible</th><th>Not checked</th><th>Watched / answering</th><th>People</th><th>Plates / vehicles</th><th>Note</th></tr></thead><tbody>';
+    sites.forEach(function(s){
+      if(!s.connected){ h+='<tr class="cc-off"><td><b>'+esc(s.label)+'</b></td><td colspan="7">NOT CONNECTED</td><td class="vh-s">'+esc(s.note)+'</td></tr>'; return; }
+      h+='<tr class="'+(s.nothing_today?'cc-red':'')+'"><td><b>'+esc(s.label)+'</b></td><td>'+n(s.channels)+'</td><td>'+n(s.visible)+'</td>'+
+        '<td class="'+(s.not_visible?'cc-bad':'')+'">'+n(s.not_visible)+(s.recorder_offline?' <span class="vh-s">('+n(s.recorder_offline)+' recorder off)</span>':'')+'</td>'+
+        '<td>'+n(s.unknown)+'</td><td>'+n(s.watched)+' / '+n(s.answering)+'</td><td>'+n(s.faces)+' <span class="vh-s">'+n(s.people_cameras)+' cam</span></td>'+
+        '<td>'+n(s.plate_reads)+' / '+n(s.vehicles)+' <span class="vh-s">'+n(s.plate_cameras)+' cam</span></td><td class="vh-s">'+(s.nothing_today?'<b class="cc-redt">nothing today</b> ':'')+esc(s.note||'')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    h+='<h3 style="margin:14px 0 4px">Cameras with no picture ('+bad.length+')</h3>';
+    if(!bad.length) h+='<div class="hint">None measured today.</div>';
+    else{
+      h+='<table class="vh-t cc-t"><thead><tr><th>Site</th><th>Ch</th><th>Camera</th><th>Why</th><th>Since</th></tr></thead><tbody>';
+      bad.forEach(function(c){
+        var since=c.last_picture_at ? 'last picture '+dmhm(String(c.last_picture_at).replace('T',' ')) : (c.bad_since ? 'measured bad from '+dmy(c.bad_since) : 'no picture on record');
+        h+='<tr><td>'+esc(c.label||c.site)+'</td><td>'+esc(c.ch)+'</td><td>'+esc(c.name)+'</td><td>'+esc(WORDS[c.state]||c.state)+(c.why?' <span class="vh-s">'+esc(c.why)+'</span>':'')+'</td><td>'+esc(since)+'</td></tr>';
+      });
+      h+='</tbody></table>';
+    }
+    var wk=D.week||[];
+    if(wk.length>1){
+      h+='<h3 style="margin:14px 0 4px">Last days</h3><table class="vh-t cc-t"><thead><tr><th>Day</th><th>Channels</th><th>Picture</th><th>Not visible</th><th>People</th><th>Plates / vehicles</th></tr></thead><tbody>';
+      wk.forEach(function(w){ h+='<tr><td>'+esc(dmy(w.day))+'</td><td>'+n(w.channels)+'</td><td>'+n(w.visible)+'</td><td>'+n(w.not_visible)+'</td><td>'+n(w.faces)+'</td><td>'+n(w.plate_reads)+' / '+n(w.vehicles)+'</td></tr>'; });
+      h+='</tbody></table>';
+    }
+    b.innerHTML=h;
+  }
+  function k(label, v, cls, raw){ return '<div class="cc-k '+(cls?'cc-'+cls:'')+'"><div class="cc-kv">'+(raw?esc(v):n(v))+'</div><div class="cc-kl">'+esc(label)+'</div></div>'; }
+  /* the home tile: the numbers in the card itself */
+  function tileText(){
+    if(!D) return 'Every camera counted every hour: with picture, not visible, people and plates captured today.';
+    var t=D.totals||{}, red=(D.sites||[]).filter(function(s){ return s.connected && s.nothing_today; }).length;
+    return n(t.channels)+' channels · '+n(t.visible)+' with picture · '+n(t.not_visible)+' not visible · '+n(t.faces)+' faces · '+n(t.plate_reads)+' plates'+(red?' · '+red+' site(s) NOTHING today':'');
+  }
+  function addTile(){
+    try{
+      var box=document.getElementById('home-tiles'); if(!box||!isCEO()) return;
+      var t=box.querySelector('[data-cc]');
+      if(!t){
+        t=document.createElement('div'); t.className='mod-tile ops'; t.setAttribute('data-cc','1');
+        t.style.cssText='--tile-c:#1e3a8a;--tile-bg:#eff6ff'; t.setAttribute('onclick',"openModule('camcensus')");
+        box.insertBefore(t, box.firstChild);
+      }
+      var red=D && (D.sites||[]).some(function(s){ return s.connected && s.nothing_today; });
+      var html='<div class="mt-ic">📹</div><div><div class="mt-tt">Cameras today</div><div class="mt-dd"'+(red?' style="color:#b91c1c;font-weight:600"':'')+'>'+esc(tileText())+'</div></div><div class="mt-arrow">›</div>';
+      if(t.innerHTML!==html) t.innerHTML=html;
+    }catch(e){}
+  }
+  var tileLoaded=0;
+  function refreshTile(){ if(!isCEO()||typeof window.sbRpc!=='function') return; if(Date.now()-tileLoaded<10*60000 && D) { addTile(); return; } tileLoaded=Date.now(); load().then(addTile).catch(function(){ addTile(); }); }
+  var origTiles=window.renderHomeTiles;
+  if(typeof origTiles==='function') window.renderHomeTiles=function(){ var r=origTiles.apply(this, arguments); addTile(); return r; };
+  setTimeout(addTile,1500); setTimeout(refreshTile,6000); setInterval(refreshTile,15*60000);
+  try{ var tb=document.getElementById('home-tiles'), tmr=null; if(tb&&window.MutationObserver) new MutationObserver(function(){ if(tmr) return; tmr=setTimeout(function(){ tmr=null; addTile(); },250); }).observe(tb,{childList:true}); }catch(e){}
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') refreshTile(); });
+  var origOpen=window.openModule;
+  window.openModule=function(id){
+    if(id==='camcensus'){ if(!isCEO()){ alert('Cameras today is for the CEO login.'); return; } ensureView(); showView('camcensus'); ccBoot(false); return; }
+    return origOpen.apply(this, arguments);
+  };
+  function deepLink(){ try{ if(location.hash==='#cameras' && isCEO()){ history.replaceState(null,'',location.pathname+location.search); openModule('camcensus'); } }catch(e){} }
+  setTimeout(deepLink, 4500); window.addEventListener('hashchange', deepLink);
+  var css=document.createElement('style'); css.id='r157-style';
+  css.textContent='.cc-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:8px 0}'+
+    '.cc-k{background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;padding:8px 10px}.cc-kv{font:700 22px system-ui,sans-serif}.cc-kl{font-size:12px;color:#64748b}'+
+    '.cc-ok .cc-kv{color:#15803d}.cc-bad .cc-kv,.cc-bad{color:#b91c1c;font-weight:700}.cc-warn .cc-kv{color:#b45309}'+
+    '.cc-t td{font-size:12.5px}.cc-red td{background:#fef2f2}.cc-redt{color:#b91c1c}.cc-off td{background:#f1f5f9;color:#475569}'+
+    '@media(max-width:760px){.cc-t,.cc-t thead,.cc-t tbody,.cc-t tr,.cc-t td{display:block}.cc-t thead{display:none}.cc-t tr{border-bottom:2px solid #e5e7eb;padding:4px 0}.cc-t td{border:0;padding:2px 4px}}';
+  document.head.appendChild(css);
 })();
 </script>
 
