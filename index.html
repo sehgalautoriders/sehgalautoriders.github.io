@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 113;
-window.HERO_BUILD = 'R157-2026.10.19.1';
+window.HERO_BUILD = 'R158-2026.10.22.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -1336,6 +1336,18 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
     <span onclick="globalSyncNow()" style="cursor:pointer;font-size:12px;font-weight:800;color:var(--ink)" title="Refresh all master data and retry any pending updates">↻ Sync Now</span>
   </div>
   <div id="top-actions"><button class="navbtn" id="topright-pwd-btn" onclick="openChangePassword()" style="display:none" title="Reset your password">🔒 Reset Password</button><button class="navbtn" id="topright-mob-btn" onclick="heroChangeMobile()" style="display:none" title="Change your mobile number (a WhatsApp code confirms it)">📱 Change Mobile</button></div>
+  <!-- R158 (Ravi 22-10-2026: "Why pending and Decisions ... While taking photographs it is interfering with the entire rolling photo.
+       Change that to somewhere else ... Dont make a separate layer on layer for it. Get it on the same layer."): both asks live
+       here, in the top bar, in the page flow - never position:fixed over the photo boxes. The row shows only when one has a count. -->
+  <div id="top-asks" style="display:none"><button id="avask-pill" type="button" onclick="avaskOpen(true)"></button></div>
+  <script>
+  /* R158: the top-bar row of asks shows only while one of them has something to say */
+  window.heroTopAsks=function(){
+    var row=document.getElementById('top-asks'); if(!row) return;
+    var on=false; for(var i=0;i<row.children.length;i++){ if(row.children[i].style.display!=='none') on=true; }
+    row.style.display=on?'flex':'none';
+  };
+  </script>
 </div>
 
 <!-- ================= LOGIN VIEW ================= -->
@@ -28987,8 +28999,10 @@ window.heroChangeMobile=function(){
      edge function holdup-chase. Never a lock (Ravi 23-09 "do not lock anything"): the panel opens by itself on start and
      every 30 min while vehicles are unanswered, and always closes with one tap. -->
 <style>
-#avask-pill{position:fixed;left:12px;bottom:78px;z-index:9990;background:#D71920;color:#fff;border:0;border-radius:18px;
-  padding:8px 14px;font:600 13px/1 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;cursor:pointer}
+#top-asks{align-items:center;gap:8px;margin-left:10px;flex:0 0 auto}
+@media(max-width:720px){#top-asks{flex:1 1 100%;margin-left:0}#top-asks>*{flex:1 1 0;text-align:center}}
+#avask-pill{background:#D71920;color:#fff;border:0;border-radius:8px;
+  padding:7px 12px;font:600 13px/1 system-ui,sans-serif;display:none;cursor:pointer;white-space:nowrap}
 #avask-ov{position:fixed;inset:0;z-index:9995;background:#F6F5F2;display:none;flex-direction:column;font:13px system-ui,sans-serif;color:#171717}
 #avask-ov .ah{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fff;border-bottom:1px solid #E5E5E5}
 #avask-ov .ah b{font-size:15px;flex:1}
@@ -29089,7 +29103,6 @@ window.heroChangeMobile=function(){
 #avask-ov table.avx-req td,#avask-ov table.avx-req th{padding:2px 7px;border-bottom:1px solid #eee;text-align:left;font-weight:400}
 #avask-sum .gate{display:inline-block;background:#b91c1c;color:#fff;font-weight:700;border-radius:4px;padding:1px 6px;margin:3px 6px 0 0}
 </style>
-<button id="avask-pill" type="button" onclick="avaskOpen(true)"></button>
 <div id="avask-ov" role="dialog" aria-label="Why pending">
   <div class="ah"><b>Why not invoiced? — we ask every holdup vehicle</b>
     <button type="button" id="avask-notif" onclick="avaskNotifOn()">🔔 Alerts</button>
@@ -29277,7 +29290,7 @@ window.heroChangeMobile=function(){
     LAST_D=d;
     var pill=document.getElementById('avask-pill');
     var n=ITEMS.length;
-    pill.textContent='Why pending · '+n; pill.style.display=n?'block':'none';
+    pill.textContent='Why pending · '+n; pill.style.display=n?'inline-block':'none'; if(window.heroTopAsks) heroTopAsks();
     var gone=ITEMS.filter(function(it){ return it.gone_out; }).length;
     var inv=Number((d&&d.invoiced)||0);
     /* R152 (Ravi 17-10-2026, the holdup law): holdup = not invoiced in Hero DMS (in the workshop); invoiced = with the
@@ -31284,14 +31297,16 @@ var ES_BODY=null;
   function isCEO(){ try{ return String(U().role||'').toLowerCase()==='ceo'; }catch(e){ return false; } }
   function draw(n,u){
     var b=document.getElementById('avni-dec-pill');
-    if(!n){ if(b) b.remove(); return; }
+    if(!n){ if(b) b.remove(); if(window.heroTopAsks) heroTopAsks(); return; }
     if(!b){
+      /* R158: in the top bar row #top-asks (same layer as Home / Logout), never floating over the photo screens */
       b=document.createElement('a'); b.id='avni-dec-pill'; b.href='decisions.html';
-      b.style.cssText='position:fixed;right:12px;bottom:84px;z-index:9998;background:#b45309;color:#fff;border-radius:999px;padding:10px 14px;'
-        +'font:700 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);text-decoration:none';
-      document.body.appendChild(b);
+      b.style.cssText='display:inline-block;background:#b45309;color:#fff;border-radius:8px;padding:7px 12px;white-space:nowrap;'
+        +'font:600 13px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-decoration:none';
+      var row=document.getElementById('top-asks'); (row||document.body).appendChild(b);
     }
     b.textContent='🟠 Decisions · '+n+(u?' ('+u+' urgent)':'');
+    if(window.heroTopAsks) heroTopAsks();
   }
   function tick(){
     if(!isCEO() || typeof window.sbRpc!=='function'){ draw(0); return; }
