@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 113;
-window.HERO_BUILD = 'R158-2026.10.22.1';
+window.HERO_RELEASE = 114;
+window.HERO_BUILD = 'R159-2026.10.22.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -30769,8 +30769,9 @@ var ES_BODY=null;
           '<td><span class="vh-tag" style="--c:'+c+'">'+esc(r.label)+'</span></td>'+
           '<td class="vh-s">'+esc([r.status,r.reason].filter(Boolean).join(' · '))+(r.eta?' · ETA '+esc(r.eta):'')+(r.by?' · '+esc(r.by)+(r.upd?' '+esc(r.upd):''):'')+'</td></tr>';
       }).join('')+'</tbody></table>';
-    b.innerHTML='<div class="vh-h3">In the workshop now <span class="vh-s">same vehicles as the Holdup tab + today\'s gate · longest waiting first · tap a vehicle</span></div>'+chips+
+    b.innerHTML='<div id="vh-fw"></div><div class="vh-h3">In the workshop now <span class="vh-s">same vehicles as the Holdup tab + today\'s gate · longest waiting first · tap a vehicle</span></div>'+chips+
       (rows.length? t : '<div class="hint">Nothing here.</div>');
+    if(VH.fw) fwPaint(); else if(!isGuard()) fwLoad();
   }
   window.vhFilter=function(k){ VH.filter=k; paintList(); };
 
@@ -30779,7 +30780,7 @@ var ES_BODY=null;
     var b=document.getElementById('vh-body'); if(b && !VH.list.length) b.innerHTML='<div class="hint">Loading…</div>';
     ddLoad(!!force).then(function(d){ var s=document.getElementById('vh-dd'); if(s) s.innerHTML=ddStrip(d); }).catch(function(e){
       var s=document.getElementById('vh-dd'); if(s) s.innerHTML='<div class="vh-alert">▲ Could not read how fresh the data is: '+esc(e&&e.message||e)+'</div>'; });
-    var paint=function(today){ VH.list=buildList(today); paintList(); };
+    var paint=function(today){ VH.list=buildList(today); if(force) VH.fw=null; paintList(); };
     rpc('hero_report_today',{}).then(paint).catch(function(){ paint(null); });
   };
 
@@ -30834,6 +30835,9 @@ var ES_BODY=null;
     if(v.ests.length){ at.estimate=D(v.ests[0].at); who.estimate=v.ests[0].sa||''; }
     if(j&&j.openAt){ at.jc=D(j.openAt); who.jc=j.supervisor||''; }
     if(!at.jc && cur.hu && cur.hu.jc_date){ at.jc=D(cur.hu.jc_date); who.jc=cur.hu.supervisor_id||''; }
+    /* R159: a gate entry / estimate more than a day after the job card opened is a later visit, not this job card's start */
+    if(at.jc && at.gate && at.gate-at.jc>24*3600000){ at.gate=null; who.gate='';
+      if(at.estimate && at.estimate>at.jc){ at.estimate=null; who.estimate=''; } }
     (s.requisitions||[]).forEach(function(r){ var t=D(r.at); if(t && t>=start-12*3600000 && !at.requisition){ at.requisition=t; who.requisition=(r.by||'')+' · '+(r.summary||''); } });
     (s.stages||[]).forEach(function(x){ var t=D(x.at); if(!t || t<start-12*3600000) return;
       if(x.stage==='other'||x.stage==='customer_wait') return; at[x.stage]=t; who[x.stage]=(x.by||'')+(x.note?' · '+x.note:''); });
@@ -30915,12 +30919,91 @@ var ES_BODY=null;
       btn('parts_ordered','+ Parts ordered')+btn('parts_received','+ Parts received')+btn('work_started','+ Work started')+btn('work_done','+ Work done')+
       btn('ready','+ Ready')+btn('delivered','+ Delivered')+btn('other','+ Note')+'</div><div id="vh-form"></div>';
   }
+  /* ---------------------------------------------------------------- R159 (Ravi 22-10-2026 13:54): PREVIOUS vs NOW, day by day, what looks wrong
+     "Hero make clear history. Previous and Now. Previous billed last date. Now gate entry, jc open date - time, Was in
+      holdup - many many days, each day was in holdup or not write the days ... Any fraud need to be captured immediately."
+     Server: hero_vehicle_story(reg).truth = hero_vehicle_truth (migration 0148, Hero App r25 JOB-R1767). */
+  var FLAGN={LEFT_WITHOUT_BILL:'Left without a bill',DROPPED_NO_BILL:'Left the list - no bill',REOPENED:'Cancelled and re-opened?',
+    TWO_OPEN_JC:'Two job cards open',KM_BACK:'Km went down',KM_MISMATCH:'Km does not match',TYPE_MISMATCH:'Visit type does not match',
+    JC_NO_GATE:'Job card without gate entry',GATE_NO_JC:'Gate entry without job card',FREE_SERVICE_TWICE:'Free service billed twice',
+    LONG_HOLDUP:'Long in holdup',NAME_CHANGED:'Mobile changed',BILL_BEFORE_OPEN:'Bill before job card'};
+  function dShort(iso){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m? m[3]+'-'+m[2] : ''; }
+  function flagsBlock(t){
+    var F=(t&&t.flags)||[]; if(!F.length) return '<div class="vh-ok">✓ Nothing looks wrong on this vehicle in what we hold.</div>';
+    return '<div class="vh-flags">'+F.map(function(f){
+      return '<div class="vh-flag '+(f.lvl==='red'?'r':'a')+'"><b>'+(f.lvl==='red'?'🚨 ':'⚠ ')+esc(FLAGN[f.code]||f.code)+'</b> · '+esc(f.text)+'</div>';
+    }).join('')+'</div>';
+  }
+  function stripOf(days){
+    var W={'in':['in','In holdup (in Hero\'s pending list that morning)'],out:['out','NOT in the list that morning'],nofile:['nf','No file that day'],
+           before:['bf','Before our daily record (starts 26-09-2026)'],billed:['bl','Billed']};
+    return '<div class="vh-strip">'+(days||[]).map(function(d){ var w=W[d.s]||W.nofile;
+      return '<span class="vh-day '+w[0]+'" title="'+esc(dShort(d.d)+' - '+w[1])+'"><i>'+esc(dShort(d.d).slice(0,2))+'</i></span>'; }).join('')+'</div>'+
+      '<div class="vh-s vh-legend"><span class="vh-day in"></span> in holdup <span class="vh-day out"></span> not in the list <span class="vh-day nf"></span> no file that day <span class="vh-day bf"></span> before our record <span class="vh-day bl"></span> billed · hover / tap a day for its date</div>';
+  }
+  function prevBlock(t){
+    var p=t&&t.previous;
+    if(!p) return '<div class="vh-box"><div class="vh-bt">PREVIOUS · last bill</div><div class="vh-s">No bill for this vehicle at our 4 outlets in what we hold (Hero BI invoice lines from '+esc(fD(t&&t.invoiceFrom)||'31-07-2026')+').</div></div>';
+    var ago=Math.round((Date.now()-D(p.date))/86400000);
+    return '<div class="vh-box"><div class="vh-bt">PREVIOUS · last bill</div><table class="vh-t vh-in"><tr><th>Billed on</th><th>Outlet</th><th>Visit</th><th>Job card</th><th>Invoice</th><th>Km</th><th>₹</th></tr>'+
+      '<tr><td><b>'+esc(fD(p.date))+'</b> <span class="vh-s">'+ago+' days ago</span></td><td>'+esc(p.outlet)+'</td><td>'+esc(p.type||'')+'</td><td class="vh-s">'+esc(p.jc||'')+'</td><td class="vh-s">'+esc(p.invoice||'')+'</td><td>'+esc(p.km||'')+'</td><td>'+esc(rs(p.rs))+'</td></tr></table>'+
+      ((t.bills||[]).length>1? '<div class="vh-s">'+(t.bills.length-1)+' earlier bill(s): '+t.bills.slice(1,6).map(function(b){ return esc(fD(b.date)+' '+b.outlet+' '+(b.type||'')); }).join(' · ')+'</div>' : '')+'</div>';
+  }
+  function nowBlock(t){
+    var O=(t&&t.open)||[], G=(t&&t.gates)||[], h='';
+    var recent=G.filter(function(g){ return (Date.now()-D(g.at))<20*86400000; });
+    if(!O.length && !recent.length) return '<div class="vh-box"><div class="vh-bt">NOW</div><div class="vh-s">No job card open in Hero\'s pending list and no gate entry in the last 20 days.</div></div>';
+    O.forEach(function(j){
+      var g=j.gate;
+      h+='<table class="vh-t vh-in vh-now"><tr><th>Outlet</th><th>Job card</th><th>Type</th><th>JC opened</th><th>Gate entry</th><th>In holdup</th></tr><tr>'+
+        '<td><b>'+esc(j.outlet)+'</b></td><td class="vh-s">'+esc(j.jc)+'</td><td>'+esc(j.type||'')+'</td><td><b>'+esc(fD(j.openAt))+' '+esc(fDT(j.openAt).slice(-5))+'</b></td>'+
+        '<td>'+(g? esc(fDT(g.at))+' <span class="vh-s">'+esc(g.purpose||'')+' · '+esc(g.km||'')+' km · '+esc(g.guard||'')+'</span>' :
+               '<span class="vh-red">none</span>'+(j.dealer==='23490'?'':' <span class="vh-s">(gate entries are kept at Chinchwad only)</span>'))+'</td>'+
+        '<td class="'+((j.holdupDays||0)>7?'vh-red':'')+'"><b>'+esc(j.holdupDays!=null? j.holdupDays+' days' : '')+'</b><div class="vh-s">'+esc((j.daysIn||0)+' mornings seen in the list')+'</div></td></tr></table>'+
+        stripOf(j.days)+
+        (j.leftOn? '<div class="vh-red">Left the list on '+esc(fD(j.leftOn))+(j.backOn?' and came back on '+esc(fD(j.backOn)):'')+'</div>' : '');
+    });
+    var loose=recent.filter(function(g){ return !g.jc; });
+    if(loose.length) h+='<div class="vh-k">Gate entries with no job card of their own</div><table class="vh-t vh-in"><tr><th>Came in</th><th>Outlet</th><th>Purpose</th><th>Km</th><th>Token</th><th>Estimate</th><th>Gate out</th></tr>'+
+      loose.map(function(g){ var e=(g.estimates||[]).slice(-1)[0];
+        return '<tr><td><b>'+esc(fDT(g.at))+'</b></td><td>'+esc(g.outlet)+'</td><td>'+esc(g.purpose)+'</td><td>'+esc(g.km||'')+'</td><td class="vh-s">'+esc(g.token||'')+'</td>'+
+          '<td>'+(e? esc(fDT(e.at))+' '+esc(e.sa||'')+' · '+esc(e.service||'')+' · '+esc(e.km||'')+' km · '+esc(rs(e.rs)) : '<span class="vh-s">none</span>')+'</td><td>'+(g.outAt? esc(fDT(g.outAt)) : '<span class="vh-s">not written</span>')+'</td></tr>'; }).join('')+'</table>';
+    var others=((t&&t.jobcards)||[]).filter(function(j){ return !j.open && (j.leftOn || j.invoiceDate) && j.days && j.days.length; }).slice(-4);
+    if(others.length) h+='<div class="vh-k">Earlier job cards and their days in the list</div>'+others.map(function(j){
+      return '<div class="vh-s"><b>'+esc(j.outlet)+' '+esc(j.jc)+'</b> · '+esc(j.type||'')+' · opened '+esc(fDT(j.openAt))+' · '+(j.invoiceDate? 'billed '+esc(fD(j.invoiceDate)) : '<span class="vh-red">no bill</span>')+'</div>'+stripOf(j.days); }).join('');
+    return '<div class="vh-box vh-nowbox"><div class="vh-bt">NOW · in the workshop</div>'+h+'</div>';
+  }
+  function truthBlock(s){
+    var t=s.truth; if(!t||t.ok===false) return '<div class="vh-alert">▲ The day-by-day record could not be read'+(t&&t.error?': '+esc(t.error):'')+'.</div>';
+    return '<div class="vh-h3">What looks wrong</div>'+flagsBlock(t)+prevBlock(t)+nowBlock(t);
+  }
+
+  /* fraud watch on the list page: every flag with the time we first saw it (hero_fraud_watch, refreshed every 15 min) */
+  VH.fw=null; VH.fwAll=false; VH.fwOpen=false;
+  function fwLoad(){
+    rpc('hero_fraud_watch',{}).then(function(r){ VH.fw=r; fwPaint(); }).catch(function(e){
+      var b=document.getElementById('vh-fw'); if(b) b.innerHTML='<div class="vh-alert">▲ Fraud watch could not be read: '+esc(e&&e.message||e)+'</div>'; });
+  }
+  function fwPaint(){
+    var b=document.getElementById('vh-fw'); if(!b||!VH.fw) return;
+    var R=(VH.fw.rows||[]), red=R.filter(function(f){ return f.lvl==='red'; }), show=VH.fwAll? R : red;
+    var by={}; show.forEach(function(f){ by[f.code]=(by[f.code]||0)+1; });
+    b.innerHTML='<details class="vh-fwd"'+(VH.fwOpen?' open':'')+' ontoggle="HERO_VH.fwOpen=this.open"><summary><b>🚨 Fraud watch · '+red.length+' red</b> <span class="vh-s">· '+(R.length-red.length)+' amber · checked '+esc(fDT(VH.fw.refreshed))+' (every 15 min) · tap to open</span></summary>'+
+      '<div class="vh-chips">'+Object.keys(by).sort(function(a,b){return by[b]-by[a];}).map(function(k){ return '<span class="vh-tag" style="--c:#b91c1c">'+esc(FLAGN[k]||k)+' '+by[k]+'</span>'; }).join(' ')+
+      ' <button type="button" onclick="HERO_VH.fwAll=!HERO_VH.fwAll;vhFwPaint()">'+(VH.fwAll?'Red only':'Show amber too')+'</button></div>'+
+      '<table class="vh-t"><thead><tr><th>Vehicle</th><th>What</th><th>Details</th><th>Seen since</th></tr></thead><tbody>'+
+      show.slice(0,300).map(function(f){ return '<tr onclick="vhOpen(\''+esc(f.reg)+'\')"><td><b>'+esc(f.reg)+'</b></td><td><span class="vh-tag" style="--c:'+(f.lvl==='red'?'#dc2626':'#b45309')+'">'+esc(FLAGN[f.code]||f.code)+'</span></td><td class="vh-s">'+esc(f.text)+'</td><td class="vh-s">'+esc(fDT(f.firstSeen))+'</td></tr>'; }).join('')+
+      '</tbody></table></details>';
+  }
+  window.vhFwPaint=fwPaint;
+
   function paintStory(){
     var b=document.getElementById('vh-body'), s=VH.story; if(!b||!s) return;
     var V=visitsOf(s), cur=currentOf(s,V); VH.visits=V;
     b.innerHTML='<div class="vh-back"><button type="button" onclick="vhBoot()">← All vehicles in the workshop</button></div>'+header(s,V)+
-      '<div class="vh-h3">Now in the workshop</div>'+currentBlock(s,cur)+
-      '<div class="vh-h3">Previous visits <span class="vh-s">tap a visit for its parts and labour</span></div>'+visitRows(V,cur);
+      truthBlock(s)+
+      '<div class="vh-h3">Stages of this visit <span class="vh-s">gate, estimate, job card, parts, work - with who and how long</span></div>'+currentBlock(s,cur)+
+      '<div class="vh-h3">All visits <span class="vh-s">tap a visit for its parts and labour</span></div>'+visitRows(V,cur);
   }
   window.vhOpen=function(reg){
     reg=regn(reg); if(reg.length<4){ alert('Type the vehicle number (at least 4 letters / digits).'); return; }
@@ -31088,6 +31171,12 @@ var ES_BODY=null;
     '.vh-dd{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}.vh-dd-i{font-size:12px;border-radius:6px;padding:2px 7px;border:1px solid #e5e7eb}.vh-dd-i.ok{color:#166534}.vh-dd-i.bad{color:#b91c1c;border-color:#fca5a5;background:#fef2f2}'+
     '.vh-alert{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:7px 10px;margin:6px 0;font-size:13px}.vh-alert button{margin-left:6px;border:1px solid #991b1b;background:#fff;color:#991b1b;border-radius:6px;padding:1px 7px;font-weight:700;cursor:pointer}'+
     '.vh-ok{background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:8px;padding:7px 10px;margin:6px 0}'+
+    '.vh-flags{margin:4px 0 8px}.vh-flag{border-radius:6px;padding:5px 9px;margin:3px 0;font-size:13px;line-height:1.35}.vh-flag.r{background:#fef2f2;border:1px solid #fca5a5;color:#7f1d1d}.vh-flag.a{background:#fffbeb;border:1px solid #fcd34d;color:#78350f}'+
+    '.vh-box{border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;margin:8px 0;background:#fff}.vh-bt{font-weight:900;font-size:13px;letter-spacing:.04em;color:#334155;margin-bottom:2px}.vh-nowbox{border-color:#fca5a5}'+
+    '.vh-strip{display:flex;flex-wrap:wrap;gap:2px;margin:4px 0 2px}.vh-day{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;font-size:10px;vertical-align:middle;box-sizing:border-box}.vh-day i{font-style:normal}'+
+    '.vh-day.in{background:#dc2626;color:#fff}.vh-day.out{background:#fff;border:2px solid #16a34a;color:#166534}.vh-day.nf{background:#e5e7eb;color:#6b7280}.vh-day.bf{background:#f8fafc;color:#94a3b8;border:1px dashed #cbd5e1}.vh-day.bl{background:#16a34a;color:#fff}'+
+    '.vh-legend .vh-day{width:12px;height:12px;margin:0 2px 0 8px}.vh-now tr{cursor:default}'+
+    '.vh-fwd{border:1px solid #fca5a5;border-radius:8px;padding:6px 10px;margin:6px 0;background:#fff}.vh-fwd summary{cursor:pointer;color:#991b1b}.vh-fwd .vh-t td{font-size:12.5px}'+
     '.wr-g{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative}.wr-c{position:relative}.wr-c:not(:last-child):after{content:"➜";position:absolute;right:-12px;top:40%;color:#94a3b8;font-size:18px}'+
     '.wr-b{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin:6px 0;background:#fff;font-size:13px}.wr-l{font-size:13px}.wr-l.on{color:#16a34a}.wr-l.off{color:#dc2626}'+
     '@media(max-width:760px){.wr-g{grid-template-columns:1fr}.wr-c:not(:last-child):after{content:"⬇";right:auto;left:45%;top:auto;bottom:-14px}.vh-t .vh-s{font-size:11px}.vh-head td{display:inline-block;border:none;padding:3px 8px}}';
