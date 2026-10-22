@@ -73,7 +73,9 @@ a{color:var(--blue)}
 'use strict';
 var SB_URL='https://tiwfuwfzjxcsbrifcdpu.supabase.co', SB_ANON='sb_publishable_slimmjt0POF4fhAnTAfLyQ_P1jYG9Xh', SB_DOMAIN='@sehgalautoriders.co.in';
 var VIEWS=[['open','Needs you'],['answered','Waiting for PC'],['later','Later'],['done','Done']];
-var S={view:'open', page:0, app:'', data:null, open:{}, busy:{}, msg:{}, toast:null};
+var S={view:'open', page:0, app:'', data:null, open:{}, busy:{}, msg:{}, toast:null, draft:{}};
+/* what Ravi is typing is kept here, so a redraw (the 60 s refresh, a receipt going away) never wipes it */
+function typing(){ var a=document.activeElement; return (a&&a.tagName==='TEXTAREA') || Object.keys(S.draft).some(function(k){ return String(S.draft[k]||'').trim() && document.getElementById('t-'+k); }); }
 var DEMO=/[?&]demo=1/.test(location.search);
 var $app=document.getElementById('app');
 
@@ -151,7 +153,10 @@ function draw(){
   rows.forEach(function(r){ h+=card(r); });
   var total=d.total||0, from=S.page*10+1, to=Math.min(total,(S.page+1)*10);
   if(total>10) h+='<div class="pager"><button class="small" id="pv"'+(S.page?'':' disabled')+'>‹ Previous 10</button><span>'+from+'-'+to+' of '+total+'</span><button class="small" id="nx"'+(to<total?'':' disabled')+'>Next 10 ›</button></div>';
+  var fa=document.activeElement, fid=(fa&&fa.tagName==='TEXTAREA')?fa.id:'', ss=fid?fa.selectionStart:0, se=fid?fa.selectionEnd:0, sy=window.scrollY;
   $app.innerHTML=h;
+  $app.querySelectorAll('textarea[data-draft]').forEach(function(t){ t.oninput=function(){ S.draft[t.dataset.draft]=t.value; }; });
+  if(fid){ var nt=document.getElementById(fid); if(nt){ nt.focus({preventScroll:true}); try{ nt.setSelectionRange(ss,se); }catch(e){} } window.scrollTo(0,sy); }
   $app.querySelectorAll('[data-view]').forEach(function(b){ b.onclick=function(){ S.view=b.dataset.view; S.page=0; S.app=''; load(); }; });
   $app.querySelectorAll('[data-app]').forEach(function(b){ b.onclick=function(){ S.app=b.dataset.app; S.page=0; load(); }; });
   var pv=document.getElementById('pv'), nx=document.getElementById('nx');
@@ -175,7 +180,7 @@ function card(r){
   if(r.status==='open' || r.status==='later'){
     var opts=r.options||[];
     h+='<div class="opts">'+opts.map(function(o,i){ return '<button class="opt'+(i===0&&o.id!=='close'?' first':'')+(o.id==='close'?' close':'')+'" data-id="'+k+'" data-ans="'+esc(o.id)+'"'+(busy?' disabled':'')+' title="'+esc(o.means||'')+'">'+esc(o.label)+'</button>'; }).join('')+'</div>';
-    if(r.allow_text!==false) h+='<div style="margin-top:8px"><textarea id="t-'+k+'" placeholder="Or answer in your own words…"></textarea><div class="row"><button class="small" data-send="'+k+'"'+(busy?' disabled':'')+'>Send my words</button>'+(r.status==='open'?'<button class="small" data-later="'+k+'">Later (24 h)</button>':'')+'</div></div>';
+    if(r.allow_text!==false) h+='<div style="margin-top:8px"><textarea id="t-'+k+'" data-draft="'+k+'" placeholder="Or answer in your own words…">'+esc(S.draft[id]||'')+'</textarea><div class="row"><button class="small" data-send="'+k+'"'+(busy?' disabled':'')+'>Send my words</button>'+(r.status==='open'?'<button class="small" data-later="'+k+'">Later (24 h)</button>':'')+'</div></div>';
     else if(r.status==='open') h+='<div class="row"><button class="small" data-later="'+k+'">Later (24 h)</button></div>';
   }
   var a=r.answer?(labelOf(r)+(r.answer_text?' - "'+r.answer_text+'"':'')):'';
@@ -198,7 +203,7 @@ async function answer(id,ans,text){
     var said=ans==='text'?'"'+String(text).trim().slice(0,80)+'"':(((row.options||[]).filter(function(o){ return o.id===ans; })[0]||{}).label||ans);
     S.toast=r.ok?{t:'✅ Saved securely at '+hhmm(new Date())+' - '+(row.title||'')+': '+said+'. The PC acts on it when it is on; it is under "Waiting for PC" until then. Go on with the next one.'}
                 :{t:r.msg||'Not saved.',bad:true};
-    if(!r.ok) S.msg[id]=S.toast;
+    if(!r.ok) S.msg[id]=S.toast; else delete S.draft[id];
   }catch(e){ if(e.login){ showLogin(e.message); return; } S.msg[id]={t:'Not saved - '+e.message+'. Nothing was sent; try again.',bad:true}; }
   S.busy[id]=false; await load(true);
   var mine=S.toast; setTimeout(function(){ delete S.msg[id]; if(S.toast===mine){ S.toast=null; draw(); } }, 15000);
@@ -208,8 +213,8 @@ async function act(fn,args,id,ok){
   await load(true);
   var mine=S.toast; setTimeout(function(){ if(S.toast===mine){ S.toast=null; draw(); } }, 15000);
 }
-document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') load(true); });
-setInterval(function(){ if(document.visibilityState==='visible' && !Object.keys(S.busy).some(function(k){ return S.busy[k]; })) load(true); }, 60000);
+document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible' && !typing()) load(true); });
+setInterval(function(){ if(document.visibilityState==='visible' && !typing() && !Object.keys(S.busy).some(function(k){ return S.busy[k]; })) load(true); }, 60000);
 
 /* ---------------- ?demo=1: sample cards only, nothing is read or written (for the page's own screen check) */
 var DEMO_ROWS=[
