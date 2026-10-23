@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 114;
-window.HERO_BUILD = 'R159-2026.10.22.1';
+window.HERO_BUILD = 'R160-2026.10.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -536,9 +536,13 @@ window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
     /* Row 3: the two controls Ravi asked to keep, full words, side by side.
        flex-basis:100% is what guarantees them their own row. When the CEO-only
        update button is hidden, Reset Password alone takes the full width. */
-    #top-actions{flex:1 1 100%;display:flex;gap:8px;margin-left:0!important}
-    #top-actions .navbtn,#top-actions #hero-upd-now{flex:1 1 0;margin-left:0!important;
-      padding:7px 10px!important;font-size:12px!important;text-align:center;border-radius:8px}
+    /* R160 (Ravi 23-10-2026: "Change password and add employee are out of the mobile window. Not wrapped."):
+       the CEO login carries four buttons here (Update, Reset Password, Change Mobile, Add Employee) - on a
+       375px phone they ran to 572px. They now wrap, two to a line, each one fully on the screen. */
+    #top-actions{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:8px;margin-left:0!important;min-width:0}
+    #top-actions .navbtn,#top-actions #hero-upd-now{flex:1 1 calc(50% - 4px);min-width:0;max-width:100%;margin-left:0!important;
+      padding:7px 10px!important;font-size:12px!important;text-align:center;border-radius:8px;
+      white-space:normal!important;overflow-wrap:anywhere}
   }
   /* Below 380px the two-line brand still fits (measured at 320px: the name
      needs ~110px and gets ~190px), so unlike the old bar the name is never
@@ -1338,7 +1342,7 @@ body.compact-home .mod-tile.ops .mt-dd{display:none}
   <div id="top-actions"><button class="navbtn" id="topright-pwd-btn" onclick="openChangePassword()" style="display:none" title="Reset your password">🔒 Reset Password</button><button class="navbtn" id="topright-mob-btn" onclick="heroChangeMobile()" style="display:none" title="Change your mobile number (a WhatsApp code confirms it)">📱 Change Mobile</button></div>
   <!-- R158 (Ravi 22-10-2026: "Why pending and Decisions ... While taking photographs it is interfering with the entire rolling photo.
        Change that to somewhere else ... Dont make a separate layer on layer for it. Get it on the same layer."): both asks live
-       here, in the top bar, in the page flow - never position:fixed over the photo boxes. The row shows only when one has a count. -->
+       here, in the top bar, in the page flow - never position:fixed over the photo boxes. R160: Why pending shows always (0 = green); the row hides only when nothing is in it. -->
   <div id="top-asks" style="display:none"><button id="avask-pill" type="button" onclick="avaskOpen(true)"></button></div>
   <script>
   /* R158: the top-bar row of asks shows only while one of them has something to say */
@@ -29290,7 +29294,10 @@ window.heroChangeMobile=function(){
     LAST_D=d;
     var pill=document.getElementById('avask-pill');
     var n=ITEMS.length;
-    pill.textContent='Why pending · '+n; pill.style.display=n?'inline-block':'none'; if(window.heroTopAsks) heroTopAsks();
+    /* R160 (Ravi 23-10-2026: "Where is the Why Pending ... I did not tell you to get rid of it. It was good."): the button stays
+       in the top bar for every login that answers it, also at 0 (green then) - it never hides itself again. */
+    pill.textContent='Why pending · '+n; pill.style.display='inline-block'; pill.style.background=n?'#D71920':'#15803d';
+    if(window.heroTopAsks) heroTopAsks();
     var gone=ITEMS.filter(function(it){ return it.gone_out; }).length;
     var inv=Number((d&&d.invoiced)||0);
     /* R152 (Ravi 17-10-2026, the holdup law): holdup = not invoiced in Hero DMS (in the workshop); invoiced = with the
@@ -30988,7 +30995,8 @@ var ES_BODY=null;
     var b=document.getElementById('vh-fw'); if(!b||!VH.fw) return;
     var R=(VH.fw.rows||[]), red=R.filter(function(f){ return f.lvl==='red'; }), show=VH.fwAll? R : red;
     var by={}; show.forEach(function(f){ by[f.code]=(by[f.code]||0)+1; });
-    b.innerHTML='<details class="vh-fwd"'+(VH.fwOpen?' open':'')+' ontoggle="HERO_VH.fwOpen=this.open"><summary><b>🚨 Fraud watch · '+red.length+' red</b> <span class="vh-s">· '+(R.length-red.length)+' amber · checked '+esc(fDT(VH.fw.refreshed))+' (every 15 min) · tap to open</span></summary>'+
+    b.innerHTML='<details class="vh-fwd"'+(VH.fwOpen?' open':'')+' ontoggle="HERO_VH.fwOpen=this.open"><summary><b>🚨 Fraud watch · '+red.length+' red</b> <span class="vh-s">· '+(R.length-red.length)+' amber · checked '+esc(fDT(VH.fw.refreshed))+' (every 15 min) · tap to open</span>'+
+      ' <button type="button" class="vh-fw-xl" onclick="event.preventDefault();event.stopPropagation();vhFwExcel(this)" title="Every flag, red and amber, in one Excel file to study and send">⬇ Excel ('+R.length+')</button></summary>'+
       '<div class="vh-chips">'+Object.keys(by).sort(function(a,b){return by[b]-by[a];}).map(function(k){ return '<span class="vh-tag" style="--c:#b91c1c">'+esc(FLAGN[k]||k)+' '+by[k]+'</span>'; }).join(' ')+
       ' <button type="button" onclick="HERO_VH.fwAll=!HERO_VH.fwAll;vhFwPaint()">'+(VH.fwAll?'Red only':'Show amber too')+'</button></div>'+
       '<table class="vh-t"><thead><tr><th>Vehicle</th><th>What</th><th>Details</th><th>Seen since</th></tr></thead><tbody>'+
@@ -30996,6 +31004,28 @@ var ES_BODY=null;
       '</tbody></table></details>';
   }
   window.vhFwPaint=fwPaint;
+  /* R160 (Ravi 23-10-2026: "Also fraud inside the vehicle history for download also to excel so that i can study it and send."):
+     every open flag - red first, then amber - one row each, with an empty "Your remark" column; a second sheet counts them by kind. */
+  window.vhFwExcel=function(btn){
+    if(!VH.fw||!(VH.fw.rows||[]).length){ alert('Fraud watch has nothing to download yet.'); return; }
+    if(!window.XLSX){ if(btn){ btn.disabled=true; btn.textContent='Loading Excel…'; }
+      heroEnsureLibs('xlsx', function(ok){ if(btn){ btn.disabled=false; btn.textContent='⬇ Excel ('+VH.fw.rows.length+')'; } if(ok&&window.XLSX) vhFwExcel(btn); }); return; }
+    function fy(v){ var d=D(v); return d? ist(d,{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-').replace(',','') : ''; }
+    var R=VH.fw.rows.slice().sort(function(a,b){ return (a.lvl==='red'?0:1)-(b.lvl==='red'?0:1); });
+    var aoa=[['No.','Vehicle','Level','What','Job card','Details','Seen since','Your remark']];
+    R.forEach(function(f,i){ aoa.push([i+1, f.reg||'', f.lvl==='red'?'RED':'Amber', FLAGN[f.code]||f.code||'', f.jc||'', f.text||'', fy(f.firstSeen)||'', '']); });
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:5},{wch:13},{wch:7},{wch:28},{wch:14},{wch:80},{wch:17},{wch:30}];
+    ws['!autofilter']={ref:'A1:H'+aoa.length}; ws['!freeze']={xSplit:0,ySplit:1};
+    var by={}; R.forEach(function(f){ var k=FLAGN[f.code]||f.code; by[k]=by[k]||{red:0,amber:0}; by[k][f.lvl==='red'?'red':'amber']++; });
+    var sum=[['Fraud watch - Sehgal Hero','',''],['Checked',fy(VH.fw.refreshed)||'',''],['Downloaded',fy(new Date().toISOString())||'',''],['','',''],['What','Red','Amber']];
+    Object.keys(by).sort(function(a,b){ return (by[b].red+by[b].amber)-(by[a].red+by[a].amber); }).forEach(function(k){ sum.push([k,by[k].red,by[k].amber]); });
+    sum.push(['Total',R.filter(function(f){return f.lvl==='red';}).length,R.filter(function(f){return f.lvl!=='red';}).length]);
+    var ws2=XLSX.utils.aoa_to_sheet(sum); ws2['!cols']=[{wch:32},{wch:8},{wch:8}];
+    var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Fraud watch'); XLSX.utils.book_append_sheet(wb,ws2,'Summary');
+    var d=new Date(), dd=('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+d.getFullYear();
+    XLSX.writeFile(wb,'Fraud_Watch_'+dd+'.xlsx');
+  };
 
   function paintStory(){
     var b=document.getElementById('vh-body'), s=VH.story; if(!b||!s) return;
@@ -31176,7 +31206,7 @@ var ES_BODY=null;
     '.vh-strip{display:flex;flex-wrap:wrap;gap:2px;margin:4px 0 2px}.vh-day{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;font-size:10px;vertical-align:middle;box-sizing:border-box}.vh-day i{font-style:normal}'+
     '.vh-day.in{background:#dc2626;color:#fff}.vh-day.out{background:#fff;border:2px solid #16a34a;color:#166534}.vh-day.nf{background:#e5e7eb;color:#6b7280}.vh-day.bf{background:#f8fafc;color:#94a3b8;border:1px dashed #cbd5e1}.vh-day.bl{background:#16a34a;color:#fff}'+
     '.vh-legend .vh-day{width:12px;height:12px;margin:0 2px 0 8px}.vh-now tr{cursor:default}'+
-    '.vh-fwd{border:1px solid #fca5a5;border-radius:8px;padding:6px 10px;margin:6px 0;background:#fff}.vh-fwd summary{cursor:pointer;color:#991b1b}.vh-fwd .vh-t td{font-size:12.5px}'+
+    '.vh-fwd{border:1px solid #fca5a5;border-radius:8px;padding:6px 10px;margin:6px 0;background:#fff}.vh-fwd summary{cursor:pointer;color:#991b1b}.vh-fw-xl{margin-left:6px;border:1px solid #15803d;background:#15803d;color:#fff;border-radius:6px;padding:3px 9px;font:600 12px system-ui,sans-serif;cursor:pointer;white-space:nowrap}.vh-fwd .vh-t td{font-size:12.5px}'+
     '.wr-g{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative}.wr-c{position:relative}.wr-c:not(:last-child):after{content:"➜";position:absolute;right:-12px;top:40%;color:#94a3b8;font-size:18px}'+
     '.wr-b{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin:6px 0;background:#fff;font-size:13px}.wr-l{font-size:13px}.wr-l.on{color:#16a34a}.wr-l.off{color:#dc2626}'+
     '@media(max-width:760px){.wr-g{grid-template-columns:1fr}.wr-c:not(:last-child):after{content:"⬇";right:auto;left:45%;top:auto;bottom:-14px}.vh-t .vh-s{font-size:11px}.vh-head td{display:inline-block;border:none;padding:3px 8px}}';
