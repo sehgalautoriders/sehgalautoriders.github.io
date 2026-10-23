@@ -29,8 +29,8 @@
    new app. Nothing else to decode.
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
-window.HERO_RELEASE = 114;
-window.HERO_BUILD = 'R160-2026.10.23.1';
+window.HERO_RELEASE = 115;
+window.HERO_BUILD = 'R161-2026.10.23.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -3949,7 +3949,7 @@ window.addEventListener('offline',function(){ INS5.online=false; i5Head(); });
          for something being "not enabled yet". -->
     <div id="pf-live-wrap" style="margin-bottom:12px;border:1px solid var(--line);background:var(--card,#fff);border-radius:8px;padding:10px">
       <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:3px">Stock at other Hero dealers <span style="font-weight:600;color:var(--steel);font-size:11px">— live from Hero BI</span></div>
-      <div class="hint" style="margin:0 0 8px">Everything above is our own four workshops. This asks Hero's Power BI for the rest of India — about <b>5,000 dealers</b> — through our office PC, which keeps the Hero BI logins. Measured 12-10-2026: <b>about 10 to 30 seconds</b>. The same part asked again within 6 hours answers at once.</div>
+      <div class="hint" style="margin:0 0 8px">Everything above is our own four workshops. This asks Hero's Power BI for the rest of India — about <b>5,000 dealers</b> — from our cloud (it works with the office PC off). Measured 12-10-2026: <b>about 10 to 30 seconds</b>. The same part asked again within 6 hours answers at once.</div>
       <button class="btn ghost" style="border-color:#0e7490;color:#0e7490" onclick="pfLiveAuto()">Try other dealers (all India, live)</button>
       <details style="margin-top:8px">
         <summary style="cursor:pointer;font-size:11px;color:var(--steel)">Advanced: fetch with a Power BI token you paste yourself</summary>
@@ -11930,7 +11930,7 @@ let HU_DRS_OPTIONS=[
 const HU_ETA_OPTIONS=['Today','Tomorrow','4-5 Days','Above 5 Days'];
 let HU_DRS_COLORS={
   'Not Allocated':'#6b7280','Work In Progress':'#2563eb',
-  'Major Work - Parts Available':'#dc2626','Major Work - Pending for Parts':'#b91c1c','Minor Job - Pending for Parts':'#ef4444',
+  'Major Work - Parts Available':'#d97706','Major Work - Pending for Parts':'#b91c1c','Minor Job - Pending for Parts':'#ef4444',
   'Warranty Approval':'#7c3aed','Insurance Approval':'#4f46e5','Additional Approval from Customer':'#0891b2',
   'Ready - Not Picked Up by Customer':'#16a34a','Ready - DMS Billing Issue':'#15803d','Vehicle Physically Delivered - JC Closure Pending':'#166534',
   'Shifted to Bodyshop / Service':'#92400e','Other Remarks':'#9ca3af'
@@ -12127,7 +12127,7 @@ function huIsPartStatus(s){
   // commonest genuine parts case and it contains the word "available" inside "not
   // available" — testing for "available" before this line wrongly cleared it.
   if(t.includes('not available')||t.includes('unavailable')||t.includes('not received')) return true;
-  if(t.includes('available')||t.includes('received')||t.includes('fitted')||t.includes('issued')) return false;
+  if(t.includes('available')||t.includes('received')||t.includes('fitted')||t.includes('issued')||t.includes('given')) return false;
   return true;
 }
 function huIsApprovalStatus(s){ s=String(s||''); return s.toLowerCase().includes('approval')||s.toLowerCase().includes('warranty')||['INSURANCE_PENDING','CUSTOMER_PENDING'].includes(s); }
@@ -12965,7 +12965,7 @@ function huDrawTable_(){
         <td class="hu-wrapcell" style="font-size:11px;color:var(--steel);min-width:84px">${saName||'—'}</td>
         <td onclick="event.stopPropagation()">${canEdit
           ?`<select class="drs-select" onchange="huInlineUpdate(${i},'status',this.value)" style="color:${drsColor};font-weight:600"><option value="">Select status…</option>${drsOptsHtml}</select>`
-          :`<span class="drs-badge" style="background:${drsColor}15;color:${drsColor};border:1px solid ${drsColor}40;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600">${curHS||'—'}</span>`}</td>
+          :`<span class="drs-badge" style="background:${drsColor}15;color:${drsColor};border:1px solid ${drsColor}40;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600">${curHS||'—'}</span>`}${huPartsGivenCell(r,i,canEdit,isPartFlag)}</td>
         <td onclick="event.stopPropagation()">${canEdit
           ?`<select class="hu-eta-select" onchange="huInlineUpdate(${i},'eta',this.value)"><option value="">ETA…</option>${etaOpts}</select>`
           :`<span style="font-size:11px">${curEta||'—'}</span>`}</td>
@@ -13507,7 +13507,45 @@ function huShowHistory(rowIdx){
   }
   document.getElementById('preview-modal').style.display='block';
 }
-function huInlineUpdate(rowIdx,field,value){
+/* ===== PARTS GIVEN (Ravi 22-10-2026, MH14LC1737) =====
+   "the parts person is not able to update that parts are already given and not pending for parts.
+    Parts given on which date. So that the WM knows that this vehicle has cleared parts and only
+    work is now pending on the vehicle."
+   One press on a parts row: the date (today by default, an earlier day can be typed) is asked,
+   the status becomes 'Major Work - Parts Available' and the reason 'Parts given on dd-mm-yyyy - <name>'.
+   Both survive the morning DMS upload (the upload keeps our status and reason), the history (📅)
+   keeps who and when, and the row leaves every Parts Pending count at once. */
+function huPartsGivenText(r){
+  const t=String((r&&r['Holdup Reason'])||'');
+  const m=t.match(/parts given on (\d{2}-\d{2}-\d{4})(?:\s*-\s*(.+))?/i);
+  return m?{date:m[1],by:(m[2]||'').trim()}:null;
+}
+function huPartsGivenCell(r,i,canEdit,isPartFlag){
+  const g=huPartsGivenText(r);
+  if(g) return `<div class="hu-parts-given" style="margin-top:3px;font-size:11px;font-weight:700;color:#15803d">✅ Parts given ${g.date}${g.by?' · '+(raviEsc?raviEsc(g.by):g.by):''} · work pending</div>`;
+  if(!canEdit) return '';
+  const partsRow=isPartFlag||huIsPartStatus(huStatusText(r));
+  if(!partsRow) return '';
+  return `<button type="button" class="hu-parts-given-btn" onclick="event.stopPropagation();huMarkPartsGiven(${i})" style="margin-top:4px;display:block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;border:1px solid #15803d;background:#f0fdf4;color:#15803d;cursor:pointer">✅ Parts given</button>`;
+}
+function huMarkPartsGiven(rowIdx){
+  const r=HU_ROWS_CURRENT[rowIdx]; if(!r) return;
+  const d=new Date(), pad=n=>String(n).padStart(2,'0');
+  const today=pad(d.getDate())+'-'+pad(d.getMonth()+1)+'-'+d.getFullYear();
+  const reg=String(r[HU_COLS.reg]||'')||huGetVin(r);
+  let ans=prompt('Parts given for '+reg+'.\nOn which date? (dd-mm-yyyy)', today);
+  if(ans===null) return;
+  ans=String(ans).trim().replace(/[\/.]/g,'-');
+  const m=ans.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  const when=m?new Date(+m[3],+m[2]-1,+m[1]):null;
+  if(!m||!when||when.getDate()!=+m[1]||when>new Date()){ alert('Please write the date as dd-mm-yyyy, today or earlier.'); return; }
+  const date=pad(+m[1])+'-'+pad(+m[2])+'-'+m[3];
+  const who=USER.personName||USER.empno||'';
+  r['Holdup Blockers']='';   // the parts blocker goes; the status below sets the rest
+  huInlineUpdate(rowIdx,'status','Major Work - Parts Available','Parts given on '+date+(who?' - '+who:''));
+  huRender();
+}
+function huInlineUpdate(rowIdx,field,value,alsoReason){
   const r=HU_ROWS_CURRENT[rowIdx]; if(!r) return;
   const reg=String(r[HU_COLS.reg]||'');
   const vin=huGetVin(r);
@@ -13541,6 +13579,8 @@ function huInlineUpdate(rowIdx,field,value){
     huSoftValidate(r, legacy);
   }
   if(field==='reason'){ payload.holdupReason=value; r['Holdup Reason']=value; }
+  /* Parts given: status and reason go in ONE save, so two saves can never race. */
+  if(typeof alsoReason==='string'){ payload.holdupReason=alsoReason; r['Holdup Reason']=alsoReason; }
   if(field==='eta'){ payload.partsEta=value; r['Parts ETA']=value; }
   if(field==='remarks'){ payload.remarks=value; r['Remarks']=value; }
   // Stamp the update locally too — the "Not Updated Today" KPI reads this field, and
@@ -13813,8 +13853,11 @@ function showEstimatePreview(est, reg, name, mob){
      showView — search "DESIGNATION FIRST". Removed 14-Aug-2026.) */
 
   /* (canUseModule wrapper 1 of 2 — folded into canUseModule itself.) */
+  /* Ravi 22-10-2026 (MH14LC1737): "the parts person is not able to update that parts are already given".
+     A parts login carries PartsDesk, not HoldupMonitor, so every row was read-only for him.
+     The backend (hero_holdup_update) already accepts the 'parts' role. */
   window.canEditHoldup = function(){
-    return !!(USER && (isAdmin() || (!isSAUser() && hasModule('HoldupMonitor'))));
+    return !!(USER && (isAdmin() || (!isSAUser() && (hasModule('HoldupMonitor') || isPartsPerson()))));
   };
 
   window.setHomeMode = function(mode){
@@ -15708,13 +15751,13 @@ function pfLiveAuto(){
       if(res.status!=='done'){
         const secs=Math.round((Date.now()-t0)/1000);
         if(res.pcSeenSecs>90){
-          box('🖥️','The office PC is not answering', 'All-India stock is fetched by our office PC (it keeps the Hero BI logins). It last checked in '
+          box('🖥️','Hero BI is not answering', 'All-India stock is fetched from our cloud. It last checked in '
             +(res.pcSeenSecs>86400?'more than a day':Math.round(res.pcSeenSecs/60)+' minutes')+' ago. Your request is kept and will be answered as soon as it is back - or try again later.');
-          pfInfo('Waiting for the office PC to come back…','warn');
+          pfInfo('Waiting for Hero BI…','warn');
         } else {
           box('⚡','Fetching all-India stock of '+pn+'… '+secs+' s', res.status==='running'
             ? 'Hero BI is preparing the list of dealers. Usually 10 to 30 seconds.'
-            : 'Waiting for the office PC to pick it up'+(res.ahead?' ('+res.ahead+' search'+(res.ahead>1?'es':'')+' ahead)':'')+'.');
+            : 'Waiting for our cloud to pick it up'+(res.ahead?' ('+res.ahead+' search'+(res.ahead>1?'es':'')+' ahead)':'')+'.');
         }
         if(Date.now()-t0>10*60*1000){ fail('Still not answered after 10 minutes', 'Your request is still in the queue. Tap the button again later - the answer will be ready.'); return; }
         setTimeout(function(){ poll(id); }, 3000);
@@ -15748,7 +15791,7 @@ function pfLiveMulti(parts){
   pfInfo('⚡ Live all-India search for '+parts.length+' parts — about 5 to 30 seconds each, answered one after another.','warn');
   function draw(){
     const secs=Math.round((Date.now()-t0)/1000);
-    const word={asking:'Asking…', queued:'Waiting for the office PC', running:'Hero BI working…', done:'Done', failed:'Failed'};
+    const word={asking:'Asking…', queued:'Waiting…', running:'Hero BI working…', done:'Done', failed:'Failed'};
     wrap.innerHTML='<div style="padding:14px"><div style="font-weight:700;margin-bottom:8px">Fetching '+parts.length+' parts from all India… '+secs+' s</div>'
       +'<table class="hu-excel-table"><thead><tr><th>Part</th><th>Description</th><th>Status</th><th style="text-align:right">Dealers</th><th style="text-align:right">Qty</th></tr></thead><tbody>'
       +st.map(function(s){
@@ -15779,13 +15822,13 @@ function pfLiveMulti(parts){
         if(!res) return;
         if(res.status==='done'){ s.status='done'; s.res=res; }
         else if(res.status==='failed'){ s.status='failed'; s.err=res.error||'the fetch failed'; }
-        else { s.status=res.status; if(res.pcSeenSecs>90) s.err='office PC not answering'; }
+        else { s.status=res.status; if(res.pcSeenSecs>90) s.err='Hero BI not answering'; }
       }).catch(function(){ /* a network blip: the next tick asks again */ });
     })).then(function(){
       if(run!==PF_LIVE_RUN) return;
       draw();
-      const pcDown=st.some(function(s){ return s.err==='office PC not answering' && s.status!=='done' && s.status!=='failed'; });
-      if(pcDown) pfInfo('The office PC (it keeps the Hero BI logins) is not answering - your parts stay in the queue and are answered when it is back.','warn');
+      const pcDown=st.some(function(s){ return s.err==='Hero BI not answering' && s.status!=='done' && s.status!=='failed'; });
+      if(pcDown) pfInfo('Hero BI is not answering - your parts stay in the queue and are answered when it is back.','warn');
       setTimeout(tick, 3000);
     });
   }
@@ -29003,8 +29046,8 @@ window.heroChangeMobile=function(){
      edge function holdup-chase. Never a lock (Ravi 23-09 "do not lock anything"): the panel opens by itself on start and
      every 30 min while vehicles are unanswered, and always closes with one tap. -->
 <style>
-#top-asks{align-items:center;gap:8px;margin-left:10px;flex:0 0 auto}
-@media(max-width:720px){#top-asks{flex:1 1 100%;margin-left:0}#top-asks>*{flex:1 1 0;text-align:center}}
+/* R161 (Ravi 23-10-2026: "Get the why pending live again ... make its own button. Say below decisions."): one button per line, Decisions on top, Why pending under it - each its own full-width button in the top bar, never over the photos. */
+#top-asks{flex:1 1 100%;flex-direction:column;align-items:stretch;gap:6px;margin-left:0}#top-asks>*{display:block;width:100%;box-sizing:border-box;text-align:center}#top-asks #avni-dec-pill{order:1}#top-asks #avask-pill{order:2;padding:9px 12px;font-size:14px}
 #avask-pill{background:#D71920;color:#fff;border:0;border-radius:8px;
   padding:7px 12px;font:600 13px/1 system-ui,sans-serif;display:none;cursor:pointer;white-space:nowrap}
 #avask-ov{position:fixed;inset:0;z-index:9995;background:#F6F5F2;display:none;flex-direction:column;font:13px system-ui,sans-serif;color:#171717}
@@ -29359,7 +29402,7 @@ window.heroChangeMobile=function(){
     }catch(e){}
   }
   async function load(auto){
-    if(LOADING || !signedIn() || ROLES.indexOf(role())<0 || typeof sbRpc!=='function') return;
+    if(LOADING || !signedIn() || ROLES.indexOf(role())<0 || typeof sbRpc!=='function') return; var pl=document.getElementById('avask-pill'); /* R161: the button is there the moment a chase login is in; the count fills in when the list arrives */ if(pl && pl.style.display!=='inline-block'){ pl.textContent='Why pending · …'; pl.style.display='inline-block'; if(window.heroTopAsks) heroTopAsks(); }
     LOADING=true;
     try{
       var d=await sbRpc('hero_chase_my_items',{});
@@ -30680,7 +30723,7 @@ var ES_BODY=null;
     var p2=day(d.per2);
     L('per2','Per2 - job cards (07:45)', fDT(d.per2), !due || p2===today, p2===today?'':'last load '+(fD(d.per2)||'never'), 'AVNI Work 07:45 pull + Research Lab loader.');
     var pf=gap(d.partFinder), pfl=d.partFinderLast||null, pfBad=pfl && String(pfl.status||'')!=='done' && gap(pfl.at)!=null && gap(pfl.at)<24 && String(pfl.status||'')!=='queued';
-    L('pf','All-India Part Finder (office PC)', d.partFinder? fDT(d.partFinder) : 'never', pf!=null && pf<0.25 && !pfBad,
+    L('pf','All-India Part Finder (cloud)', d.partFinder? fDT(d.partFinder) : 'never', pf!=null && pf<0.25 && !pfBad,
       pf==null?'office PC never answered': (pf>=0.25? 'office PC silent for '+hrs(pf) : (pfBad? 'last search '+String(pfl.status)+': '+String(pfl.msg||'') : '')),
       'AVNI Work on the office PC must be running (it answers the Supabase queue).');
     return out;
