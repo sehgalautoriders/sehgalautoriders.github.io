@@ -30,7 +30,7 @@
    release.ps1 increments this automatically in BOTH index.html and sw.js, and
    refuses to publish if the two ever disagree. */
 window.HERO_RELEASE = 115;
-window.HERO_BUILD = 'R161-2026.10.23.1';
+window.HERO_BUILD = 'R162-2026.10.24.1';
 window.HERO_FRONTEND_PATCH = 'S02-ESTIMATE-UI-POLISH-2026.07.20';
 (function () {
   if (!('serviceWorker' in navigator)) return;
@@ -16807,12 +16807,14 @@ tr.bl-day-row td{background:#f1f5f9!important;border-top:2px solid #cbd5e1!impor
       try{ GE_LAST_REG_LOOKED=plate; }catch(e){}
       /* Name the engine. Ravi asked for a fixed order; the only way anyone can
          see the order is being kept is if the screen says who answered. */
-      const ENGINE_NAME={gemini:'Gemini', vision:'Cloud Vision', docai:'Document AI'};
+      /* 24-10-2026 (Ravi: OCR Tree in Hero, paid or not): 'avni-tree' is our own OCR Tree on the
+         office PC, asked first by read-text; the paid engines only when it is silent or unsure. */
+      const ENGINE_NAME={gemini:'Gemini', vision:'Cloud Vision', docai:'Document AI', 'avni-tree':'our OCR Tree (office PC)'};
       const eng=ENGINE_NAME[GE_ID.engine]||'';
       /* R115 (Ravi 23-09-2026): a plate is TAKEN only when 2-3 readers agree. One reader
          alone is shown as a suggestion the guard must check against the bike. */
-      if(GE_ID.agreed) status('✅ Plate confirmed by 2 readers from the '+from+' photo: <b>'+plate+'</b> · checking records…','info');
-      else status('⚠ Only one reader saw this plate: <b>'+plate+'</b> — check it against the bike, correct the box if wrong.','warn');
+      if(GE_ID.agreed) status('✅ Plate confirmed by 2 readers'+(eng?' ('+eng+')':'')+' from the '+from+' photo: <b>'+plate+'</b> · checking records…','info');
+      else status('⚠ Only one reader'+(eng?' ('+eng+')':'')+' saw this plate: <b>'+plate+'</b> — check it against the bike, correct the box if wrong.','warn');
       GE_ID.busy=false;
       geIdLookup(plate);                                   // STAGE 3
     }catch(e){ GE_ID.busy=false; status('⚠ '+String(e.message||e),'error'); }
